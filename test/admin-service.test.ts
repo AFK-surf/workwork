@@ -108,7 +108,7 @@ describe("AdminService", () => {
             channelId: "C123",
             rootThreadTs: "111.222",
             workspacePath: "/tmp/session",
-            initiatorUserId: "U_BOB",
+            initiatorUserId: "U0BOB",
             createdAt: "2026-03-19T00:00:00.000Z",
             updatedAt: "2026-03-19T00:00:00.000Z"
           }
@@ -155,7 +155,7 @@ describe("AdminService", () => {
       githubAccounts: {
         accounts: [
           {
-            slackUserId: "U_BOB"
+            slackUserId: "U0BOB"
           }
         ]
       }
@@ -215,7 +215,7 @@ describe("AdminService", () => {
             channelId: "C123",
             rootThreadTs: "111.222",
             workspacePath: "/tmp/session",
-            initiatorUserId: "U_BOB",
+            initiatorUserId: "U0BOB",
             createdAt: "2026-03-19T00:00:00.000Z",
             updatedAt: "2026-03-19T00:00:00.000Z"
           }
@@ -228,7 +228,7 @@ describe("AdminService", () => {
             rootThreadTs: "111.222",
             messageTs: "111.222",
             source: "app_mention",
-            userId: "U_BOB",
+            userId: "U0BOB",
             text: "@bot hi",
             senderKind: "user",
             senderUsername: "bob",
@@ -295,6 +295,19 @@ describe("AdminService", () => {
       } as never,
       githubAuthorMappings,
       githubPrIdentity,
+      slackConversations: {
+        getUserIdentity: async (userId: string) => {
+          if (userId !== "U0BOB") return null;
+          return {
+            userId,
+            mention: `<@${userId}>`,
+            username: "bob",
+            displayName: "Bob Slack",
+            realName: "Bob Example",
+            email: "bob@example.com"
+          };
+        }
+      } as never,
       runtime: {
         readAccountSummary: async () => ({
           account: null,
@@ -334,10 +347,14 @@ describe("AdminService", () => {
           }
         },
         {
-          slackUserId: "U_BOB",
+          slackUserId: "U0BOB",
           slackIdentity: {
-            userId: "U_BOB",
-            mention: "<@U_BOB>"
+            userId: "U0BOB",
+            mention: "<@U0BOB>",
+            username: "bob",
+            displayName: "Bob Slack",
+            realName: "Bob Example",
+            email: "bob@example.com"
           },
           prBinding: {
             state: "unbound"

@@ -91,6 +91,7 @@ interface SlackConversationLookup {
     readonly name?: string | undefined;
     readonly channelType?: string | undefined;
   } | null>;
+  getUserIdentity?(userId: string): Promise<SlackUserIdentity | null>;
 }
 
 interface OperationPreflight {
@@ -819,10 +820,16 @@ export class AdminService {
       available: false as const,
       reason: "not_configured" as const
     };
+    const sessions = this.options.sessions.listSessions();
+    const slackIdentities = await this.#readGitHubAccountSlackIdentities({
+      bindings: prBindings,
+      sessions
+    });
     const githubAccounts = buildGitHubAccounts({
       bindings: prBindings,
       defaultPrAccount,
-      sessions: this.options.sessions.listSessions()
+      sessions,
+      slackIdentities
     });
     return {
       account,
@@ -850,6 +857,42 @@ export class AdminService {
         }))
       }
     };
+  }
+
+  async #readGitHubAccountSlackIdentities(options: {
+    readonly bindings: readonly GitHubPrBindingRecord[];
+    readonly sessions: readonly SlackSessionRecord[];
+  }): Promise<ReadonlyMap<string, SlackUserIdentity>> {
+    const slackLookup = this.options.slackConversations;
+    const getUserIdentity = slackLookup?.getUserIdentity;
+    if (!getUserIdentity) {
+      return new Map();
+    }
+
+    const userIds = [...collectKnownGitHubAccountSlackUserIds(options)]
+      .filter((userId) => looksLikeSlackUserId(userId))
+      .slice(0, 100);
+    if (!userIds.length) {
+      return new Map();
+    }
+
+    let entries: Array<readonly [string, SlackUserIdentity] | null>;
+    try {
+      entries = await withAdminProbeTimeout(
+        Promise.all(userIds.map(async (userId): Promise<readonly [string, SlackUserIdentity] | null> => {
+          const identity = await getUserIdentity.call(slackLookup, userId);
+          return identity ? [userId, identity] as const : null;
+        })),
+        "Slack user identity lookup"
+      );
+    } catch (error) {
+      logger.warn("Failed to resolve Slack identities for GitHub account rows", {
+        error: error instanceof Error ? error.message : String(error)
+      });
+      return new Map();
+    }
+
+    return new Map(entries.filter((entry): entry is readonly [string, SlackUserIdentity] => Boolean(entry)));
   }
 
   async #readSessionSnapshot(): Promise<SessionSnapshot> {
@@ -1977,6 +2020,7 @@ function buildGitHubAccounts(options: {
   readonly defaultPrAccount: GitHubPrIdentityStatus["defaultAccount"];
   readonly sessions?: readonly SlackSessionRecord[] | undefined;
   readonly inbound?: readonly PersistedInboundMessage[] | undefined;
+  readonly slackIdentities?: ReadonlyMap<string, SlackUserIdentity> | undefined;
 }): RuntimeStatus["githubAccounts"] {
   const rows = new Map<string, {
     slackUserId: string;
@@ -1984,6 +2028,9 @@ function buildGitHubAccounts(options: {
     binding?: GitHubPrBindingRecord | undefined;
   }>();
   const slackIdentities = collectSlackIdentities(options.sessions ?? [], options.inbound ?? []);
+  for (const [userId, identity] of options.slackIdentities ?? []) {
+    slackIdentities.set(userId, identity);
+  }
 
   for (const session of options.sessions ?? []) {
     const slackUserId = normalizeNonEmptyString(session.initiatorUserId);

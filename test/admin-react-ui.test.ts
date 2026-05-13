@@ -76,6 +76,13 @@ describe("admin React UI architecture", () => {
     expect(shell).not.toContain("历史 Commit 作者");
   });
 
+  it("prefers backend GitHub account identities over session fallback rows", async () => {
+    const shell = await readAdminShellSource();
+    expect(shell.indexOf("const accounts = status.githubAccounts?.accounts")).toBeLessThan(
+      shell.indexOf("const fallback = buildFallbackGitHubAccounts(status)")
+    );
+  });
+
   it("keeps business UI free of imperative DOM rendering and event binding", async () => {
     const files = await listAdminUiSourceFiles();
     const offenders: string[] = [];

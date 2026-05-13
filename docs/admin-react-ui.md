@@ -56,6 +56,9 @@ Status data flows through a React hook backed by `admin-status-store`:
 - `/admin/api/overview` must not scan the full inbound-message history; Slack
   account rows are composed in React from the already loaded session summaries
   plus OAuth bindings;
+- `/admin/api/overview` resolves Slack user ids for GitHub account rows through
+  Slack `users.info` with bounded timeout. Raw Slack ids are only a fallback
+  when Slack profile lookup fails;
 - token usage aggregation stays behind the dedicated usage/session resources
   instead of running during overview bootstrap;
 - recent logs load from `/admin/api/logs` after the first shell state is
@@ -86,6 +89,9 @@ The operations page must preserve existing behavior:
 - operation records and audit records remain visible;
 - GitHub accounts show Slack identity, commit author mapping, OAuth binding
   state, default PR account state, and actions;
+- GitHub accounts prefer the backend `githubAccounts.accounts` result after
+  overview loads. The session-derived fallback is only for the initial shell
+  before overview data arrives;
 - logs and service information remain visible.
 
 ## GitHub Account Management
@@ -116,6 +122,10 @@ After the React migration, GitHub account work continues in React:
   blocking `/admin/api/overview` or `/admin/api/status`.
 - `/admin/api/overview` and mutating operation responses do not require an
   unbounded `inbound_messages` read.
+- `/admin/api/overview` uses Slack `users.info` to resolve GitHub account row
+  names without falling back to raw Slack ids when the API can resolve them.
+- The GitHub account panel uses backend account identities once overview has
+  loaded, instead of overwriting them with session-derived fallback rows.
 - The React shell connects realtime only after publishing the initial
   `/admin/api/sessions` cursor.
 - `/admin/api/events?after=0` does not replay retained history; it waits for

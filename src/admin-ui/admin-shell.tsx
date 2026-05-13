@@ -1121,11 +1121,10 @@ function authProfileQuotaItems(profiles: readonly Record<string, any>[]): Array<
 }
 
 function normalizeGitHubAccounts(status: AdminStatus): Array<Record<string, any>> {
-  const fallback = buildFallbackGitHubAccounts(status);
-  if (fallback.length > 0) return fallback;
   const accounts = status.githubAccounts?.accounts;
   if (Array.isArray(accounts) && accounts.length > 0) return accounts;
-  return [];
+  const fallback = buildFallbackGitHubAccounts(status);
+  return fallback;
 }
 
 function buildFallbackGitHubAccounts(status: AdminStatus): Array<Record<string, any>> {
