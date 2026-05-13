@@ -201,8 +201,12 @@ export class SessionAuthProfileRuntime extends EventEmitter implements AgentRunt
         });
       }
 
+      const resolvedSession = session.authBlockedAt
+        ? await this.#sessions.clearSessionAuthBlock(session.key)
+        : session;
+
       return {
-        session,
+        session: resolvedSession,
         runtime: this.#runtimeForProfile(profile)
       };
     }

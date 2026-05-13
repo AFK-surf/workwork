@@ -21,6 +21,7 @@ import {
   resolveSessionChannelLabel,
   sessionActivityAt,
   sessionActivityMs,
+  sessionAuthBlockActive,
   sessionFailedJobSummary,
   sessionQueueState,
   shouldShowSessionState
@@ -73,9 +74,9 @@ export function AdminSessionsView(): React.JSX.Element {
 
   const filtered = useMemo(() => {
     return sessions
-      .filter((session) => sessionMatchesFilter(session, mode, query))
-      .sort((left, right) => compareSessionsForMode(mode, left, right));
-  }, [mode, query, sessions]);
+      .filter((session) => sessionMatchesFilter(session, mode, query, authProfileByName))
+      .sort((left, right) => compareSessionsForMode(mode, left, right, authProfileByName));
+  }, [authProfileByName, mode, query, sessions]);
 
   const filteredKeys = filtered.map((session) => String(session.key)).join("\u001f");
   const viewKey = mode + "\n" + query;
@@ -247,7 +248,8 @@ function SessionRow({ session, selected, authProfileByName, channelLabelById, on
   readonly channelLabelById?: ReadonlyMap<string, string>;
   readonly onSelect: () => void;
 }): React.JSX.Element {
-  const state = sessionQueueState(session);
+  const authProfile = session.authProfileName ? authProfileByName.get(String(session.authProfileName)) : null;
+  const state = sessionQueueState(session, authProfile);
   const activityAt = sessionActivityAt(session);
   const primary = sessionPrimaryText(session);
   const first = sessionFirstText(session);
@@ -288,7 +290,8 @@ function SessionDetail({ session, isPermalink = false }: {
   const channelLabelById = buildChannelLabelById([...sessions, session]);
   const channelLabel = resolveSessionChannelLabel(session, channelLabelById);
   const usage = session.usage || {};
-  const state = sessionQueueState(session);
+  const currentProfile = authProfiles.find((profile) => profile.name === session.authProfileName);
+  const state = sessionQueueState(session, currentProfile);
   const activityAt = sessionActivityAt(session);
   const primary = sessionPrimaryText(session);
   const first = sessionFirstText(session);
@@ -299,7 +302,6 @@ function SessionDetail({ session, isPermalink = false }: {
   const totalJobs = Number(session.backgroundJobCount || 0);
   const failedJobs = Number(session.failedBackgroundJobCount || 0);
   const hasMessagesOrJobs = openInbound > 0 || totalJobs > 0;
-  const currentProfile = authProfiles.find((profile) => profile.name === session.authProfileName);
   return (
     <>
       <div className="selected-session-head session-detail-toolbar">
@@ -841,20 +843,20 @@ function AuthProfilePanel({ session, profiles, currentProfile: providedCurrentPr
   readonly currentProfile?: SessionRecord | undefined;
 }): React.JSX.Element {
   const dialogRef = useRef<HTMLDialogElement | null>(null);
-  const [selected, setSelected] = useState(() => initialAuthProfileSelection(session));
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const currentProfile = providedCurrentProfile ?? profiles.find((profile) => profile.name === session.authProfileName);
   const currentLabel = currentProfile
     ? profileDisplayLabel(currentProfile)
     : (session.authProfileName ? "账号状态加载中" : "未绑定");
-  const blocked = Boolean(session.authBlockedAt);
+  const blocked = sessionAuthBlockActive(session, currentProfile);
   const compactLabel = currentProfile ? profileQuotaLabel(currentProfile) : (blocked ? "账号不可用" : "账号");
+  const [selected, setSelected] = useState(() => initialAuthProfileSelection(session, blocked));
 
   useEffect(() => {
-    setSelected(initialAuthProfileSelection(session));
+    setSelected(initialAuthProfileSelection(session, blocked));
     setMessage(null);
-  }, [session.key, session.authProfileName, session.authBlockedAt]);
+  }, [blocked, session.key, session.authProfileName, session.authBlockedAt]);
 
   function openDialog(): void {
     const dialog = dialogRef.current;
@@ -962,8 +964,8 @@ function AuthProfilePanel({ session, profiles, currentProfile: providedCurrentPr
   );
 }
 
-function initialAuthProfileSelection(session: SessionRecord): string {
-  return session.authBlockedAt ? AUTO_AUTH_PROFILE_VALUE : String(session.authProfileName || "");
+function initialAuthProfileSelection(session: SessionRecord, blocked: boolean): string {
+  return blocked ? AUTO_AUTH_PROFILE_VALUE : String(session.authProfileName || "");
 }
 
 function TimelinePayloadView({ payload }: { readonly payload: TimelinePayload }): React.JSX.Element {
@@ -1198,12 +1200,18 @@ function Badge({ label, tone, title }: { readonly label: unknown; readonly tone?
   return <span className={"badge " + (tone || statusTone(label))} title={title}>{statusLabel(label)}</span>;
 }
 
-function sessionMatchesFilter(session: SessionRecord, mode: string, query: string): boolean {
+function sessionMatchesFilter(
+  session: SessionRecord,
+  mode: string,
+  query: string,
+  authProfileByName?: ReadonlyMap<string, SessionRecord>
+): boolean {
+  const authProfile = session.authProfileName ? authProfileByName?.get(String(session.authProfileName)) : null;
   if (mode === "ongoing" && !session.activeTurnId && !session.openInboundCount && !session.runningBackgroundJobCount && !session.failedBackgroundJobCount) return false;
   if (mode === "active" && !session.activeTurnId) return false;
   if (mode === "inbound" && !session.openInboundCount) return false;
   if (mode === "jobs" && !session.runningBackgroundJobCount) return false;
-  if (mode === "issues" && !session.failedBackgroundJobCount && !session.authBlockedAt) return false;
+  if (mode === "issues" && !session.failedBackgroundJobCount && !sessionAuthBlockActive(session, authProfile)) return false;
   if (mode === "usage" && !session.usage?.turnCount) return false;
   if (!query) return true;
   return [session.key, session.channelId, session.channelLabel, session.workspacePath, sessionPrimaryText(session), sessionFirstText(session)]
@@ -1245,7 +1253,12 @@ function summarizeSessionLead(session: SessionRecord): string {
   return "空闲";
 }
 
-function compareSessionsForMode(mode: string, left: SessionRecord, right: SessionRecord): number {
+function compareSessionsForMode(
+  mode: string,
+  left: SessionRecord,
+  right: SessionRecord,
+  authProfileByName?: ReadonlyMap<string, SessionRecord>
+): number {
   if (mode === "usage") {
     const tokenDelta = Number(right.usage?.totalTokens || 0) - Number(left.usage?.totalTokens || 0);
     if (tokenDelta) return tokenDelta;
@@ -1254,7 +1267,9 @@ function compareSessionsForMode(mode: string, left: SessionRecord, right: Sessio
     const activityDelta = sessionActivityMs(right) - sessionActivityMs(left);
     if (activityDelta) return activityDelta;
   }
-  const rankDelta = sessionQueueState(right).rank - sessionQueueState(left).rank;
+  const rightProfile = right.authProfileName ? authProfileByName?.get(String(right.authProfileName)) : null;
+  const leftProfile = left.authProfileName ? authProfileByName?.get(String(left.authProfileName)) : null;
+  const rankDelta = sessionQueueState(right, rightProfile).rank - sessionQueueState(left, leftProfile).rank;
   if (rankDelta) return rankDelta;
   const activityDelta = sessionActivityMs(right) - sessionActivityMs(left);
   if (activityDelta) return activityDelta;

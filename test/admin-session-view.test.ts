@@ -398,6 +398,45 @@ describe("admin session row display", () => {
     expect(state.detail).not.toBe("2 个失败任务");
   });
 
+  it("does not show account-switch state when the bound profile quota has recovered", () => {
+    const profile = {
+      name: "profile-a",
+      account: {
+        ok: true
+      },
+      rateLimits: {
+        ok: true,
+        rateLimits: {
+          primary: {
+            usedPercent: 10,
+            resetsAt: 1_779_000_000
+          },
+          secondary: {
+            usedPercent: 20,
+            resetsAt: 1_780_000_000
+          }
+        }
+      }
+    };
+    const session = {
+      key: "C123:111.222",
+      channelId: "C123",
+      authProfileName: "profile-a",
+      authBlockedAt: "2026-05-09T01:00:00.000Z",
+      authBlockReason: "primary_quota_exhausted",
+      openInboundCount: 1,
+      openSystemInboundCount: 1
+    };
+
+    const state = sessionQueueState(session, profile);
+    const meta = renderSessionMeta(session, new Map([["profile-a", profile]]));
+
+    expect(state.label).toBe("待处理");
+    expect(state.detail).toBe("1 条系统消息");
+    expect(meta.map((item) => item.key)).not.toContain("auth-blocked");
+    expect(meta.map((item) => item.label)).not.toContain("账号待切换");
+  });
+
   it("uses semantic session activity time instead of metadata updatedAt", () => {
     expect(sessionActivityAt({
       key: "C123:111.222",

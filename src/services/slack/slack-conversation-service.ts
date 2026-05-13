@@ -1494,10 +1494,6 @@ export class SlackConversationService {
       if (refreshedSession.activeTurnId) {
         continue;
       }
-      if (refreshedSession.authBlockedAt) {
-        continue;
-      }
-
       const resumedCount = await this.#resumePendingDispatch(refreshedSession.key);
 
       if (resumedCount === 0) {
@@ -1562,9 +1558,7 @@ export class SlackConversationService {
       if (runtime.processing) {
         continue;
       }
-      if (session.authBlockedAt) {
-        continue;
-      }
+      const authBlocked = Boolean(session.authBlockedAt);
 
       const reconciled = await this.#inboundStore.reconcileOrphanedInflightMessages(session);
       if (reconciled.markedDoneCount > 0 || reconciled.resetToPendingCount > 0) {
@@ -1575,7 +1569,7 @@ export class SlackConversationService {
         });
       }
 
-      if (runtime.blockedUntilMs && runtime.blockedUntilMs > nowMs) {
+      if (!authBlocked && runtime.blockedUntilMs && runtime.blockedUntilMs > nowMs) {
         continue;
       }
 
@@ -1589,9 +1583,6 @@ export class SlackConversationService {
       .sort((left, right) => compareIsoTimestamp(right.updatedAt, left.updatedAt));
 
     for (const session of sessions) {
-      if (session.authBlockedAt) {
-        continue;
-      }
       const pendingSyntheticMessages = this.#sessions.listInboundMessages({
         channelId: session.channelId,
         rootThreadTs: session.rootThreadTs,

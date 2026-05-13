@@ -56,6 +56,18 @@ Before dispatching a pending Slack input into Codex, the worker checks the bound
 
 The notice is idempotent for one blocked state. Repeated Slack messages while the session remains blocked must not spam the thread.
 
+## Bound Session Recovery
+
+`auth_blocked_at` is not a permanent manual-action flag. It records the last time
+the bound profile was observed unavailable. If the same bound profile later
+becomes usable again, the broker must clear the blocked fields and continue
+pending dispatch through that same profile. This is not an automatic profile
+switch: the session keeps its existing `auth_profile_name`.
+
+The admin UI must derive the visible "needs account switch" state from the
+current bound profile status. A stale `auth_blocked_at` row must not keep showing
+`账号待切换` after the bound profile's quota has recovered.
+
 ## Manual Recovery
 
 The session page exposes the current auth binding and available profile list. A user can choose a usable profile and click `切换并继续处理`.
@@ -78,6 +90,8 @@ Admin is a separate process in deployment, so resuming work cannot be an in-proc
 - If the bound profile is unavailable, the broker does not auto-switch.
 - The pending Slack input remains pending while auth is blocked.
 - Slack receives exactly one blocked notice per blocked state, with the session page link.
+- If the same bound profile becomes usable again, blocked fields are cleared and pending dispatch resumes without changing `auth_profile_name`.
+- Admin session list/detail must not show `账号待切换` when the current bound profile is usable again.
 - The session page shows the current binding, blocked reason, profile candidates, and a `切换并继续处理` action.
 - Manual switch clears the blocked state, resets stale agent runtime state, and resumes pending dispatch through the newly selected profile runtime.
 - Slack behavior is unchanged for healthy sessions.

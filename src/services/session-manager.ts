@@ -301,6 +301,14 @@ export class SessionManager {
     });
   }
 
+  async clearSessionAuthBlock(sessionKey: string): Promise<SlackSessionRecord> {
+    return await this.#stateStore.patchSession(sessionKey, {
+      authBlockedAt: undefined,
+      authBlockReason: undefined,
+      authBlockedNoticePostedAt: undefined
+    });
+  }
+
   async switchSessionAuthProfileAndClearBlock(
     sessionKey: string,
     profileName: string,

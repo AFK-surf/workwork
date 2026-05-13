@@ -144,6 +144,60 @@ describe("SessionAuthProfileRuntime", () => {
     expect(runtimes.size).toBe(0);
     expect(sessions.get(session.key)?.authProfileName).toBe("empty");
   });
+
+  it("clears a stale auth block when the same bound profile becomes usable again", async () => {
+    const dataRoot = await fs.mkdtemp(path.join(os.tmpdir(), "session-auth-runtime-recovered-"));
+    tempDirs.push(dataRoot);
+    const config = loadConfig({
+      SLACK_APP_TOKEN: "xapp-test",
+      SLACK_BOT_TOKEN: "xoxb-test",
+      DATA_ROOT: dataRoot
+    } as NodeJS.ProcessEnv);
+    const session = createSession({
+      authProfileName: "bound",
+      authProfileBoundAt: "2026-05-09T00:00:00.000Z",
+      authBlockedAt: "2026-05-09T01:00:00.000Z",
+      authBlockReason: "primary_quota_exhausted",
+      authBlockedNoticePostedAt: "2026-05-09T01:00:05.000Z"
+    });
+    const sessions = createSessionManagerMock(session);
+    const runtimes = new Map<string, MockAgentRuntime>();
+    const runtime = new SessionAuthProfileRuntime({
+      config,
+      sessions: sessions as never,
+      authProfiles: authProfilesMock(profileStatus([
+        profile("bound", 10, 20),
+        profile("bigger", 0, 0)
+      ])) as never,
+      createProfileRuntime: ({ profile }) => {
+        const mockRuntime = new MockAgentRuntime(profile.name);
+        runtimes.set(profile.name, mockRuntime);
+        return mockRuntime;
+      }
+    });
+
+    await runtime.submitInput({
+      session,
+      input: [],
+      inputId: "input-1",
+      source: "slack_user"
+    });
+
+    expect(sessions.clearSessionAuthBlock).toHaveBeenCalledWith(session.key);
+    expect(sessions.get(session.key)).toMatchObject({
+      authProfileName: "bound",
+      authBlockedAt: undefined,
+      authBlockReason: undefined,
+      authBlockedNoticePostedAt: undefined
+    });
+    expect(runtimes.get("bound")?.submitInput).toHaveBeenCalledWith(expect.objectContaining({
+      session: expect.objectContaining({
+        authProfileName: "bound",
+        authBlockedAt: undefined
+      })
+    }));
+    expect(runtimes.has("bigger")).toBe(false);
+  });
 });
 
 class MockAgentRuntime extends EventEmitter implements AgentRuntime {
@@ -219,6 +273,19 @@ function createSessionManagerMock(initial: SlackSessionRecord) {
         authProfileName: profileName,
         authProfileBoundAt: "2026-05-09T00:00:01.000Z",
         updatedAt: "2026-05-09T00:00:01.000Z"
+      };
+      sessions.set(sessionKey, updated);
+      return updated;
+    }),
+    clearSessionAuthBlock: vi.fn(async (sessionKey: string) => {
+      const existing = sessions.get(sessionKey);
+      if (!existing) throw new Error(`Unknown session: ${sessionKey}`);
+      const updated = {
+        ...existing,
+        authBlockedAt: undefined,
+        authBlockReason: undefined,
+        authBlockedNoticePostedAt: undefined,
+        updatedAt: "2026-05-09T00:00:02.000Z"
       };
       sessions.set(sessionKey, updated);
       return updated;

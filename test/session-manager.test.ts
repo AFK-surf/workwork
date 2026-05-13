@@ -169,6 +169,22 @@ describe("SessionManager", () => {
       agentSessionId: undefined,
       activeTurnId: undefined
     });
+
+    await reloadedManager.markSessionAuthBlocked(session.key, {
+      reason: "primary_quota_exhausted",
+      blockedAt: "2026-05-09T03:00:00.000Z"
+    });
+    await reloadedManager.setSessionAuthBlockedNoticePostedAt(session.key, "2026-05-09T03:00:05.000Z");
+
+    const recovered = await (reloadedManager as any).clearSessionAuthBlock(session.key);
+
+    expect(recovered).toMatchObject({
+      authProfileName: "profile-b",
+      authProfileBoundAt: "2026-05-09T02:00:00.000Z",
+      authBlockedAt: undefined,
+      authBlockReason: undefined,
+      authBlockedNoticePostedAt: undefined
+    });
   });
 
   it("persists observed and delivered cursors plus inbound queue state", async () => {

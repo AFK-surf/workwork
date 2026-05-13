@@ -2,6 +2,7 @@ import {
   profileTitle,
   profileWeeklyQuotaLabel
 } from "./auth-profile-display.js";
+import { evaluateAuthProfile } from "../services/session-auth-profile-selector.js";
 
 type SessionRecord = Record<string, any>;
 
@@ -55,9 +56,10 @@ export function renderSessionMeta(
   const authProfile = session.authProfileName ? authProfileByName.get(String(session.authProfileName)) : null;
   const backgroundJobCount = Number(session.backgroundJobCount || 0);
   const failedJob = sessionFailedJobSummary(session);
+  const authBlockActive = sessionAuthBlockActive(session, authProfile);
   return [
     { key: "channel", label: resolveSessionChannelLabel(session, channelLabelById), tone: "info", title: stringOrUndefined(session.channelId || session.key) },
-    session.authBlockedAt ? { key: "auth-blocked", label: "账号待切换", tone: "danger", title: stringOrUndefined(session.authBlockReasonLabel || session.authBlockReason) } : null,
+    authBlockActive ? { key: "auth-blocked", label: "账号待切换", tone: "danger", title: stringOrUndefined(session.authBlockReasonLabel || session.authBlockReason) } : null,
     session.authProfileName ? {
       key: "auth-profile",
       label: authProfile ? profileWeeklyQuotaLabel(authProfile) : "账号已绑定",
@@ -71,8 +73,8 @@ export function renderSessionMeta(
   ].filter((item): item is SessionMetaPill => Boolean(item));
 }
 
-export function sessionQueueState(session: SessionRecord): SessionQueueState {
-  if (session.authBlockedAt) {
+export function sessionQueueState(session: SessionRecord, authProfile?: SessionRecord | null | undefined): SessionQueueState {
+  if (sessionAuthBlockActive(session, authProfile)) {
     return { label: "账号待切换", tone: "danger", rank: 70, detail: String(session.authBlockReasonLabel || session.authBlockReason || "账号不可用") };
   }
   if (Number(session.failedBackgroundJobCount || 0) > 0) {
@@ -120,6 +122,19 @@ export function sessionFailedJobSummary(session: SessionRecord): { readonly labe
     detail,
     title: title || detail
   };
+}
+
+export function sessionAuthBlockActive(session: SessionRecord, authProfile?: SessionRecord | null | undefined): boolean {
+  if (!session.authBlockedAt) return false;
+  if (!authProfile) return true;
+  if (session.authProfileName && authProfile.name && String(session.authProfileName) !== String(authProfile.name)) {
+    return true;
+  }
+  try {
+    return !evaluateAuthProfile(authProfile as never).usable;
+  } catch {
+    return true;
+  }
 }
 
 export function sessionActivityAt(session: SessionRecord): unknown {
