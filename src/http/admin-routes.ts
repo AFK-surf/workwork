@@ -61,6 +61,51 @@ export async function handleAdminRequest(
     return true;
   }
 
+  if (method === "GET" && url.pathname.startsWith("/admin/api/sessions/") && url.pathname.endsWith("/github-identity")) {
+    const sessionKey = decodeURIComponent(url.pathname.slice(
+      "/admin/api/sessions/".length,
+      -"/github-identity".length
+    ));
+    if (!sessionKey || sessionKey.includes("/")) {
+      return false;
+    }
+
+    const result = await options.adminService.getSessionGitHubIdentity(sessionKey);
+    respondJson(response, result.ok === false ? 404 : 200, result);
+    return true;
+  }
+
+  if (
+    method === "POST" &&
+    url.pathname.startsWith("/admin/api/sessions/") &&
+    url.pathname.endsWith("/github-oauth/device/start")
+  ) {
+    const sessionKey = decodeURIComponent(url.pathname.slice(
+      "/admin/api/sessions/".length,
+      -"/github-oauth/device/start".length
+    ));
+    if (!sessionKey || sessionKey.includes("/")) {
+      return false;
+    }
+
+    await runAdminOperation(response, () =>
+      options.adminService.startSessionGitHubDeviceAuthorization(sessionKey)
+    );
+    return true;
+  }
+
+  if (method === "GET" && url.pathname.startsWith("/admin/api/github-oauth/device/")) {
+    const deviceAuthorizationId = decodeURIComponent(url.pathname.slice("/admin/api/github-oauth/device/".length));
+    if (!deviceAuthorizationId || deviceAuthorizationId.includes("/")) {
+      return false;
+    }
+
+    await runAdminOperation(response, () =>
+      options.adminService.pollGitHubDeviceAuthorization(deviceAuthorizationId)
+    );
+    return true;
+  }
+
   if (method === "POST" && url.pathname.startsWith("/admin/api/sessions/") && url.pathname.endsWith("/auth-profile")) {
     const sessionKey = decodeURIComponent(url.pathname.slice(
       "/admin/api/sessions/".length,

@@ -363,6 +363,7 @@ function SessionActions({ session, profiles, currentProfile, isPermalink }: {
   return (
     <div className="side-action-stack">
       <AuthProfilePanel session={session} profiles={profiles} currentProfile={currentProfile} />
+      <GitHubIdentityPanel session={session} />
       <SessionResetButton session={session} />
       <div className="side-link-grid">
         {!isPermalink ? (
@@ -374,6 +375,156 @@ function SessionActions({ session, profiles, currentProfile, isPermalink }: {
           <a className="link-button" href={session.threadUrl} target="_blank" rel="noreferrer">打开 Slack Thread</a>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+function GitHubIdentityPanel({ session }: {
+  readonly session: SessionRecord;
+}): React.JSX.Element {
+  const sessionKey = String(session.key || "");
+  const [identity, setIdentity] = useState<Record<string, any> | null>(null);
+  const [device, setDevice] = useState<Record<string, any> | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const autoStartRef = useRef(false);
+  const shouldAutoStart = typeof window !== "undefined" && window.location.pathname.endsWith("/github/bind");
+  const binding = identity?.binding || {};
+  const defaultAccount = identity?.defaultAccount || {};
+
+  async function refreshIdentity(): Promise<Record<string, any> | null> {
+    if (!sessionKey) {
+      return null;
+    }
+    const payload = await requestJson(githubIdentityApiPath(sessionKey)) as Record<string, any>;
+    const nextIdentity = payload.identity as Record<string, any>;
+    setIdentity(nextIdentity);
+    return nextIdentity;
+  }
+
+  async function startDeviceAuthorization(): Promise<void> {
+    if (!sessionKey || busy) {
+      return;
+    }
+    setBusy(true);
+    setMessage(null);
+    try {
+      const payload = await requestJson(githubDeviceStartApiPath(sessionKey), {
+        method: "POST"
+      }) as Record<string, any>;
+      setDevice(payload.device as Record<string, any>);
+      setMessage("打开 GitHub 设备码页面，输入下面的代码完成绑定。");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    setIdentity(null);
+    setDevice(null);
+    setMessage(null);
+    autoStartRef.current = false;
+    void refreshIdentity()
+      .catch((error: unknown) => {
+        if (!cancelled) setMessage(error instanceof Error ? error.message : String(error));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionKey]);
+
+  useEffect(() => {
+    if (!shouldAutoStart || autoStartRef.current || !identity || binding.state !== "unbound") {
+      return;
+    }
+    autoStartRef.current = true;
+    void startDeviceAuthorization();
+  }, [shouldAutoStart, identity, binding.state]);
+
+  useEffect(() => {
+    if (!device?.id) {
+      return;
+    }
+    let cancelled = false;
+    let timeout: number | undefined;
+    async function poll(): Promise<void> {
+      try {
+        const payload = await requestJson(githubDevicePollApiPath(String(device.id))) as Record<string, any>;
+        const result = payload.result as Record<string, any>;
+        if (cancelled) return;
+        if (result.status === "completed") {
+          setDevice(null);
+          setMessage("GitHub 账号已绑定。");
+          await refreshIdentity();
+          return;
+        }
+        if (result.status === "expired") {
+          setMessage("设备码已过期，请重新发起绑定。");
+          setDevice(null);
+          return;
+        }
+        if (result.status === "failed") {
+          setMessage(String(result.error || "绑定失败"));
+          setDevice(null);
+          return;
+        }
+        timeout = window.setTimeout(
+          () => { void poll(); },
+          Math.max(1, Number(result.retryAfterSeconds || device.intervalSeconds || 5)) * 1000
+        );
+      } catch (error) {
+        if (!cancelled) setMessage(error instanceof Error ? error.message : String(error));
+      }
+    }
+    timeout = window.setTimeout(() => { void poll(); }, 800);
+    return () => {
+      cancelled = true;
+      if (timeout !== undefined) window.clearTimeout(timeout);
+    };
+  }, [device?.id]);
+
+  return (
+    <div className="github-identity-panel">
+      {identity ? (
+        <div className="meta-list">
+          {binding.state === "bound" ? (
+            <MetaLine label="PR 账号" value={String(binding.githubLogin || "--")} tone="good" />
+          ) : binding.state === "revoked" ? (
+            <MetaLine label="PR 账号" value="绑定失效" detail={String(binding.githubLogin || "")} tone="danger" />
+          ) : binding.state === "unbound" && defaultAccount.available ? (
+            <MetaLine label="PR 默认" value={String(defaultAccount.githubLogin || "--")} detail="发起人未绑定" tone="warn" />
+          ) : binding.state === "unbound" ? (
+            <MetaLine label="PR 账号" value="未绑定" detail="没有默认账号" tone="danger" />
+          ) : (
+            <MetaLine label="PR 账号" value="未记录发起人" tone="danger" />
+          )}
+        </div>
+      ) : (
+        <div className="summary-detail">GitHub 绑定状态加载中</div>
+      )}
+      {binding.state === "unbound" || binding.state === "revoked" ? (
+        <button
+          type="button"
+          className="link-button github-bind-button"
+          disabled={busy || !sessionKey}
+          onClick={() => { void startDeviceAuthorization(); }}
+        >
+          {busy ? "正在发起绑定" : "绑定发起人的 GitHub"}
+        </button>
+      ) : null}
+      {device ? (
+        <div className="device-code-panel">
+          <div className="device-code-label">GitHub 设备码</div>
+          <div className="code-block">{String(device.userCode || "")}</div>
+          <a className="link-button" href={String(device.verificationUriComplete || device.verificationUri || "https://github.com/login/device")} target="_blank" rel="noreferrer">
+            打开 GitHub 验证页
+          </a>
+        </div>
+      ) : null}
+      {message ? <div className="summary-detail">{message}</div> : null}
     </div>
   );
 }
@@ -1032,6 +1183,18 @@ async function requestJson(path: string, init?: RequestInit): Promise<unknown> {
 
 function sessionTimelineApiPath(sessionKey: string): string {
   return "/admin/api/sessions/" + encodeURIComponent(sessionKey) + "/timeline";
+}
+
+function githubIdentityApiPath(sessionKey: string): string {
+  return "/admin/api/sessions/" + encodeURIComponent(sessionKey) + "/github-identity";
+}
+
+function githubDeviceStartApiPath(sessionKey: string): string {
+  return "/admin/api/sessions/" + encodeURIComponent(sessionKey) + "/github-oauth/device/start";
+}
+
+function githubDevicePollApiPath(deviceAuthorizationId: string): string {
+  return "/admin/api/github-oauth/device/" + encodeURIComponent(deviceAuthorizationId);
 }
 
 function adminSessionPath(sessionKey: string): string {

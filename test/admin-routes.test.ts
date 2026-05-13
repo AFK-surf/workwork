@@ -226,6 +226,82 @@ describe("admin routes", () => {
     expect(sessionViewSource).toContain("/admin/api/sessions/\" + encodeURIComponent(sessionKey) + \"/timeline");
   });
 
+  it("serves the GitHub bind session deep link and routes device OAuth api calls", async () => {
+    const calls: string[] = [];
+    const baseUrl = await startAdminServer({
+      SLACK_APP_TOKEN: "xapp-test",
+      SLACK_BOT_TOKEN: "xoxb-test"
+    } as NodeJS.ProcessEnv, {
+      getSessionGitHubIdentity: async (sessionKey: string) => {
+        calls.push(`identity:${sessionKey}`);
+        return {
+          ok: true,
+          sessionKey,
+          identity: {
+            binding: { state: "unbound" },
+            defaultAccount: { available: true, githubLogin: "default-bot" }
+          }
+        };
+      },
+      startSessionGitHubDeviceAuthorization: async (sessionKey: string) => {
+        calls.push(`start:${sessionKey}`);
+        return {
+          ok: true,
+          device: {
+            id: "device-1",
+            userCode: "ABCD-EFGH"
+          }
+        };
+      },
+      pollGitHubDeviceAuthorization: async (deviceAuthorizationId: string) => {
+        calls.push(`poll:${deviceAuthorizationId}`);
+        return {
+          ok: true,
+          result: { status: "pending" }
+        };
+      }
+    });
+    const sessionKey = "C123:111.222";
+
+    const page = await fetch(`${baseUrl}/admin/sessions/${encodeURIComponent(sessionKey)}/github/bind`);
+    expect(page.status).toBe(200);
+    await expect(page.text()).resolves.toContain('id="admin-root"');
+
+    const identity = await fetch(`${baseUrl}/admin/api/sessions/${encodeURIComponent(sessionKey)}/github-identity`);
+    expect(identity.status).toBe(200);
+    await expect(identity.json()).resolves.toMatchObject({
+      ok: true,
+      identity: {
+        binding: { state: "unbound" },
+        defaultAccount: { githubLogin: "default-bot" }
+      }
+    });
+
+    const started = await fetch(`${baseUrl}/admin/api/sessions/${encodeURIComponent(sessionKey)}/github-oauth/device/start`, {
+      method: "POST"
+    });
+    expect(started.status).toBe(200);
+    await expect(started.json()).resolves.toMatchObject({
+      ok: true,
+      device: {
+        id: "device-1",
+        userCode: "ABCD-EFGH"
+      }
+    });
+
+    const polled = await fetch(`${baseUrl}/admin/api/github-oauth/device/device-1`);
+    expect(polled.status).toBe(200);
+    await expect(polled.json()).resolves.toMatchObject({
+      ok: true,
+      result: { status: "pending" }
+    });
+    expect(calls).toEqual([
+      "identity:C123:111.222",
+      "start:C123:111.222",
+      "poll:device-1"
+    ]);
+  });
+
   it("persists session ui state in the admin page script", async () => {
     const baseUrl = await startAdminServer({
       SLACK_APP_TOKEN: "xapp-test",

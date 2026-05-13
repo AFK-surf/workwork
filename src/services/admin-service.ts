@@ -19,6 +19,7 @@ import type {
 import type { SessionManager } from "./session-manager.js";
 import type { AuthProfileService } from "./auth-profile-service.js";
 import type { GitHubAuthorMappingService } from "./github-author-mapping-service.js";
+import type { GitHubPrIdentityService } from "./github-pr-identity-service.js";
 import type { RuntimeControl } from "./runtime-control.js";
 import {
   authProfileReasonLabel,
@@ -70,6 +71,10 @@ interface RuntimeStatus {
   readonly githubAuthorMappings: {
     readonly count: number;
     readonly mappings: readonly unknown[];
+  };
+  readonly githubPrIdentities: {
+    readonly count: number;
+    readonly bindings: readonly unknown[];
   };
 }
 
@@ -144,6 +149,7 @@ export class AdminService {
       readonly runtime: RuntimeControl;
       readonly authProfiles: AuthProfileService;
       readonly githubAuthorMappings: GitHubAuthorMappingService;
+      readonly githubPrIdentity?: GitHubPrIdentityService | undefined;
       readonly startedAt: Date;
       readonly deployment?: ReleaseDeploymentService | undefined;
       readonly slackConversations?: SlackConversationLookup | undefined;
@@ -185,6 +191,7 @@ export class AdminService {
       },
       authProfiles: runtime.authProfiles,
       githubAuthorMappings: runtime.githubAuthorMappings,
+      githubPrIdentities: runtime.githubPrIdentities,
       account: runtime.account,
       rateLimits: runtime.rateLimits,
       deployment: runtime.deployment,
@@ -211,6 +218,7 @@ export class AdminService {
       service: this.#serviceInfo(),
       authProfiles: runtime.authProfiles,
       githubAuthorMappings: runtime.githubAuthorMappings,
+      githubPrIdentities: runtime.githubPrIdentities,
       account: runtime.account,
       rateLimits: runtime.rateLimits,
       deployment: runtime.deployment,
@@ -641,8 +649,81 @@ export class AdminService {
     );
   }
 
+  async getSessionGitHubIdentity(sessionKey: string): Promise<Record<string, unknown>> {
+    const githubPrIdentity = this.options.githubPrIdentity;
+    if (!githubPrIdentity) {
+      return {
+        ok: false,
+        error: "github_pr_identity_not_configured"
+      };
+    }
+    await githubPrIdentity.load();
+    const session = this.options.sessions.getSessionByKey(sessionKey);
+    if (!session) {
+      return {
+        ok: false,
+        error: "session_not_found"
+      };
+    }
+
+    return {
+      ok: true,
+      sessionKey,
+      initiatorUserId: session.initiatorUserId ?? null,
+      identity: githubPrIdentity.getSessionIdentityStatus(session)
+    };
+  }
+
+  async startSessionGitHubDeviceAuthorization(sessionKey: string): Promise<Record<string, unknown>> {
+    const githubPrIdentity = this.options.githubPrIdentity;
+    if (!githubPrIdentity) {
+      return {
+        ok: false,
+        error: "github_pr_identity_not_configured"
+      };
+    }
+    await githubPrIdentity.load();
+    const session = this.options.sessions.getSessionByKey(sessionKey);
+    if (!session) {
+      return {
+        ok: false,
+        error: "session_not_found"
+      };
+    }
+    if (!session.initiatorUserId) {
+      return {
+        ok: false,
+        error: "missing_session_initiator"
+      };
+    }
+
+    const device = await githubPrIdentity.startDeviceAuthorization({
+      slackUserId: session.initiatorUserId
+    });
+    return {
+      ok: true,
+      device
+    };
+  }
+
+  async pollGitHubDeviceAuthorization(deviceAuthorizationId: string): Promise<Record<string, unknown>> {
+    const githubPrIdentity = this.options.githubPrIdentity;
+    if (!githubPrIdentity) {
+      return {
+        ok: false,
+        error: "github_pr_identity_not_configured"
+      };
+    }
+    const result = await githubPrIdentity.pollDeviceAuthorization(deviceAuthorizationId);
+    return {
+      ok: true,
+      result
+    };
+  }
+
   async #readRuntimeStatus(): Promise<RuntimeStatus> {
     await this.options.githubAuthorMappings.load();
+    await this.options.githubPrIdentity?.load();
     const [account, rateLimits, deployment] = await Promise.all([
       this.#readAccountSummary(),
       this.#readAccountRateLimits(),
@@ -650,6 +731,7 @@ export class AdminService {
     ]);
     const authProfiles = await this.options.authProfiles.listProfilesStatus();
     const mappings = this.options.githubAuthorMappings.listMappings();
+    const prBindings = this.options.githubPrIdentity?.listBindings() ?? [];
     return {
       account,
       rateLimits,
@@ -658,6 +740,19 @@ export class AdminService {
       githubAuthorMappings: {
         count: mappings.length,
         mappings
+      },
+      githubPrIdentities: {
+        count: prBindings.length,
+        bindings: prBindings.map((binding) => ({
+          slackUserId: binding.slackUserId,
+          githubLogin: binding.githubLogin,
+          githubUserId: binding.githubUserId,
+          scopes: binding.scopes,
+          createdAt: binding.createdAt,
+          updatedAt: binding.updatedAt,
+          lastValidatedAt: binding.lastValidatedAt ?? null,
+          revokedAt: binding.revokedAt ?? null
+        }))
       }
     };
   }
