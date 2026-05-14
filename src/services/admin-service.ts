@@ -368,6 +368,14 @@ export class AdminService {
       beforeSequence: options.beforeSequence
     });
     const agentEvents = visibleTimelineTraceEvents(tracePage.events);
+    const pageLimit = clampPositiveInteger(options.limit ?? 100, 1, 500);
+    const timelinePage = selectTimelinePageEvents({
+      syntheticEvents: options.beforeSequence ? [] : events,
+      agentEvents: agentEvents.map(agentTraceEventToTimelineEvent),
+      limit: pageLimit,
+      traceHasMore: tracePage.hasMore,
+      traceNextBeforeSequence: tracePage.nextBeforeSequence
+    });
 
     return {
       ok: true,
@@ -380,11 +388,11 @@ export class AdminService {
       }),
       trace: traceSummaryFromPersisted(this.#getAgentSessionTraceSummary(session.key), agentEvents),
       page: {
-        limit: clampPositiveInteger(options.limit ?? 100, 1, 500),
-        hasMore: tracePage.hasMore,
-        nextBeforeSequence: tracePage.nextBeforeSequence
+        limit: pageLimit,
+        hasMore: timelinePage.hasMore,
+        nextBeforeSequence: timelinePage.nextBeforeSequence
       },
-      events: [...(options.beforeSequence ? [] : events), ...agentEvents.map(agentTraceEventToTimelineEvent)].sort(compareTimelineEvents)
+      events: timelinePage.events
     };
   }
 
@@ -2026,6 +2034,46 @@ function compareTimelineEvents(left: Record<string, JsonLike>, right: Record<str
   const leftSequence = typeof left.sequence === "number" ? left.sequence : 0;
   const rightSequence = typeof right.sequence === "number" ? right.sequence : 0;
   return leftSequence - rightSequence;
+}
+
+function selectTimelinePageEvents(options: {
+  readonly syntheticEvents: readonly Record<string, JsonLike>[];
+  readonly agentEvents: readonly Record<string, JsonLike>[];
+  readonly limit: number;
+  readonly traceHasMore: boolean;
+  readonly traceNextBeforeSequence: number | null;
+}): {
+  readonly events: readonly Record<string, JsonLike>[];
+  readonly hasMore: boolean;
+  readonly nextBeforeSequence: number | null;
+} {
+  const newest = [...options.syntheticEvents, ...options.agentEvents]
+    .sort(compareTimelineEventsNewestFirst)
+    .slice(0, options.limit);
+  const returnedTraceSequences = newest
+    .map((event) => typeof event.sequence === "number" ? event.sequence : null)
+    .filter((sequence): sequence is number => typeof sequence === "number");
+  const nextBeforeSequence = returnedTraceSequences.length
+    ? Math.min(...returnedTraceSequences)
+    : options.traceNextBeforeSequence;
+  return {
+    events: newest.slice().sort(compareTimelineEvents),
+    hasMore: Boolean(nextBeforeSequence && (options.traceHasMore || options.agentEvents.length > returnedTraceSequences.length)),
+    nextBeforeSequence
+  };
+}
+
+function compareTimelineEventsNewestFirst(left: Record<string, JsonLike>, right: Record<string, JsonLike>): number {
+  const atComparison = timestampMs(right.at) - timestampMs(left.at);
+  if (atComparison !== 0) {
+    return atComparison;
+  }
+  const leftSequence = typeof left.sequence === "number" ? left.sequence : 0;
+  const rightSequence = typeof right.sequence === "number" ? right.sequence : 0;
+  if (rightSequence !== leftSequence) {
+    return rightSequence - leftSequence;
+  }
+  return String(right.id ?? "").localeCompare(String(left.id ?? ""));
 }
 
 function summarizeAgentTrace(

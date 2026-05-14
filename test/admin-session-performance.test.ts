@@ -151,7 +151,7 @@ describe("admin session performance contract", () => {
         sessionKey: "C123:111.222",
         source: "agent_runtime",
         type: "agent_assistant_message",
-        at: new Date(Date.UTC(2026, 2, 19, 0, 0, index)).toISOString(),
+        at: new Date(Date.UTC(2030, 2, 19, 0, 0, index)).toISOString(),
         sequence: index,
         title: `event ${index}`,
         summary: `summary ${index}`,
@@ -190,6 +190,8 @@ describe("admin session performance contract", () => {
     const firstTraceSequences = (first.events as Array<Record<string, unknown>>)
       .map((event) => event.sequence)
       .filter((sequence): sequence is number => typeof sequence === "number");
+    expect(first.events).toHaveLength(25);
+    expect((first.events as Array<Record<string, unknown>>).map((event) => event.type)).not.toContain("session_created");
     expect(firstTraceSequences.slice(0, 3)).toEqual([96, 97, 98]);
     expect(firstTraceSequences.at(-1)).toBe(120);
     expect(first.page).toMatchObject({
