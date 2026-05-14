@@ -224,6 +224,25 @@ export interface PersistedAgentTurnUsage {
   readonly updatedAt: string;
 }
 
+export interface PersistedAgentSessionUsageSummary {
+  readonly sessionKey: string;
+  readonly channelId: string;
+  readonly rootThreadTs: string;
+  readonly turnCount: number;
+  readonly exactTurns: number;
+  readonly estimatedTurns: number;
+  readonly missingTurns: number;
+  readonly inputTokens: number;
+  readonly cachedInputTokens: number;
+  readonly outputTokens: number;
+  readonly reasoningTokens: number;
+  readonly totalTokens: number;
+  readonly updatedAt: string;
+  readonly lastTurnAt?: string | undefined;
+  readonly model?: string | undefined;
+  readonly effort?: string | undefined;
+}
+
 export interface PersistedAgentTraceEvent {
   readonly id: string;
   readonly sessionKey: string;
@@ -243,6 +262,15 @@ export interface PersistedAgentTraceEvent {
   readonly detailOriginalChars?: number | undefined;
   readonly metadata?: JsonLike | undefined;
   readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface PersistedAgentSessionTraceSummary {
+  readonly sessionKey: string;
+  readonly eventCount: number;
+  readonly modelRequestCount: number;
+  readonly categories: Record<string, number>;
+  readonly sources: Record<string, number>;
   readonly updatedAt: string;
 }
 

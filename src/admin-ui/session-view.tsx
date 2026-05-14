@@ -41,10 +41,16 @@ type TimelinePayload = {
   readonly events?: TimelineEvent[];
   readonly trace?: Record<string, any>;
   readonly session?: SessionRecord;
+  readonly page?: {
+    readonly limit?: number;
+    readonly hasMore?: boolean;
+    readonly nextBeforeSequence?: number | null;
+  };
 } | TimelineEvent[];
 
 const sessionFilters = ["ongoing", "all", "active", "inbound", "jobs", "issues", "usage"];
 const AUTO_AUTH_PROFILE_VALUE = "__auto_auth_profile__";
+const TIMELINE_PAGE_SIZE = 80;
 
 export function AdminSessionsView(): React.JSX.Element {
   const githubBindSessionKey = readGitHubBindSessionKey();
@@ -105,16 +111,16 @@ export function AdminSessionsView(): React.JSX.Element {
 
   return (
     <div className="session-master-detail">
-      <section className="panel">
+      <section className="panel session-index-panel">
         <div className="panel-head">
-          <div className="panel-title">会话索引</div>
+          <div className="panel-title">Agent 会话</div>
           <span className="summary-detail">
-            待处理：<span id="session-open-count">{state.openInboundCount || 0}</span>
-            （人：<span id="session-human-count">{state.openHumanInboundCount || 0}</span> 系统：
-            <span id="session-system-count">{state.openSystemInboundCount || 0}</span>）
+            {orderedSessions.length} / {sessions.length} · 待处理 <span id="session-open-count">{state.openInboundCount || 0}</span>
+            （人 <span id="session-human-count">{state.openHumanInboundCount || 0}</span> · 系统 <span id="session-system-count">{state.openSystemInboundCount || 0}</span>）
           </span>
         </div>
-        <div className="toolbar">
+        <div className="toolbar session-filter-bar">
+          <span className="session-filter-label">视图</span>
           <select
             id="session-filter"
             value={mode}
@@ -149,7 +155,7 @@ export function AdminSessionsView(): React.JSX.Element {
 
       <section className="panel session-detail-panel">
         <div className="panel-head">
-          <div className="panel-title">会话详情</div>
+          <div className="panel-title">Agent 工作台</div>
         </div>
         <div id="session-detail-panel" className="panel-body">
           {selectedSession ? (
@@ -199,7 +205,7 @@ function SessionPermalinkView({ sessionKey }: { readonly sessionKey: string }): 
   useEffect(() => {
     let cancelled = false;
     setError(null);
-    void requestJson(sessionTimelineApiPath(sessionKey))
+    void requestJson(sessionTimelineApiPath(sessionKey, { limit: TIMELINE_PAGE_SIZE }))
       .then((nextPayload) => {
         if (cancelled) return;
         const payload = nextPayload as TimelinePayload;
@@ -295,27 +301,28 @@ function SessionDetail({ session, isPermalink = false }: {
   const hasMessagesOrJobs = openInbound > 0 || totalJobs > 0;
   return (
     <>
-      <div className="selected-session-head session-detail-toolbar">
-        <div className="session-detail-main">
-          <div className="session-detail-title-row">
-            <div className="session-detail-title" title={primary}>{primary}</div>
-            {shouldShowSessionState(state) ? <Badge label={state.label} tone={state.tone} title={state.detail} /> : null}
-            <span className="session-time" title={fmtDateTime(activityAt)}>{fmtRelativeTime(activityAt)}</span>
-          </div>
-          <div className="session-detail-subtitle" title={first}>{first}</div>
-        </div>
-      </div>
+      <AgentSessionHero
+        title={primary}
+        request={first}
+        state={state}
+        channelLabel={channelLabel}
+        activityAt={activityAt}
+        usage={usage}
+        openInbound={openInbound}
+        runningJobs={runningJobs}
+        totalJobs={totalJobs}
+      />
       <div className="session-body">
         <div className="session-inspector">
           <div className="mini-panel trace-panel session-timeline-panel">
-            <div className="mini-title">Agent 活动时间线</div>
+            <div className="mini-title">工作时间线</div>
             <div className="mini-body">
               <SessionTimeline session={session} />
             </div>
           </div>
           <div className="session-side-column">
             <div className="mini-panel">
-              <div className="mini-title">操作</div>
+              <div className="mini-title">接管 / 链接</div>
               <div className="mini-body">
                 <SessionActions
                   session={session}
@@ -335,14 +342,14 @@ function SessionDetail({ session, isPermalink = false }: {
               runningJobs={runningJobs}
             />
             <div className="mini-panel">
-              <div className="mini-title">Token 消耗</div>
+              <div className="mini-title">用量</div>
               <div className="mini-body">
                 <SessionUsagePanel sessionKey={String(session.key || "")} usage={usage} />
               </div>
             </div>
             {hasMessagesOrJobs ? (
               <div className="mini-panel">
-                <div className="mini-title">消息 / 任务</div>
+                <div className="mini-title">等待输入 / 后台任务</div>
                 <div className="mini-body">
                   <InboundTable items={session.openInbound || []} />
                   <JobsTable session={session} jobs={session.backgroundJobs || []} />
@@ -350,13 +357,13 @@ function SessionDetail({ session, isPermalink = false }: {
               </div>
             ) : null}
             <div className="mini-panel">
-              <div className="mini-title">活动构成</div>
+              <div className="mini-title">时间线统计</div>
               <div className="mini-body">
                 <SessionTraceStats sessionKey={String(session.key || "")} />
               </div>
             </div>
             <div className="mini-panel">
-              <div className="mini-title">调试信息</div>
+              <div className="mini-title">技术上下文</div>
               <div className="mini-body">
                 <SessionDebugPanel
                   session={session}
@@ -370,6 +377,55 @@ function SessionDetail({ session, isPermalink = false }: {
         </div>
       </div>
     </>
+  );
+}
+
+function AgentSessionHero({ title, request, state, channelLabel, activityAt, usage, openInbound, runningJobs, totalJobs }: {
+  readonly title: string;
+  readonly request: string;
+  readonly state: SessionQueueState;
+  readonly channelLabel: string;
+  readonly activityAt: unknown;
+  readonly usage: Record<string, any>;
+  readonly openInbound: number;
+  readonly runningJobs: number;
+  readonly totalJobs: number;
+}): React.JSX.Element {
+  const tokenCount = Number(usage?.totalTokens || 0);
+  const visibleState = shouldShowSessionState(state)
+    ? { label: state.label, tone: state.tone, title: state.detail }
+    : { label: "空闲", tone: "", title: "当前没有待处理输入或运行任务" };
+  const stats = [
+    { label: "状态", value: visibleState.label, tone: visibleState.tone, title: visibleState.title },
+    { label: "频道", value: channelLabel, title: channelLabel },
+    { label: "最近", value: fmtRelativeTime(activityAt), detail: fmtDateTime(activityAt), title: fmtDateTime(activityAt) },
+    tokenCount > 0 ? { label: "Token", value: fmtTokens(tokenCount), detail: Number(usage?.turnCount || 0) + " 回合" } : null,
+    runningJobs > 0 ? { label: "任务", value: runningJobs + " 运行", detail: totalJobs + " 个总任务", tone: "good" } : (
+      totalJobs > 0 ? { label: "任务", value: String(totalJobs), detail: "无运行任务" } : null
+    ),
+    openInbound > 0 ? { label: "待处理", value: openInbound + " 条", tone: "warn" } : null
+  ].filter((item): item is { label: string; value: string; detail?: string; tone?: string; title?: string } => Boolean(item));
+
+  return (
+    <div className={"agent-session-hero " + classSafeValue(visibleState.tone, "idle")}>
+      <div className="agent-session-copy">
+        <div className="agent-session-kicker">
+          <span>Agent Session</span>
+          <Badge label={visibleState.label} tone={visibleState.tone} title={visibleState.title} />
+        </div>
+        <h1 className="agent-session-title" title={title}>{title}</h1>
+        <div className="agent-session-request" title={request}>{request}</div>
+      </div>
+      <div className="agent-session-stat-grid">
+        {stats.map((item) => (
+          <div key={item.label} className={"agent-session-stat " + classSafeValue(item.tone, "")} title={item.title || item.detail || item.value}>
+            <span>{item.label}</span>
+            <strong>{item.value}</strong>
+            {item.detail ? <em>{item.detail}</em> : null}
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -421,9 +477,9 @@ function SessionActions({ session, profiles, currentProfile, isPermalink }: {
       <SessionResetButton session={session} />
       <div className="side-link-grid">
         {!isPermalink ? (
-          <a className="link-button" href={adminSessionPath(String(session.key || ""))}>打开 Session 页面</a>
+          <a className="link-button" href={adminSessionPath(String(session.key || ""))}>打开独立视图</a>
         ) : (
-          <a className="link-button" href="/admin">返回会话索引</a>
+          <a className="link-button" href="/admin">返回会话列表</a>
         )}
         <button
           type="button"
@@ -431,7 +487,7 @@ function SessionActions({ session, profiles, currentProfile, isPermalink }: {
           disabled={threadBusy || !sessionKey}
           onClick={() => { void openSlackThread(); }}
         >
-          {threadBusy ? "正在打开 Slack Thread" : "打开 Slack Thread"}
+          {threadBusy ? "正在打开 Slack 线程" : "打开 Slack 线程"}
         </button>
       </div>
       {threadError ? <div className="summary-detail">{threadError}</div> : null}
@@ -657,7 +713,7 @@ function SessionResetButton({ session }: {
       await requestJson("/admin/api/sessions/" + encodeURIComponent(sessionKey) + "/reset", {
         method: "POST"
       });
-      const timelinePayload = await requestJson(sessionTimelineApiPath(sessionKey));
+      const timelinePayload = await requestJson(sessionTimelineApiPath(sessionKey, { limit: TIMELINE_PAGE_SIZE }));
       publishTimelinePayload(sessionKey, timelinePayload as TimelinePayload);
       setMessage("已重置，正在重新唤起 bot");
     } catch (error) {
@@ -720,7 +776,7 @@ function SessionRuntimePanel({ session, state, openInbound, openHumanInbound, op
   if (!rows.length) return <></>;
   return (
     <div className="mini-panel">
-      <div className="mini-title">运行状态</div>
+      <div className="mini-title">当前状态</div>
       <div className="mini-body">
         <div className="meta-list">
           {rows.map((row) => (
@@ -797,11 +853,12 @@ function SessionTimeline({ session }: {
   );
   const payload = timelineSnapshot.payload as TimelinePayload | null;
   const [error, setError] = useState<string | null>(null);
+  const [olderBusy, setOlderBusy] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     setError(null);
-    void requestJson(sessionTimelineApiPath(sessionKey))
+    void requestJson(sessionTimelineApiPath(sessionKey, { limit: TIMELINE_PAGE_SIZE }))
       .then((nextPayload) => {
         if (cancelled) return;
         publishTimelinePayload(sessionKey, nextPayload as TimelinePayload);
@@ -814,9 +871,46 @@ function SessionTimeline({ session }: {
     };
   }, [sessionKey]);
 
+  async function loadOlder(): Promise<void> {
+    if (!payload || Array.isArray(payload) || olderBusy || !payload.page?.hasMore || !payload.page.nextBeforeSequence) {
+      return;
+    }
+    setOlderBusy(true);
+    setError(null);
+    try {
+      const olderPayload = await requestJson(sessionTimelineApiPath(sessionKey, {
+        limit: TIMELINE_PAGE_SIZE,
+        beforeSequence: payload.page.nextBeforeSequence
+      })) as TimelinePayload;
+      publishTimelinePayload(sessionKey, mergeTimelinePayloads(
+        getTimelineSnapshot(sessionKey).payload as TimelinePayload | null,
+        olderPayload
+      ));
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : String(nextError));
+    } finally {
+      setOlderBusy(false);
+    }
+  }
+
   if (error) return <div className="summary-detail">{error}</div>;
   if (!payload) return <Timeline events={[{ at: session.createdAt, type: "session", title: "已创建" }]} />;
-  return <TimelinePayloadView payload={payload} />;
+  const page = !Array.isArray(payload) ? payload.page : null;
+  return (
+    <div className="timeline-shell">
+      {page?.hasMore ? (
+        <button
+          type="button"
+          className="timeline-load-older"
+          disabled={olderBusy}
+          onClick={() => { void loadOlder(); }}
+        >
+          {olderBusy ? "正在加载" : "加载更早活动"}
+        </button>
+      ) : null}
+      <TimelinePayloadView payload={payload} />
+    </div>
+  );
 }
 
 function AuthProfilePanel({ session, profiles, currentProfile: providedCurrentProfile }: {
@@ -874,7 +968,7 @@ function AuthProfilePanel({ session, profiles, currentProfile: providedCurrentPr
         headers: { "content-type": "application/json" },
         body: JSON.stringify(autoSelected ? { mode: "auto" } : { name: selected })
       });
-      const timelinePayload = await requestJson(sessionTimelineApiPath(String(session.key || "")));
+      const timelinePayload = await requestJson(sessionTimelineApiPath(String(session.key || ""), { limit: TIMELINE_PAGE_SIZE }));
       publishTimelinePayload(String(session.key || ""), timelinePayload as TimelinePayload);
       setMessage(autoSelected ? "已自动分配，正在恢复待处理消息" : "已切换，正在恢复待处理消息");
     } catch (error) {
@@ -898,7 +992,7 @@ function AuthProfilePanel({ session, profiles, currentProfile: providedCurrentPr
       <dialog ref={dialogRef} className="auth-profile-dialog">
         <div className="modal-content">
           <div className="modal-heading">
-            <div className="panel-title">账号操作</div>
+            <div className="panel-title">账号接管</div>
             <div className="summary-detail" title={currentProfile ? profileTitle(currentProfile) : currentLabel}>{currentLabel}</div>
           </div>
           {currentProfile ? (
@@ -914,7 +1008,7 @@ function AuthProfilePanel({ session, profiles, currentProfile: providedCurrentPr
             </div>
           ) : null}
           <div className="auth-profile-switcher">
-            <span className="auth-profile-label">切换到</span>
+            <span className="auth-profile-label">账号</span>
             <select
               value={selected}
               title={currentProfile ? profileTitle(currentProfile) : currentLabel}
@@ -955,6 +1049,39 @@ function TimelinePayloadView({ payload }: { readonly payload: TimelinePayload })
   const events = (Array.isArray(payload) ? payload : (payload.events || [])).filter(isTimelineEventVisible);
   if (!events.length) return <div className="summary-detail">暂无时间线事件</div>;
   return <Timeline events={events} />;
+}
+
+function mergeTimelinePayloads(current: TimelinePayload | null, older: TimelinePayload): TimelinePayload {
+  if (Array.isArray(current) || Array.isArray(older)) {
+    return mergeTimelineEvents(Array.isArray(older) ? older : older.events || [], Array.isArray(current) ? current : current?.events || []);
+  }
+  const olderEvents = older.events || [];
+  const currentEvents = current?.events || [];
+  return {
+    ...(current || {}),
+    ...older,
+    session: current?.session || older.session,
+    trace: older.trace || current?.trace,
+    events: mergeTimelineEvents(olderEvents, currentEvents)
+  };
+}
+
+function mergeTimelineEvents(left: readonly TimelineEvent[], right: readonly TimelineEvent[]): TimelineEvent[] {
+  const seen = new Set<string>();
+  const merged: TimelineEvent[] = [];
+  for (const event of [...left, ...right]) {
+    const key = timelineEventIdentity(event);
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    merged.push(event);
+  }
+  return merged.sort((first, second) =>
+    timestampMs(first.at) - timestampMs(second.at) ||
+    Number(first.sequence || 0) - Number(second.sequence || 0) ||
+    String(first.id || "").localeCompare(String(second.id || ""))
+  );
 }
 
 function TraceSummary({ trace }: { readonly trace: Record<string, any> }): React.JSX.Element {
@@ -1194,7 +1321,7 @@ function JobsTable({ session, jobs }: {
           createdAt: new Date().toISOString()
         });
       }
-      const timelinePayload = await requestJson(sessionTimelineApiPath(sessionKey));
+      const timelinePayload = await requestJson(sessionTimelineApiPath(sessionKey, { limit: TIMELINE_PAGE_SIZE }));
       publishTimelinePayload(sessionKey, timelinePayload as TimelinePayload);
       setMessage("已取消 job");
     } catch (error) {
@@ -1321,8 +1448,19 @@ async function requestJson(path: string, init?: RequestInit): Promise<unknown> {
   return payload;
 }
 
-function sessionTimelineApiPath(sessionKey: string): string {
-  return "/admin/api/sessions/" + encodeURIComponent(sessionKey) + "/timeline";
+function sessionTimelineApiPath(sessionKey: string, options: {
+  readonly limit?: number | undefined;
+  readonly beforeSequence?: number | undefined;
+} = {}): string {
+  const params = new URLSearchParams();
+  if (options.limit) {
+    params.set("limit", String(options.limit));
+  }
+  if (options.beforeSequence) {
+    params.set("before_sequence", String(options.beforeSequence));
+  }
+  const query = params.toString();
+  return "/admin/api/sessions/" + encodeURIComponent(sessionKey) + "/timeline" + (query ? "?" + query : "");
 }
 
 function sessionJobCancelApiPath(sessionKey: string, jobId: string): string {
@@ -1447,9 +1585,13 @@ function sourceLabel(value: unknown): string {
 }
 
 function timelineEventKey(event: TimelineEvent, index: number): string {
-  return [event.id, event.at, event.type, event.callId, event.turnId, event.toolName, event.title, event.summary]
+  return timelineEventIdentity(event) || "event-" + index;
+}
+
+function timelineEventIdentity(event: TimelineEvent): string {
+  return [event.id, event.sequence, event.at, event.type, event.callId, event.turnId, event.toolName, event.title, event.summary]
     .filter(Boolean)
-    .join("\u001f") || "event-" + index;
+    .join("\u001f");
 }
 
 function timestampMs(value: unknown): number {

@@ -64,7 +64,10 @@ export async function handleAdminRequest(
       return false;
     }
 
-    respondJson(response, 200, await options.adminService.getSessionTimeline(sessionKey));
+    respondJson(response, 200, await options.adminService.getSessionTimeline(sessionKey, {
+      limit: readPositiveNumber(url.searchParams.get("limit")),
+      beforeSequence: readPositiveNumber(url.searchParams.get("before_sequence"))
+    }));
     return true;
   }
 

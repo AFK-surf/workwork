@@ -5,6 +5,8 @@ import type {
   PersistedAdminAuditEvent,
   PersistedAdminEvent,
   PersistedAdminOperation,
+  PersistedAgentSessionTraceSummary,
+  PersistedAgentSessionUsageSummary,
   PersistedAgentTraceEvent,
   JsonLike,
   PersistedBackgroundJob,
@@ -19,7 +21,7 @@ import type {
 import { ensureDir } from "../utils/fs.js";
 
 export const STATE_DATABASE_FILENAME = "broker.sqlite";
-export const CURRENT_STATE_SCHEMA_VERSION = 13;
+export const CURRENT_STATE_SCHEMA_VERSION = 14;
 export const STATE_STORE_BUSY_TIMEOUT_MS = 5_000;
 const ADMIN_EVENT_RETENTION_LIMIT = 20_000;
 
@@ -313,8 +315,54 @@ const STATE_MIGRATIONS: readonly StateMigration[] = [
     up(database) {
       repairSessionInitiatorSchema(database);
     }
+  },
+  {
+    version: 14,
+    name: "agent_session_derived_summaries",
+    up(database) {
+      createAgentSessionDerivedSummarySchema(database);
+      rebuildAllAgentSessionUsageSummaries(database);
+      rebuildAllAgentSessionTraceSummaries(database);
+    }
   }
 ];
+
+function createAgentSessionDerivedSummarySchema(database: DatabaseSync): void {
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS agent_session_usage_summaries (
+      session_key TEXT PRIMARY KEY REFERENCES sessions(key) ON DELETE CASCADE,
+      channel_id TEXT NOT NULL,
+      root_thread_ts TEXT NOT NULL,
+      turn_count INTEGER NOT NULL,
+      exact_turns INTEGER NOT NULL,
+      estimated_turns INTEGER NOT NULL,
+      missing_turns INTEGER NOT NULL,
+      input_tokens INTEGER NOT NULL,
+      cached_input_tokens INTEGER NOT NULL,
+      output_tokens INTEGER NOT NULL,
+      reasoning_tokens INTEGER NOT NULL,
+      total_tokens INTEGER NOT NULL,
+      updated_at TEXT NOT NULL,
+      last_turn_at TEXT,
+      model TEXT,
+      effort TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_agent_session_usage_total ON agent_session_usage_summaries(total_tokens);
+    CREATE INDEX IF NOT EXISTS idx_agent_session_usage_last_turn ON agent_session_usage_summaries(last_turn_at);
+
+    CREATE TABLE IF NOT EXISTS agent_session_trace_summaries (
+      session_key TEXT PRIMARY KEY REFERENCES sessions(key) ON DELETE CASCADE,
+      event_count INTEGER NOT NULL,
+      model_request_count INTEGER NOT NULL,
+      categories TEXT NOT NULL,
+      sources TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_agent_session_trace_updated ON agent_session_trace_summaries(updated_at);
+  `);
+}
 
 function createAgentActivityBindingSchema(database: DatabaseSync): void {
   database.exec(`
@@ -1075,10 +1123,28 @@ export class StateStore {
       .map((row) => this.#rowToAgentTurnUsage(row as SqlRow));
   }
 
+  listAgentSessionUsageSummaries(): PersistedAgentSessionUsageSummary[] {
+    return this.#databaseRequired()
+      .prepare(`
+        SELECT * FROM agent_session_usage_summaries
+        ORDER BY total_tokens DESC, turn_count DESC, updated_at DESC
+      `)
+      .all()
+      .map((row) => this.#rowToAgentSessionUsageSummary(row as SqlRow));
+  }
+
+  getAgentSessionUsageSummary(sessionKey: string): PersistedAgentSessionUsageSummary | undefined {
+    const row = this.#databaseRequired()
+      .prepare("SELECT * FROM agent_session_usage_summaries WHERE session_key = ?")
+      .get(sessionKey) as SqlRow | undefined;
+    return row ? this.#rowToAgentSessionUsageSummary(row) : undefined;
+  }
+
   async upsertAgentTurnUsage(record: PersistedAgentTurnUsage): Promise<void> {
     const normalized = this.#normalizeAgentTurnUsage(record);
     this.#transaction(() => {
       this.#upsertAgentTurnUsage(normalized);
+      rebuildAgentSessionUsageSummary(this.#databaseRequired(), normalized.sessionKey);
       this.#appendAdminEvent({
         kind: "usage.update",
         scope: "session",
@@ -1102,10 +1168,56 @@ export class StateStore {
       .map((row) => this.#rowToAgentTraceEvent(row as SqlRow));
   }
 
+  listAgentTraceEventsPage(sessionKey: string, options?: {
+    readonly limit?: number | undefined;
+    readonly beforeSequence?: number | undefined;
+  }): {
+    readonly events: PersistedAgentTraceEvent[];
+    readonly hasMore: boolean;
+    readonly nextBeforeSequence: number | null;
+  } {
+    const limit = clampPositiveInteger(options?.limit ?? 100, 1, 500);
+    const params: SqlValue[] = [sessionKey];
+    const where = ["session_key = ?"];
+    const beforeSequence = Number(options?.beforeSequence ?? 0);
+    if (Number.isFinite(beforeSequence) && beforeSequence > 0) {
+      where.push("sequence < ?");
+      params.push(Math.floor(beforeSequence));
+    }
+    params.push(limit + 1);
+    const rows = this.#databaseRequired()
+      .prepare(`
+        SELECT * FROM agent_trace_events
+        WHERE ${where.join(" AND ")}
+        ORDER BY sequence DESC, at DESC, id DESC
+        LIMIT ?
+      `)
+      .all(...params)
+      .map((row) => this.#rowToAgentTraceEvent(row as SqlRow));
+    const pageRows = rows.slice(0, limit);
+    const events = pageRows.slice().reverse();
+    const nextBeforeSequence = events.length
+      ? Math.min(...events.map((event) => event.sequence))
+      : null;
+    return {
+      events,
+      hasMore: rows.length > limit,
+      nextBeforeSequence
+    };
+  }
+
+  getAgentSessionTraceSummary(sessionKey: string): PersistedAgentSessionTraceSummary | undefined {
+    const row = this.#databaseRequired()
+      .prepare("SELECT * FROM agent_session_trace_summaries WHERE session_key = ?")
+      .get(sessionKey) as SqlRow | undefined;
+    return row ? this.#rowToAgentSessionTraceSummary(row) : undefined;
+  }
+
   async upsertAgentTraceEvent(record: PersistedAgentTraceEvent): Promise<void> {
     const normalized = this.#normalizeAgentTraceEvent(record);
     this.#transaction(() => {
       this.#upsertAgentTraceEvent(normalized);
+      rebuildAgentSessionTraceSummary(this.#databaseRequired(), normalized.sessionKey);
       this.#appendAdminEvent({
         kind: "trace.append",
         scope: "session",
@@ -1821,6 +1933,27 @@ export class StateStore {
     });
   }
 
+  #rowToAgentSessionUsageSummary(row: SqlRow): PersistedAgentSessionUsageSummary {
+    return {
+      sessionKey: stringColumn(row, "session_key"),
+      channelId: stringColumn(row, "channel_id"),
+      rootThreadTs: stringColumn(row, "root_thread_ts"),
+      turnCount: optionalNumberColumn(row, "turn_count") ?? 0,
+      exactTurns: optionalNumberColumn(row, "exact_turns") ?? 0,
+      estimatedTurns: optionalNumberColumn(row, "estimated_turns") ?? 0,
+      missingTurns: optionalNumberColumn(row, "missing_turns") ?? 0,
+      inputTokens: optionalNumberColumn(row, "input_tokens") ?? 0,
+      cachedInputTokens: optionalNumberColumn(row, "cached_input_tokens") ?? 0,
+      outputTokens: optionalNumberColumn(row, "output_tokens") ?? 0,
+      reasoningTokens: optionalNumberColumn(row, "reasoning_tokens") ?? 0,
+      totalTokens: optionalNumberColumn(row, "total_tokens") ?? 0,
+      updatedAt: stringColumn(row, "updated_at"),
+      lastTurnAt: optionalStringColumn(row, "last_turn_at"),
+      model: optionalStringColumn(row, "model"),
+      effort: optionalStringColumn(row, "effort")
+    };
+  }
+
   #rowToAgentTraceEvent(row: SqlRow): PersistedAgentTraceEvent {
     return this.#normalizeAgentTraceEvent({
       id: stringColumn(row, "id"),
@@ -1843,6 +1976,17 @@ export class StateStore {
       createdAt: stringColumn(row, "created_at"),
       updatedAt: stringColumn(row, "updated_at")
     });
+  }
+
+  #rowToAgentSessionTraceSummary(row: SqlRow): PersistedAgentSessionTraceSummary {
+    return {
+      sessionKey: stringColumn(row, "session_key"),
+      eventCount: optionalNumberColumn(row, "event_count") ?? 0,
+      modelRequestCount: optionalNumberColumn(row, "model_request_count") ?? 0,
+      categories: readJsonColumn<Record<string, number>>(row, "categories", {}),
+      sources: readJsonColumn<Record<string, number>>(row, "sources", {}),
+      updatedAt: stringColumn(row, "updated_at")
+    };
   }
 
   #normalizeSession(session: Partial<SlackSessionRecord>): SlackSessionRecord {
@@ -2099,6 +2243,234 @@ function ensureSchemaMigrationsTable(database: DatabaseSync): void {
   if (!columns.has("name")) {
     database.exec("ALTER TABLE schema_migrations ADD COLUMN name TEXT NOT NULL DEFAULT ''");
   }
+}
+
+function rebuildAllAgentSessionUsageSummaries(database: DatabaseSync): void {
+  if (!tableExists(database, "agent_turn_usage")) {
+    return;
+  }
+  const rows = database
+    .prepare("SELECT DISTINCT session_key FROM agent_turn_usage")
+    .all() as SqlRow[];
+  for (const row of rows) {
+    rebuildAgentSessionUsageSummary(database, stringColumn(row, "session_key"));
+  }
+}
+
+function rebuildAgentSessionUsageSummary(database: DatabaseSync, sessionKey: string): void {
+  if (!tableExists(database, "agent_turn_usage")) {
+    return;
+  }
+  const records = database
+    .prepare(`
+      SELECT * FROM agent_turn_usage
+      WHERE session_key = ?
+      ORDER BY COALESCE(completed_at, updated_at, created_at) ASC, updated_at ASC
+    `)
+    .all(sessionKey) as SqlRow[];
+  if (!records.length) {
+    database.prepare("DELETE FROM agent_session_usage_summaries WHERE session_key = ?").run(sessionKey);
+    return;
+  }
+
+  let turnCount = 0;
+  let exactTurns = 0;
+  let estimatedTurns = 0;
+  let missingTurns = 0;
+  let inputTokens = 0;
+  let cachedInputTokens = 0;
+  let outputTokens = 0;
+  let reasoningTokens = 0;
+  let totalTokens = 0;
+  let latest = records[0]!;
+  let latestMs = usageRowTimestampMs(latest);
+
+  for (const row of records) {
+    turnCount += 1;
+    const source = stringColumn(row, "source");
+    if (source === "exact") {
+      exactTurns += 1;
+    } else if (source === "estimated") {
+      estimatedTurns += 1;
+    } else {
+      missingTurns += 1;
+    }
+    inputTokens += optionalNumberColumn(row, "input_tokens") ?? 0;
+    cachedInputTokens += optionalNumberColumn(row, "cached_input_tokens") ?? 0;
+    outputTokens += optionalNumberColumn(row, "output_tokens") ?? 0;
+    reasoningTokens += optionalNumberColumn(row, "reasoning_tokens") ?? 0;
+    totalTokens += optionalNumberColumn(row, "total_tokens") ?? 0;
+    const timestampMs = usageRowTimestampMs(row);
+    if (timestampMs >= latestMs) {
+      latest = row;
+      latestMs = timestampMs;
+    }
+  }
+
+  database.prepare(`
+    INSERT INTO agent_session_usage_summaries (
+      session_key, channel_id, root_thread_ts, turn_count, exact_turns,
+      estimated_turns, missing_turns, input_tokens, cached_input_tokens,
+      output_tokens, reasoning_tokens, total_tokens, updated_at, last_turn_at,
+      model, effort
+    ) VALUES (${placeholders(16)})
+    ON CONFLICT(session_key) DO UPDATE SET
+      channel_id = excluded.channel_id,
+      root_thread_ts = excluded.root_thread_ts,
+      turn_count = excluded.turn_count,
+      exact_turns = excluded.exact_turns,
+      estimated_turns = excluded.estimated_turns,
+      missing_turns = excluded.missing_turns,
+      input_tokens = excluded.input_tokens,
+      cached_input_tokens = excluded.cached_input_tokens,
+      output_tokens = excluded.output_tokens,
+      reasoning_tokens = excluded.reasoning_tokens,
+      total_tokens = excluded.total_tokens,
+      updated_at = excluded.updated_at,
+      last_turn_at = excluded.last_turn_at,
+      model = excluded.model,
+      effort = excluded.effort
+  `).run(
+    sessionKey,
+    stringColumn(latest, "channel_id"),
+    stringColumn(latest, "root_thread_ts"),
+    turnCount,
+    exactTurns,
+    estimatedTurns,
+    missingTurns,
+    inputTokens,
+    cachedInputTokens,
+    outputTokens,
+    reasoningTokens,
+    totalTokens,
+    stringColumn(latest, "updated_at"),
+    optionalStringColumn(latest, "completed_at") ?? stringColumn(latest, "updated_at"),
+    optionalStringColumn(latest, "model") ?? null,
+    optionalStringColumn(latest, "effort") ?? null
+  );
+}
+
+function rebuildAllAgentSessionTraceSummaries(database: DatabaseSync): void {
+  if (!tableExists(database, "agent_trace_events")) {
+    return;
+  }
+  const rows = database
+    .prepare("SELECT DISTINCT session_key FROM agent_trace_events")
+    .all() as SqlRow[];
+  for (const row of rows) {
+    rebuildAgentSessionTraceSummary(database, stringColumn(row, "session_key"));
+  }
+}
+
+function rebuildAgentSessionTraceSummary(database: DatabaseSync, sessionKey: string): void {
+  if (!tableExists(database, "agent_trace_events")) {
+    return;
+  }
+  const rows = database
+    .prepare(`
+      SELECT type, source, status, updated_at, turn_id, call_id, tool_name
+      FROM agent_trace_events
+      WHERE session_key = ?
+    `)
+    .all(sessionKey) as SqlRow[];
+  if (!rows.length) {
+    database.prepare("DELETE FROM agent_session_trace_summaries WHERE session_key = ?").run(sessionKey);
+    return;
+  }
+
+  const categories: Record<string, number> = {};
+  const sources: Record<string, number> = {};
+  let eventCount = 0;
+  let modelRequestCount = 0;
+  let updatedAt = stringColumn(rows[0]!, "updated_at");
+  const completedToolCallKeys = new Set(
+    rows
+      .filter((row) => stringColumn(row, "type") === "agent_tool_result")
+      .map(traceToolRowKey)
+      .filter(Boolean)
+  );
+
+  for (const row of rows) {
+    const type = stringColumn(row, "type");
+    const source = stringColumn(row, "source");
+    if (type === "agent_token_count") {
+      modelRequestCount += 1;
+    }
+    if (
+      isVisibleTraceSummaryRow(type, optionalStringColumn(row, "status")) &&
+      !(type === "agent_tool_call" && completedToolCallKeys.has(traceToolRowKey(row)))
+    ) {
+      eventCount += 1;
+      categories[type] = (categories[type] ?? 0) + 1;
+      sources[source] = (sources[source] ?? 0) + 1;
+    }
+    const rowUpdatedAt = stringColumn(row, "updated_at");
+    if (rowUpdatedAt > updatedAt) {
+      updatedAt = rowUpdatedAt;
+    }
+  }
+
+  database.prepare(`
+    INSERT INTO agent_session_trace_summaries (
+      session_key, event_count, model_request_count, categories, sources, updated_at
+    ) VALUES (${placeholders(6)})
+    ON CONFLICT(session_key) DO UPDATE SET
+      event_count = excluded.event_count,
+      model_request_count = excluded.model_request_count,
+      categories = excluded.categories,
+      sources = excluded.sources,
+      updated_at = excluded.updated_at
+  `).run(
+    sessionKey,
+    eventCount,
+    modelRequestCount,
+    JSON.stringify(categories),
+    JSON.stringify(sources),
+    updatedAt
+  );
+}
+
+function traceToolRowKey(row: SqlRow): string {
+  const callId = optionalStringColumn(row, "call_id");
+  const turnId = optionalStringColumn(row, "turn_id") ?? "";
+  if (callId) {
+    return [turnId, callId].join("\u001f");
+  }
+  const toolName = optionalStringColumn(row, "tool_name");
+  if (!turnId && !toolName) {
+    return "";
+  }
+  return [turnId, toolName ?? ""].join("\u001f");
+}
+
+function isVisibleTraceSummaryRow(type: string, status?: string | undefined): boolean {
+  if (type === "agent_token_count") {
+    return false;
+  }
+  if (type === "agent_input_delivered" || type === "agent_turn_started") {
+    return false;
+  }
+  if (type === "agent_turn_completed" && status === "completed") {
+    return false;
+  }
+  return true;
+}
+
+function usageRowTimestampMs(row: SqlRow): number {
+  return timestampMs(optionalStringColumn(row, "completed_at") ?? optionalStringColumn(row, "updated_at") ?? optionalStringColumn(row, "created_at"));
+}
+
+function timestampMs(value: unknown): number {
+  const parsed = typeof value === "string" ? Date.parse(value) : NaN;
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function clampPositiveInteger(value: unknown, min: number, max: number): number {
+  const number = Number(value);
+  if (!Number.isFinite(number)) {
+    return min;
+  }
+  return Math.max(min, Math.min(max, Math.floor(number)));
 }
 
 function placeholders(count: number): string {

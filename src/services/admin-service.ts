@@ -10,6 +10,8 @@ import type {
   PersistedAdminAuditEvent,
   PersistedAdminEvent,
   PersistedAdminOperation,
+  PersistedAgentSessionTraceSummary,
+  PersistedAgentSessionUsageSummary,
   PersistedAgentTraceEvent,
   PersistedBackgroundJob,
   PersistedAgentTurnUsage,
@@ -117,6 +119,17 @@ interface AdminOperationStore {
   }) => PersistedAdminAuditEvent[]) | undefined;
   readonly appendAdminAuditEvent?: ((record: PersistedAdminAuditEvent) => Promise<void>) | undefined;
   readonly listAgentTurnUsage?: ((limit?: number) => PersistedAgentTurnUsage[]) | undefined;
+  readonly listAgentSessionUsageSummaries?: (() => PersistedAgentSessionUsageSummary[]) | undefined;
+  readonly getAgentSessionUsageSummary?: ((sessionKey: string) => PersistedAgentSessionUsageSummary | undefined) | undefined;
+  readonly listAgentTraceEventsPage?: ((sessionKey: string, options?: {
+    readonly limit?: number | undefined;
+    readonly beforeSequence?: number | undefined;
+  }) => {
+    readonly events: PersistedAgentTraceEvent[];
+    readonly hasMore: boolean;
+    readonly nextBeforeSequence: number | null;
+  }) | undefined;
+  readonly getAgentSessionTraceSummary?: ((sessionKey: string) => PersistedAgentSessionTraceSummary | undefined) | undefined;
 }
 
 interface AgentUsageTotals {
@@ -277,7 +290,10 @@ export class AdminService {
     };
   }
 
-  async getSessionTimeline(sessionKey: string): Promise<Record<string, unknown>> {
+  async getSessionTimeline(sessionKey: string, options: {
+    readonly limit?: number | undefined;
+    readonly beforeSequence?: number | undefined;
+  } = {}): Promise<Record<string, unknown>> {
     await this.#refreshSessions();
     const session = this.options.sessions.getSessionByKey(sessionKey);
     if (!session) {
@@ -347,8 +363,11 @@ export class AdminService {
       });
     }
 
-    const allAgentEvents = this.options.sessions.listAgentTraceEvents(session.key, 1000);
-    const agentEvents = visibleTimelineTraceEvents(allAgentEvents);
+    const tracePage = this.#listAgentTraceEventsPage(session.key, {
+      limit: options.limit,
+      beforeSequence: options.beforeSequence
+    });
+    const agentEvents = visibleTimelineTraceEvents(tracePage.events);
 
     return {
       ok: true,
@@ -356,11 +375,16 @@ export class AdminService {
         inbound,
         openInbound,
         jobs,
-        usage: summarizeUsageBySessionMap(this.#listAgentTurnUsage(1000)).get(session.key),
+        usage: sessionUsageSummaryFromPersisted(this.#getAgentSessionUsageSummary(session.key)),
         channelLabels: await this.#buildChannelLabelLookup([session], new Map([[session.key, inbound]]))
       }),
-      trace: summarizeAgentTrace(agentEvents, allAgentEvents),
-      events: [...events, ...agentEvents.map(agentTraceEventToTimelineEvent)].sort(compareTimelineEvents)
+      trace: traceSummaryFromPersisted(this.#getAgentSessionTraceSummary(session.key), agentEvents),
+      page: {
+        limit: clampPositiveInteger(options.limit ?? 100, 1, 500),
+        hasMore: tracePage.hasMore,
+        nextBeforeSequence: tracePage.nextBeforeSequence
+      },
+      events: [...(options.beforeSequence ? [] : events), ...agentEvents.map(agentTraceEventToTimelineEvent)].sort(compareTimelineEvents)
     };
   }
 
@@ -1012,7 +1036,7 @@ export class AdminService {
     const inboundBySession = groupBySession(inbound);
     const openInboundBySession = groupBySession(openInbound);
     const jobsBySession = groupBySession(backgroundJobs);
-    const usageBySession = summarizeUsageBySessionMap(this.#listAgentTurnUsage(1000));
+    const usageBySession = summarizeUsageBySessionMapFromPersisted(this.#listAgentSessionUsageSummaries());
     const allSessions = sessions
       .sort((left, right) => compareSessions(left, right, {
         inboundBySession,
@@ -1410,6 +1434,43 @@ export class AdminService {
     return store.listAgentTurnUsage?.call(this.options.sessions, limit) ?? [];
   }
 
+  #listAgentSessionUsageSummaries(): readonly PersistedAgentSessionUsageSummary[] {
+    const store = this.#operationStore();
+    return store.listAgentSessionUsageSummaries?.call(this.options.sessions) ?? [];
+  }
+
+  #getAgentSessionUsageSummary(sessionKey: string): PersistedAgentSessionUsageSummary | undefined {
+    const store = this.#operationStore();
+    return store.getAgentSessionUsageSummary?.call(this.options.sessions, sessionKey);
+  }
+
+  #listAgentTraceEventsPage(sessionKey: string, options: {
+    readonly limit?: number | undefined;
+    readonly beforeSequence?: number | undefined;
+  }): {
+    readonly events: PersistedAgentTraceEvent[];
+    readonly hasMore: boolean;
+    readonly nextBeforeSequence: number | null;
+  } {
+    const store = this.#operationStore();
+    const page = store.listAgentTraceEventsPage?.call(this.options.sessions, sessionKey, options);
+    if (page) {
+      return page;
+    }
+    const limit = clampPositiveInteger(options.limit ?? 100, 1, 500);
+    const events = this.options.sessions.listAgentTraceEvents(sessionKey, limit);
+    return {
+      events,
+      hasMore: false,
+      nextBeforeSequence: events.length ? Math.min(...events.map((event) => event.sequence)) : null
+    };
+  }
+
+  #getAgentSessionTraceSummary(sessionKey: string): PersistedAgentSessionTraceSummary | undefined {
+    const store = this.#operationStore();
+    return store.getAgentSessionTraceSummary?.call(this.options.sessions, sessionKey);
+  }
+
   #operationStore(): AdminOperationStore {
     return this.options.sessions as unknown as AdminOperationStore;
   }
@@ -1772,6 +1833,34 @@ function summarizeUsageBySessionMap(records: readonly PersistedAgentTurnUsage[])
   return new Map(summarizeUsageBySession(records).map((entry) => [entry.sessionKey, entry]));
 }
 
+function summarizeUsageBySessionMapFromPersisted(records: readonly PersistedAgentSessionUsageSummary[]): ReadonlyMap<string, SessionUsageSummary> {
+  return new Map(records.map((record) => [record.sessionKey, sessionUsageSummaryFromPersisted(record)!]));
+}
+
+function sessionUsageSummaryFromPersisted(record: PersistedAgentSessionUsageSummary | undefined): SessionUsageSummary | undefined {
+  if (!record) {
+    return undefined;
+  }
+  return {
+    sessionKey: record.sessionKey,
+    channelId: record.channelId,
+    rootThreadTs: record.rootThreadTs,
+    turnCount: record.turnCount,
+    exactTurns: record.exactTurns,
+    estimatedTurns: record.estimatedTurns,
+    missingTurns: record.missingTurns,
+    inputTokens: record.inputTokens,
+    cachedInputTokens: record.cachedInputTokens,
+    outputTokens: record.outputTokens,
+    reasoningTokens: record.reasoningTokens,
+    totalTokens: record.totalTokens,
+    updatedAt: record.updatedAt,
+    lastTurnAt: record.lastTurnAt ?? null,
+    model: record.model ?? null,
+    effort: record.effort ?? null
+  };
+}
+
 function summarizeUsageBySession(
   records: readonly PersistedAgentTurnUsage[],
   limit?: number
@@ -1956,6 +2045,22 @@ function summarizeAgentTrace(
     modelRequestCount,
     categories,
     sources
+  };
+}
+
+function traceSummaryFromPersisted(
+  summary: PersistedAgentSessionTraceSummary | undefined,
+  fallbackEvents: readonly PersistedAgentTraceEvent[]
+): Record<string, JsonLike> {
+  if (!summary) {
+    return summarizeAgentTrace(fallbackEvents);
+  }
+  return {
+    source: "broker_db",
+    eventCount: summary.eventCount,
+    modelRequestCount: summary.modelRequestCount,
+    categories: summary.categories,
+    sources: summary.sources
   };
 }
 
@@ -2418,6 +2523,14 @@ function isAdminCancellableJob(job: PersistedBackgroundJob): boolean {
 
 function normalizeNonEmptyString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function clampPositiveInteger(value: unknown, min: number, max: number): number {
+  const number = Number(value);
+  if (!Number.isFinite(number)) {
+    return min;
+  }
+  return Math.max(min, Math.min(max, Math.floor(number)));
 }
 
 function withAdminProbeTimeout<T>(promise: Promise<T>, label: string): Promise<T> {

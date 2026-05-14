@@ -6,6 +6,8 @@ import type {
   PersistedAdminAuditEvent,
   PersistedAdminEvent,
   PersistedAdminOperation,
+  PersistedAgentSessionTraceSummary,
+  PersistedAgentSessionUsageSummary,
   PersistedAgentTraceEvent,
   PersistedBackgroundJob,
   PersistedAgentTurnUsage,
@@ -528,12 +530,35 @@ export class SessionManager {
     return this.#stateStore.listAgentTurnUsage(limit);
   }
 
+  listAgentSessionUsageSummaries(): PersistedAgentSessionUsageSummary[] {
+    return this.#stateStore.listAgentSessionUsageSummaries();
+  }
+
+  getAgentSessionUsageSummary(sessionKey: string): PersistedAgentSessionUsageSummary | undefined {
+    return this.#stateStore.getAgentSessionUsageSummary(sessionKey);
+  }
+
   async upsertAgentTurnUsage(record: PersistedAgentTurnUsage): Promise<void> {
     await this.#stateStore.upsertAgentTurnUsage(record);
   }
 
   listAgentTraceEvents(sessionKey: string, limit?: number): PersistedAgentTraceEvent[] {
     return this.#stateStore.listAgentTraceEvents(sessionKey, limit);
+  }
+
+  listAgentTraceEventsPage(sessionKey: string, options?: {
+    readonly limit?: number | undefined;
+    readonly beforeSequence?: number | undefined;
+  }): {
+    readonly events: PersistedAgentTraceEvent[];
+    readonly hasMore: boolean;
+    readonly nextBeforeSequence: number | null;
+  } {
+    return this.#stateStore.listAgentTraceEventsPage(sessionKey, options);
+  }
+
+  getAgentSessionTraceSummary(sessionKey: string): PersistedAgentSessionTraceSummary | undefined {
+    return this.#stateStore.getAgentSessionTraceSummary(sessionKey);
   }
 
   async upsertAgentTraceEvent(record: PersistedAgentTraceEvent): Promise<void> {

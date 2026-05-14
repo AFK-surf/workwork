@@ -1,0 +1,52 @@
+# Admin Session Performance
+
+## Goal
+
+The admin session surface should behave like a live agent session UI, not a
+database dump. The first screen must be fast even when there are hundreds of
+sessions and each session has hundreds or thousands of trace events.
+
+## Current State
+
+The React shell loads `/admin/api/sessions` first, then renders the selected
+session and loads `/admin/api/sessions/:key/timeline`.
+
+The remaining problems are data-contract problems:
+
+- session summaries still derive token usage from raw turn usage records at read
+  time;
+- timeline reads return a full session slice instead of a latest page with a
+  cursor;
+- trace statistics are derived by scanning the fetched timeline payload;
+- the detail page has no explicit "load older" path, so one old or large
+  session can make the first usable view slow.
+
+## Target Design
+
+- `/admin/api/sessions` returns session list summaries only. It must not read
+  agent trace events, and it must not aggregate raw turn usage records for every
+  request.
+- Token usage and trace composition used by session UI are stored as redundant
+  per-session summaries when usage or trace rows are written.
+- `/admin/api/sessions/:key/timeline` reads from newest to oldest with a bounded
+  limit. The response includes a cursor for loading older events.
+- The first timeline page is rendered in chronological order inside that page,
+  but it is obtained by reading the newest rows first.
+- The React detail view fetches only the selected session's first timeline page.
+  It prepends older pages only when the user asks for more.
+- Realtime events append to the loaded timeline page without forcing a full
+  timeline reload.
+
+## Acceptance Criteria
+
+- `listSessionSummaries()` can run without `listAgentTraceEvents()` and without
+  raw `listAgentTurnUsage()` aggregation.
+- `GET /admin/api/sessions/:key/timeline?limit=50` returns at most 50 visible
+  timeline events plus pagination metadata.
+- `before_sequence` loads older trace rows and does not reread the newest page.
+- Timeline responses include trace summary data from the per-session redundant
+  summary, not from the current page size.
+- The React session detail initial request includes a bounded `limit`.
+- The React session detail has an explicit `加载更早活动` action when the API says
+  older activity exists.
+- `pnpm test` and `pnpm build` pass.
