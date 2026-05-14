@@ -103,13 +103,19 @@ function summarizeSlackBrokerTrace(options: {
     return undefined;
   }
 
-  const data = extractCurlJsonData(command);
+  const data = mergeCurlJsonData(
+    extractCurlJsonData(command),
+    extractLooseCurlJsonData(command)
+  );
   const status = normalizeString(options.status ?? payload.status);
   const isResult = options.eventType === "agent_tool_result";
   const state = slackDeliveryState(isResult, status);
 
   if (route === "/slack/post-message") {
-    const text = messageText(data?.text) || "发送 Slack 消息";
+    const text = messageText(data?.text);
+    if (!text) {
+      return undefined;
+    }
     const kind = normalizeString(data?.kind) || "progress";
     return {
       badgeLabel: "Bot",
@@ -226,6 +232,118 @@ function parseCurlJsonData(raw: string): Record<string, unknown> | undefined {
   }
 
   return undefined;
+}
+
+function mergeCurlJsonData(
+  primary: Record<string, unknown> | undefined,
+  fallback: Record<string, unknown> | undefined
+): Record<string, unknown> | undefined {
+  if (!primary) {
+    return fallback;
+  }
+  if (!fallback) {
+    return primary;
+  }
+
+  const merged: Record<string, unknown> = { ...fallback, ...primary };
+  for (const key of ["text", "initial_comment", "reason"]) {
+    const primaryText = messageText(primary[key]);
+    const fallbackText = messageText(fallback[key]);
+    if (fallbackText.length > primaryText.length) {
+      merged[key] = fallbackText;
+    }
+  }
+  for (const key of ["channel_id", "thread_ts", "kind", "file_path"]) {
+    if (!messageText(merged[key]) && messageText(fallback[key])) {
+      merged[key] = fallback[key];
+    }
+  }
+  return compactRecord(merged);
+}
+
+function extractLooseCurlJsonData(command: string): Record<string, unknown> | undefined {
+  const candidates = looseCurlJsonDataCandidates(command);
+  let best: Record<string, unknown> | undefined;
+  for (const candidate of candidates) {
+    const recovered = compactRecord({
+      channel_id: extractLooseJsonStringField(candidate, "channel_id"),
+      thread_ts: extractLooseJsonStringField(candidate, "thread_ts"),
+      text: extractLooseJsonStringField(candidate, "text"),
+      kind: extractLooseJsonStringField(candidate, "kind"),
+      file_path: extractLooseJsonStringField(candidate, "file_path"),
+      initial_comment: extractLooseJsonStringField(candidate, "initial_comment"),
+      reason: extractLooseJsonStringField(candidate, "reason")
+    });
+    if (messageText(recovered.text) || messageText(recovered.initial_comment) || messageText(recovered.reason)) {
+      return recovered;
+    }
+    if (!best && Object.keys(recovered).length) {
+      best = recovered;
+    }
+  }
+  return best;
+}
+
+function looseCurlJsonDataCandidates(command: string): string[] {
+  const candidates: string[] = [];
+  const seen = new Set<string>();
+  for (const seed of [command, unwrapShellCommand(command)]) {
+    let current = seed.trim();
+    for (let index = 0; index < 6; index += 1) {
+      if (!current || seen.has(current)) {
+        break;
+      }
+      seen.add(current);
+      candidates.push(current);
+      const next = unescapeShellQuotedArgument(current).trim();
+      if (next === current) {
+        break;
+      }
+      current = next;
+    }
+  }
+  return candidates;
+}
+
+function extractLooseJsonStringField(text: string, key: string): string {
+  const keyMatch = new RegExp(`"${escapeRegExp(key)}"\\s*:\\s*"`).exec(text);
+  if (!keyMatch) {
+    return "";
+  }
+  const start = keyMatch.index + keyMatch[0].length;
+  const end = findLooseJsonStringEnd(text, start);
+  if (end < start) {
+    return "";
+  }
+  return cleanLooseJsonString(text.slice(start, end));
+}
+
+function findLooseJsonStringEnd(text: string, start: number): number {
+  for (let index = start; index < text.length; index += 1) {
+    if (text[index] !== "\"" || text[index - 1] === "\\") {
+      continue;
+    }
+    const tail = text.slice(index);
+    if (
+      /^"\s*,\s*"(?:channel_id|thread_ts|text|kind|reason|file_path|initial_comment)"\s*:/.test(tail) ||
+      /^"\s*[}\]]/.test(tail)
+    ) {
+      return index;
+    }
+  }
+  return -1;
+}
+
+function cleanLooseJsonString(value: string): string {
+  return value
+    .replace(/"'/g, "")
+    .replace(/'"/g, "")
+    .replace(/\\r\\n/g, "\n")
+    .replace(/\\n/g, "\n")
+    .replace(/\\t/g, "\t")
+    .replace(/\\"/g, "\"")
+    .replace(/\\\\/g, "\\")
+    .trim();
 }
 
 function curlJsonDataCandidates(raw: string): string[] {

@@ -159,6 +159,57 @@ describe("admin session timeline display", () => {
     });
   });
 
+  it("shows Slack post-message text from shell-concatenated JSON strings", () => {
+    const command = "/bin/zsh -lc \"curl -sS -X POST http://127.0.0.1:3001/slack/post-message -H 'content-type: application/json' -d '{\\\"channel_id\\\":\\\"D123\\\",\\\"thread_ts\\\":\\\"111.222\\\",\\\"text\\\":\\\"已确认 PR #248 latest head 仍是 \"'`b93812ce`，base 是 #247 分支；接下来提交 GitHub review。\",\\\"kind\\\":\\\"progress\\\"}'\"'\"";
+    expect(getTimelineEventDisplay({
+      type: "agent_tool_result",
+      title: "工具结果",
+      summary: "exec_command",
+      status: "completed",
+      toolName: "exec_command",
+      detail: JSON.stringify({
+        command,
+        exitCode: 0,
+        durationMs: 277,
+        aggregatedOutput: "{\"ok\":true}"
+      })
+    })).toEqual({
+      badgeLabel: "Bot",
+      title: "已确认 PR #248 latest head 仍是 `b93812ce`，base 是 #247 分支；接下来提交 GitHub review。",
+      summary: "Slack progress · 已发送"
+    });
+  });
+
+  it("shows Slack post-message text from heredoc curl payloads", () => {
+    const command = [
+      "/bin/zsh -lc \"curl -sS -X POST http://127.0.0.1:3001/slack/post-message -H 'content-type: application/json' -d @- <<'JSON'",
+      "{",
+      "  \\\"channel_id\\\": \\\"D123\\\",",
+      "  \\\"thread_ts\\\": \\\"111.222\\\",",
+      "  \\\"kind\\\": \\\"wait\\\",",
+      "  \\\"text\\\": \\\"已在 GitHub PR 提交 review：latest head \"'`b93812ce` 无 blocker。'\"\\\\n\\\\n已注册 watcher。\\\"",
+      "}",
+      "JSON'"
+    ].join("\n");
+    expect(getTimelineEventDisplay({
+      type: "agent_tool_result",
+      title: "工具结果",
+      summary: "exec_command",
+      status: "completed",
+      toolName: "exec_command",
+      detail: JSON.stringify({
+        command,
+        exitCode: 0,
+        durationMs: 283,
+        aggregatedOutput: "{\"ok\":true}"
+      })
+    })).toEqual({
+      badgeLabel: "Bot",
+      title: "已在 GitHub PR 提交 review：latest head `b93812ce` 无 blocker。\n\n已注册 watcher。",
+      summary: "Slack wait · 已发送"
+    });
+  });
+
   it("keeps message bodies intact instead of truncating by character count", () => {
     const longMessage = "这是一段需要靠布局省略而不是按字符硬切的消息正文。".repeat(32);
     expect(longMessage.length).toBeGreaterThan(320);

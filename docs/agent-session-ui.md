@@ -67,6 +67,11 @@ The session page is an agent workbench:
   see in Slack, not as generic tool calls. This must work for both new events
   with semantic metadata and older/raw `exec_command` events where the Slack
   route only exists inside the stored command detail.
+- Slack post-message extraction must read the actual posted text, including
+  historical shell forms that split JSON strings with adjacent shell quotes or
+  send JSON through `-d @- <<EOF` heredocs. A Bot message must not fall back to
+  meaningless text such as `发送 Slack 消息` just because the command parser missed
+  the payload.
 - User messages and Bot messages posted to Slack are the primary conversation
   path. Bot messages should sit at roughly the same visual level as user
   messages, with cyan identity treatment.
@@ -126,6 +131,9 @@ and visual hierarchy refactor, not a behavior rewrite.
 - Slack posting tools render as Bot messages. Ordinary assistant messages remain
   visible but subdued. Raw historical `exec_command` Slack posts without
   `metadata.semanticType` still render as Bot messages.
+- Slack posting tools display the posted Slack text, not the curl command and not
+  a generic `发送 Slack 消息` placeholder. This includes shell-concatenated text
+  around inline code/backticks and heredoc request bodies.
 - Bot messages share the primary message-body treatment with user messages and
   use cyan avatar, speaker, and left accent to make Slack output clear.
 - Tool status is visually secondary and appears after the tool content. Tool
