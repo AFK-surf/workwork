@@ -278,7 +278,7 @@ export class AdminService {
       ok: true,
       realtime: this.#realtimeInfo(),
       sessions: snapshot.allSessions.slice(0, 500).map((session) =>
-        this.#summarizeSession(session, {
+        this.#summarizeSessionListItem(session, {
           inbound: snapshot.inboundBySession.get(session.key) ?? [],
           openInbound: snapshot.openInboundBySession.get(session.key) ?? [],
           jobs: snapshot.jobsBySession.get(session.key) ?? [],
@@ -1639,6 +1639,73 @@ export class AdminService {
     };
   }
 
+  #summarizeSessionListItem(
+    session: SlackSessionRecord,
+    related: {
+      readonly inbound: readonly PersistedInboundMessage[];
+      readonly openInbound: readonly PersistedInboundMessage[];
+      readonly jobs: readonly PersistedBackgroundJob[];
+      readonly usage?: SessionUsageSummary | undefined;
+      readonly channelLabels?: ReadonlyMap<string, string> | undefined;
+    }
+  ): Record<string, unknown> {
+    const runningBackgroundJobCount = related.jobs.filter((job) => job.status === "running").length;
+    const failedBackgroundJobCount = related.jobs.filter((job) => job.status === "failed").length;
+    const openHumanInboundCount = related.openInbound.filter(isHumanInboundMessage).length;
+    const openSystemInboundCount = related.openInbound.length - openHumanInboundCount;
+    const userMessages = related.inbound.filter(isUserInboundMessage);
+    const firstUserMessage = userMessages.at(0);
+    const lastUserMessage = userMessages.at(-1);
+    const usage = related.usage ?? emptySessionUsageSummary(session);
+    const lastActivityAt = sessionLastActivityAt(session, {
+      inbound: related.inbound,
+      jobs: related.jobs,
+      usage
+    });
+    return {
+      key: session.key,
+      channelId: session.channelId,
+      channelLabel: channelLabelForSession(session, related.inbound, related.channelLabels),
+      channelName: session.channelName ?? null,
+      channelType: session.channelType ?? related.inbound.find((message) => message.channelType)?.channelType ?? null,
+      rootThreadTs: session.rootThreadTs,
+      initiatorUserId: session.initiatorUserId ?? null,
+      threadUrl: buildSlackThreadUrl(session.channelId, session.rootThreadTs),
+      updatedAt: session.updatedAt,
+      lastActivityAt,
+      createdAt: session.createdAt,
+      firstUserMessage: firstUserMessage ? this.#summarizeInboundListMessage(firstUserMessage) : null,
+      lastUserMessage: lastUserMessage ? this.#summarizeInboundListMessage(lastUserMessage) : null,
+      activeTurnId: session.activeTurnId ?? null,
+      activeTurnStartedAt: session.activeTurnStartedAt ?? null,
+      lastTurnSignalKind: session.lastTurnSignalKind ?? null,
+      lastTurnSignalReason: session.lastTurnSignalReason ?? null,
+      lastTurnSignalAt: session.lastTurnSignalAt ?? null,
+      lastSlackReplyAt: session.lastSlackReplyAt ?? null,
+      authProfileName: session.authProfileName ?? null,
+      authBlockedAt: session.authBlockedAt ?? null,
+      authBlockReason: session.authBlockReason ?? null,
+      authBlockReasonLabel: authProfileReasonLabel(session.authBlockReason),
+      openInboundCount: related.openInbound.length,
+      openHumanInboundCount,
+      openSystemInboundCount,
+      backgroundJobCount: related.jobs.length,
+      runningBackgroundJobCount,
+      failedBackgroundJobCount,
+      usage: summarizeListUsage(usage)
+    };
+  }
+
+  #summarizeInboundListMessage(message: PersistedInboundMessage): Record<string, unknown> {
+    const text = resolveMentionText(message.text, message.mentionedUsers);
+    return {
+      userId: message.userId,
+      slackIdentity: inboundMessageSlackIdentity(message),
+      textPreview: text.slice(0, 140),
+      updatedAt: message.updatedAt
+    };
+  }
+
   async #appendSessionAuthProfileSwitchTrace(
     session: SlackSessionRecord,
     profileName: string,
@@ -1816,6 +1883,15 @@ function sessionUsageSummaryFromPersisted(record: PersistedAgentSessionUsageSumm
     lastTurnAt: record.lastTurnAt ?? null,
     model: record.model ?? null,
     effort: record.effort ?? null
+  };
+}
+
+function summarizeListUsage(usage: SessionUsageSummary): Record<string, unknown> {
+  return {
+    turnCount: usage.turnCount,
+    totalTokens: usage.totalTokens,
+    lastTurnAt: usage.lastTurnAt,
+    updatedAt: usage.updatedAt
   };
 }
 

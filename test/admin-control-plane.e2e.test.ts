@@ -60,17 +60,13 @@ describe("admin control plane e2e", () => {
           openInboundCount: 1,
           runningBackgroundJobCount: 1,
           backgroundJobCount: 3,
-          failedBackgroundJobCount: 1,
-          failedBackgroundJobs: [
-            expect.objectContaining({
-              kind: "watch_ci",
-              status: "failed",
-              error: "PR #349 failed: CI Check failed"
-            })
-          ]
+          failedBackgroundJobCount: 1
         }
       ]
     });
+    expect((sessionList.sessions as Array<Record<string, unknown>>)[0]).not.toHaveProperty("backgroundJobs");
+    expect((sessionList.sessions as Array<Record<string, unknown>>)[0]).not.toHaveProperty("failedBackgroundJobs");
+    expect((sessionList.sessions as Array<Record<string, unknown>>)[0]).not.toHaveProperty("workspacePath");
 
     const timeline = await readJson(`${baseUrl}/admin/api/sessions/${encodeURIComponent("C123:111.222")}/timeline`);
     expect(timeline).toMatchObject({

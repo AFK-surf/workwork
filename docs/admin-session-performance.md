@@ -23,9 +23,10 @@ The remaining problems are data-contract problems:
 
 ## Target Design
 
-- `/admin/api/sessions` returns session list summaries only. It must not read
-  agent trace events, and it must not aggregate raw turn usage records for every
-  request.
+- `/admin/api/sessions` returns compact session list summaries only. It must not
+  read agent trace events, must not aggregate raw turn usage records for every
+  request, and must not include detail-only arrays such as background job rows or
+  workspace paths.
 - Read-only admin endpoints must not call `SessionManager.load()` or touch every
   session workspace directory. Startup and session creation own directory
   creation; read paths must stay DB-only.
@@ -52,6 +53,8 @@ The remaining problems are data-contract problems:
 
 - `listSessionSummaries()` can run without `listAgentTraceEvents()` and without
   raw `listAgentTurnUsage()` aggregation.
+- `listSessionSummaries()` does not send detail-only fields such as
+  `workspacePath`, `backgroundJobs`, or `failedBackgroundJobs`.
 - `listSessionSummaries()` and the initial session timeline request do not call
   `SessionManager.load()` on the read path.
 - `GET /admin/api/sessions/:key/timeline?limit=50` returns at most 50 visible

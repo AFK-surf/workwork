@@ -128,6 +128,11 @@ describe("admin session performance contract", () => {
         }
       ]
     });
+    const session = (summaries.sessions as Array<Record<string, unknown>>)[0]!;
+    expect(session).not.toHaveProperty("workspacePath");
+    expect(session).not.toHaveProperty("backgroundJobs");
+    expect(session).not.toHaveProperty("failedBackgroundJobs");
+    expect(session.usage).not.toHaveProperty("inputTokens");
   });
 
   it("serves timeline pages from newest to older with bounded responses", async () => {
