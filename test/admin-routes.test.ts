@@ -103,7 +103,8 @@ describe("admin routes", () => {
         "content-type": "application/json"
       },
       body: JSON.stringify({
-        ref: "main",
+        target: "worker",
+        version: "0.2.0",
         allow_active: true
       })
     });
@@ -205,7 +206,11 @@ describe("admin routes", () => {
     expect(adminShellSource).not.toContain("编辑作者");
     expect(adminShellSource).not.toContain("历史 Commit 作者");
     expect(adminShellSource).not.toContain("session-react-root");
-    expect(sessionViewSource).toContain("session-search");
+    expect(sessionViewSource).not.toContain("session-search");
+    expect(sessionViewSource).not.toContain("sessionSearch");
+    expect(sessionViewSource).not.toContain('type="search"');
+    expect(adminShellSource).not.toContain('type="search"');
+    expect(adminShellSource).not.toContain("筛选 Slack / GitHub 账号");
     expect(sessionViewSource).toContain("session-detail-panel");
     expect(sessionViewSource).toContain("会话详情");
     expect(adminShellSource).not.toContain("Session Inspector");
@@ -775,14 +780,16 @@ describe("admin routes", () => {
         "content-type": "application/json"
       },
       body: JSON.stringify({
-        ref: "deadbeef",
+        target: "worker",
+        version: "0.2.0",
         allow_active: true
       })
     });
     expect(response.status).toBe(200);
     expect(calls).toEqual([
       {
-        ref: "deadbeef",
+        target: "worker",
+        version: "0.2.0",
         allowActive: true
       }
     ]);
@@ -812,14 +819,16 @@ describe("admin routes", () => {
         "content-type": "application/json"
       },
       body: JSON.stringify({
-        ref: "abc123",
+        target: "admin",
+        version: "0.1.0",
         allow_active: false
       })
     });
     expect(response.status).toBe(200);
     expect(calls).toEqual([
       {
-        ref: "abc123",
+        target: "admin",
+        version: "0.1.0",
         allowActive: false
       }
     ]);

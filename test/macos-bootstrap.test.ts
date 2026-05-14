@@ -30,33 +30,12 @@ describe("macOS bootstrap", () => {
     const fakeBin = path.join(tempRoot, "bin");
     const serviceRoot = path.join(tempRoot, "service");
     const commandLog = path.join(tempRoot, "commands.log");
-    const revision = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const packageVersion = "0.2.0";
 
     await fs.mkdir(path.join(home, ".codex"), { recursive: true });
     await fs.mkdir(fakeBin, { recursive: true });
     await fs.mkdir(serviceRoot, { recursive: true });
-    await writeExecutable(path.join(fakeBin, "git"), [
-      "#!/bin/sh",
-      "set -eu",
-      "echo \"git $*\" >> \"$FAKE_COMMAND_LOG\"",
-      "if [ \"${1:-}\" = \"rev-parse\" ] && [ \"${2:-}\" = \"HEAD\" ]; then",
-      "  echo \"$TEST_REVISION\"",
-      "  exit 0",
-      "fi",
-      "if [ \"${1:-}\" = \"branch\" ] && [ \"${2:-}\" = \"--show-current\" ]; then",
-      "  echo main",
-      "  exit 0",
-      "fi",
-      "if [ \"${1:-}\" = \"-C\" ] && [ \"${3:-}\" = \"worktree\" ] && [ \"${4:-}\" = \"add\" ]; then",
-      "  mkdir -p \"$6/.git\"",
-      "  echo \"$7\" > \"$6/.revision\"",
-      "  exit 0",
-      "fi",
-      "echo \"unexpected git command: $*\" >&2",
-      "exit 1"
-    ].join("\n"));
-    await writeExecutable(path.join(fakeBin, "corepack"), fakeCommandScript("corepack"));
-    await writeExecutable(path.join(fakeBin, "npm"), fakeCommandScript("npm"));
+    await writeExecutable(path.join(fakeBin, "npm"), fakeNpmScript());
     await writeExecutable(path.join(fakeBin, "launchctl"), fakeCommandScript("launchctl"));
     await writeExecutable(path.join(fakeBin, "node"), fakeCommandScript("node"));
 
@@ -71,8 +50,10 @@ describe("macOS bootstrap", () => {
         "test.worker",
         "--node-path",
         path.join(fakeBin, "node"),
-        "--corepack-path",
-        path.join(fakeBin, "corepack")
+        "--npm-path",
+        path.join(fakeBin, "npm"),
+        "--package-version",
+        packageVersion
       ],
       {
         ...process.env,
@@ -80,7 +61,6 @@ describe("macOS bootstrap", () => {
         HOME: home,
         SLACK_APP_TOKEN: "xapp-test",
         SLACK_BOT_TOKEN: "xoxb-test",
-        TEST_REVISION: revision,
         FAKE_COMMAND_LOG: commandLog
       }
     );
@@ -90,29 +70,34 @@ describe("macOS bootstrap", () => {
     expect(payload).toMatchObject({
       ok: true,
       serviceRoot,
-      currentReleasePath: path.join(serviceRoot, "current"),
+      currentAdminReleasePath: path.join(serviceRoot, "current-admin"),
+      currentWorkerReleasePath: path.join(serviceRoot, "current-worker"),
       workerStarted: false
     });
 
-    const currentReleasePath = path.join(serviceRoot, "current");
-    const releaseRoot = path.join(serviceRoot, "releases", revision);
-    await expect(fs.readlink(currentReleasePath)).resolves.toBe(path.relative(serviceRoot, releaseRoot));
+    const currentAdminReleasePath = path.join(serviceRoot, "current-admin");
+    const currentWorkerReleasePath = path.join(serviceRoot, "current-worker");
+    const adminReleaseRoot = path.join(serviceRoot, "releases", "admin", `npm-${packageVersion}`, "node_modules", "@agent-session-broker", "admin");
+    const workerReleaseRoot = path.join(serviceRoot, "releases", "worker", `npm-${packageVersion}`, "node_modules", "@agent-session-broker", "worker");
+    await expect(fs.readlink(currentAdminReleasePath)).resolves.toBe(path.relative(serviceRoot, adminReleaseRoot));
+    await expect(fs.readlink(currentWorkerReleasePath)).resolves.toBe(path.relative(serviceRoot, workerReleaseRoot));
 
     const adminPlist = await fs.readFile(path.join(home, "Library", "LaunchAgents", "test.admin.plist"), "utf8");
     const workerPlist = await fs.readFile(path.join(home, "Library", "LaunchAgents", "test.worker.plist"), "utf8");
     const adminEnv = await fs.readFile(path.join(serviceRoot, "config", "admin.env"), "utf8");
-    const launcherPath = path.join(currentReleasePath, "scripts", "ops", "macos-launchd-launcher.mjs");
+    const adminLauncherPath = path.join(currentAdminReleasePath, "scripts", "ops", "macos-launchd-launcher.mjs");
+    const workerLauncherPath = path.join(currentWorkerReleasePath, "scripts", "ops", "macos-launchd-launcher.mjs");
     const adminPlistPath = path.join(home, "Library", "LaunchAgents", "test.admin.plist");
     const workerPlistPath = path.join(home, "Library", "LaunchAgents", "test.worker.plist");
 
     expectLaunchdRuntime(adminPlist, {
-      launcherPath,
-      repoRootPath: currentReleasePath,
+      launcherPath: adminLauncherPath,
+      repoRootPath: currentAdminReleasePath,
       entryPoint: "dist/src/admin-index.js"
     });
     expectLaunchdRuntime(workerPlist, {
-      launcherPath,
-      repoRootPath: currentReleasePath,
+      launcherPath: workerLauncherPath,
+      repoRootPath: currentWorkerReleasePath,
       entryPoint: "dist/src/worker-index.js"
     });
     expect(adminEnv).toContain(`ADMIN_PLIST_PATH="${adminPlistPath}"`);
@@ -130,6 +115,37 @@ function fakeCommandScript(command: string): string {
     "#!/bin/sh",
     "set -eu",
     `echo "${command} $*" >> "$FAKE_COMMAND_LOG"`
+  ].join("\n");
+}
+
+function fakeNpmScript(): string {
+  return [
+    "#!/bin/sh",
+    "set -eu",
+    "echo \"npm $*\" >> \"$FAKE_COMMAND_LOG\"",
+    "if [ \"${1:-}\" = \"install\" ] && [ \"${2:-}\" = \"--prefix\" ]; then",
+    "  prefix=\"$3\"",
+    "  last=\"\"",
+    "  for arg in \"$@\"; do last=\"$arg\"; done",
+    "  version=\"${last##*@}\"",
+    "  package_name=\"${last%@*}\"",
+    "  package_path=\"$(printf '%s' \"$package_name\" | sed 's#/# #g')\"",
+    "  set -- $package_path",
+    "  package_root=\"$prefix/node_modules/$1/$2\"",
+    "  mkdir -p \"$package_root/dist/src\" \"$package_root/scripts/ops\"",
+    "  if [ \"$package_name\" = \"@agent-session-broker/admin\" ]; then",
+    "    mkdir -p \"$package_root/dist/admin-ui\"",
+    "    : > \"$package_root/dist/src/admin-index.js\"",
+    "    : > \"$package_root/dist/admin-ui/index.html\"",
+    "    : > \"$package_root/scripts/ops/macos-bootstrap.mjs\"",
+    "  fi",
+    "  if [ \"$package_name\" = \"@agent-session-broker/worker\" ]; then",
+    "    : > \"$package_root/dist/src/worker-index.js\"",
+    "  fi",
+    "  : > \"$package_root/scripts/ops/macos-launchd-launcher.mjs\"",
+    "  : > \"$package_root/scripts/ops/macos-launchd-restart.mjs\"",
+    "  printf '{\"name\":\"%s\",\"version\":\"%s\"}\\n' \"$package_name\" \"$version\" > \"$package_root/package.json\"",
+    "fi"
   ].join("\n");
 }
 

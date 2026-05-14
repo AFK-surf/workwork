@@ -154,24 +154,26 @@ pnpm ops:ui:real
 
 ## Run On a macOS VM
 
-The preferred macOS deployment model is now GitHub-first:
+The preferred macOS deployment model is package-first:
 
-- clone this repository directly on the VM
-- run the bootstrap script from inside that clone
+- build and publish/pack the admin and worker npm packages outside the VM
+- run the bootstrap script with the package version to install
 - upload `auth.json` later through the admin page
-- do all later deploy / rollback operations from the admin page by Git ref
+- do all later deploy / rollback operations from the admin page by target and
+  package version
 
-There is no host-side code sync step in the normal path anymore.
+There is no host-side code sync or production build step in the normal path.
 
 ### First bootstrap on the VM
 
 ```bash
-git clone https://github.com/zzj3720/slack-codex-broker.git ~/services/slack-codex-broker
-cd ~/services/slack-codex-broker
-node scripts/ops/macos-bootstrap.mjs --start-worker
+npm install -g @agent-session-broker/admin@0.1.0
+agent-session-broker-macos-bootstrap --service-root ~/services/slack-codex-broker --package-version 0.1.0 --start-worker
 ```
 
-The bootstrap script expects to run inside the VM's long-lived clone and uses that clone as the stable admin/control repo.
+The bootstrap script installs `@agent-session-broker/admin@<version>` and
+`@agent-session-broker/worker@<version>` into the service root. Admin launchd
+runs through `current-admin`; worker launchd runs through `current-worker`.
 
 Before running it, make sure the Slack app credentials are available through one of these sources:
 
@@ -180,58 +182,63 @@ Before running it, make sure the Slack app credentials are available through one
 
 What it prepares:
 
-- `releases/<sha>` worktrees for admin and worker releases
-- `current`, `previous`, and `failed` release links
+- `releases/admin/npm-<version>/` and `releases/worker/npm-<version>/` package installs
+- `current-admin`, `previous-admin`, `failed-admin` release links
+- `current-worker`, `previous-worker`, `failed-worker` release links
 - shared runtime state under `.data/`
 - support homes under `runtime-support/`
 - launchd agents for:
-  - `com.zzj3720.slack-codex-broker` (admin/control plane)
-  - `com.zzj3720.slack-codex-broker.worker` (Slack/Codex worker)
+  - `io.github.hoolc.agent-session-broker` (admin/control plane)
+  - `io.github.hoolc.agent-session-broker.worker` (Slack/Codex worker)
 
 What it does not do:
 
 - it does not copy `auth.json`; import auth profiles later through `/admin`
 - it does not copy historical sessions, logs, jobs, or repo caches from another machine
-- it does not require `pnpm` to already be installed globally; it uses Corepack and the repo-pinned pnpm version
+- it does not run `pnpm install` or `pnpm build` on the VM
 
 ### Runtime layout on the VM
 
-The fixed clone is the Git source of truth for release worktrees. Runtime services execute code through the `current` release link, not directly from the fixed clone.
+The npm packages are the release units. Runtime services execute code through
+their target-specific current release links, not from a source checkout.
 
 - `<service-root>/`:
-  - long-lived git clone
   - release manager and shared runtime root
-- `<service-root>/releases/<sha>/`:
-  - admin and worker build for a specific commit
-- `<service-root>/current`:
-  - symlink to the active admin/worker release
-- `<service-root>/previous`:
-  - symlink to the last good admin/worker release
-- `<service-root>/failed`:
-  - symlink to the most recent failed cutover
+- `<service-root>/releases/admin/npm-<version>/`:
+  - npm install root for one admin package version
+- `<service-root>/releases/worker/npm-<version>/`:
+  - npm install root for one worker package version
+- `<service-root>/current-admin` and `<service-root>/current-worker`:
+  - symlinks to the active installed package roots
+- `<service-root>/previous-admin` and `<service-root>/previous-worker`:
+  - symlinks to the last good release for each target
+- `<service-root>/failed-admin` and `<service-root>/failed-worker`:
+  - symlinks to the most recent failed cutover for each target
 - `<service-root>/.data/`:
   - shared broker state, sessions, jobs, logs, repos, auth profiles, codex home
 
 ### Deploy and rollback
 
-The admin service fetches from the VM's local Git clone and deploys a selected ref into a new release directory. Both launchd agents are written to execute through `current`; the deploy operation switches `current`, restarts the worker immediately, then schedules the admin launchd restart after the API response so the request is not killed mid-flight.
+The admin service deploys a selected target and npm package version into a new
+release directory. Admin and worker are independent release targets: an admin
+deploy switches only `current-admin` and schedules only the admin restart; a
+worker deploy switches only `current-worker`, restarts the worker immediately,
+and waits for worker readiness.
 
 - deploy:
-  - `git fetch origin`
-  - resolve commit / branch / tag
-  - create or reuse `releases/<sha>`
-  - build there
-  - switch `current` to the new release
-  - restart the worker launchd service
+  - read package versions from the selected target's npm registry entry
+  - install the selected package under `releases/<target>/npm-<version>`
+  - switch that target's current symlink
+  - for worker deploys, restart the worker launchd service
   - run worker health + Codex-ready checks with a 90s startup window, because worker startup can spend tens of seconds reconciling Slack thread state before `/readyz` answers
-  - schedule the admin launchd service restart from the same `current` release
+  - for admin deploys, schedule the admin launchd service restart from `current-admin`
   - auto-rollback on failed cutover
 - rollback:
-  - switch `current` back to `previous`, or to an explicitly selected ref
-  - restart the worker and schedule the admin restart
-  - run the same health checks
+  - switch the requested target back to `previous-*`, or to an explicitly selected installed package version
+  - restart only that target's launchd service
+  - run worker health checks only for worker rollback
 
-Because old releases stay on disk, rollback is a pointer switch instead of a rebuild.
+Because old releases stay on disk, rollback is a pointer switch. It does not fetch source or build a missing version.
 
 ### Admin surface
 
@@ -253,7 +260,7 @@ Typical first-run flow:
 1. Open `/admin`.
 2. Upload one or more `auth.json` files into Auth Profiles.
 3. Activate the profile you want the worker to use.
-4. Later, deploy a commit / branch / tag from the Deploy panel.
+4. Later, deploy a package version from the Deploy panel.
 5. Roll back from the same panel when needed.
 
 The same admin page also exposes a `GitHub Authors` panel for manually maintaining `Slack user -> GitHub author` mappings. Manual entries override Slack-inferred mappings.

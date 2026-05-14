@@ -1,16 +1,17 @@
 {
-  "name": "slack-codex-broker",
+  "name": "agent-session-broker-repo",
   "version": "0.1.0",
+  "private": true,
   "description": "Slack Socket Mode broker that routes Slack threads into Codex app-server sessions with isolated workspaces.",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/zzj3720/slack-codex-broker.git"
+    "url": "git+https://github.com/HOOLC/slack-codex-broker.git"
   },
   "bugs": {
-    "url": "https://github.com/zzj3720/slack-codex-broker/issues"
+    "url": "https://github.com/HOOLC/slack-codex-broker/issues"
   },
-  "homepage": "https://github.com/zzj3720/slack-codex-broker#readme",
+  "homepage": "https://github.com/HOOLC/slack-codex-broker#readme",
   "type": "module",
   "packageManager": "pnpm@10.33.0",
   "engines": {
@@ -31,6 +32,8 @@
     "ops:rollout:real": "node scripts/ops/rollout-real.mjs",
     "ops:status:real": "node scripts/ops/status-real.mjs",
     "ops:macos:bootstrap": "node scripts/ops/macos-bootstrap.mjs",
+    "release:stage": "node scripts/build/stage-npm-packages.mjs",
+    "release:pack": "pnpm build && pnpm release:stage && find artifacts -maxdepth 1 -name '*.tgz' -delete && npm pack artifacts/npm-packages/admin --pack-destination artifacts && npm pack artifacts/npm-packages/worker --pack-destination artifacts",
     "start": "node dist/src/index.js",
     "start:admin": "node dist/src/admin-index.js",
     "start:worker": "node dist/src/worker-index.js",

@@ -8,13 +8,12 @@ import path from "node:path";
 import { repoRoot, runCommand } from "./lib.mjs";
 
 const DEFAULT_SERVICE_ROOT = repoRoot;
-const DEFAULT_ADMIN_LABEL = "com.zzj3720.slack-codex-broker";
-const DEFAULT_WORKER_LABEL = "com.zzj3720.slack-codex-broker.worker";
+const DEFAULT_ADMIN_LABEL = "io.github.hoolc.agent-session-broker";
+const DEFAULT_WORKER_LABEL = "io.github.hoolc.agent-session-broker.worker";
 const DEFAULT_NODE_PATH = "/opt/homebrew/opt/node@24/bin/node";
-const DEFAULT_COREPACK_PATH = "/opt/homebrew/opt/node@24/bin/corepack";
 const DEFAULT_CODEX_VERSION = "0.114.0";
 const DEFAULT_GEMINI_VERSION = "0.33.0";
-const DEFAULT_PNPM_VERSION = readDefaultPnpmVersion();
+const DEFAULT_PACKAGE_INFO = readDefaultPackageInfo();
 const RELEASE_METADATA_FILENAME = ".broker-release.json";
 
 const CODEX_HOME_FILE_ENTRIES = [
@@ -65,18 +64,21 @@ const BROKER_ENV_PASSTHROUGH_KEYS = [
   "BROKER_ADMIN_TOKEN"
 ];
 
-function readDefaultPnpmVersion() {
+function readDefaultPackageInfo() {
   try {
     const packageJson = JSON.parse(readFileSync(path.join(repoRoot, "package.json"), "utf8"));
-    const packageManager = packageJson.packageManager?.trim();
-    if (packageManager?.startsWith("pnpm@")) {
-      return packageManager.slice("pnpm@".length);
-    }
+    return {
+      adminName: "@agent-session-broker/admin",
+      workerName: "@agent-session-broker/worker",
+      version: packageJson.version || "latest"
+    };
   } catch {
-    // fall back to a pinned version below
+    return {
+      adminName: "@agent-session-broker/admin",
+      workerName: "@agent-session-broker/worker",
+      version: "latest"
+    };
   }
-
-  return "10.33.0";
 }
 
 function parseArgs(argv) {
@@ -85,8 +87,11 @@ function parseArgs(argv) {
     adminLabel: DEFAULT_ADMIN_LABEL,
     workerLabel: DEFAULT_WORKER_LABEL,
     nodePath: DEFAULT_NODE_PATH,
-    corepackPath: DEFAULT_COREPACK_PATH,
-    pnpmVersion: DEFAULT_PNPM_VERSION,
+    npmPath: undefined,
+    adminPackageName: DEFAULT_PACKAGE_INFO.adminName,
+    workerPackageName: DEFAULT_PACKAGE_INFO.workerName,
+    packageVersion: DEFAULT_PACKAGE_INFO.version,
+    npmRegistryUrl: undefined,
     codexVersion: DEFAULT_CODEX_VERSION,
     geminiVersion: DEFAULT_GEMINI_VERSION,
     startWorker: false
@@ -111,12 +116,24 @@ function parseArgs(argv) {
         options.nodePath = argv[index + 1];
         index += 1;
         break;
-      case "--corepack-path":
-        options.corepackPath = argv[index + 1];
+      case "--npm-path":
+        options.npmPath = argv[index + 1];
         index += 1;
         break;
-      case "--pnpm-version":
-        options.pnpmVersion = argv[index + 1];
+      case "--admin-package-name":
+        options.adminPackageName = argv[index + 1];
+        index += 1;
+        break;
+      case "--worker-package-name":
+        options.workerPackageName = argv[index + 1];
+        index += 1;
+        break;
+      case "--package-version":
+        options.packageVersion = argv[index + 1];
+        index += 1;
+        break;
+      case "--npm-registry-url":
+        options.npmRegistryUrl = argv[index + 1];
         index += 1;
         break;
       case "--codex-version":
@@ -149,15 +166,13 @@ function printHelp() {
       "  node scripts/ops/macos-bootstrap.mjs [options]",
       "",
       "What it does:",
-      "  - expects to run inside the VM's long-lived git clone",
-      "  - uses that clone as the stable Git source for release worktrees",
       "  - prepares shared runtime directories under the service root",
-      "  - creates an admin/worker release from the current commit under releases/<sha>",
+      "  - installs built admin and worker npm packages under releases/<target>/npm-<version>",
       "  - writes admin/worker launchd plists and env files",
       "  - starts admin immediately; worker is optional",
       "",
       "Notes:",
-      "  - preferred flow: git clone on the VM, cd into the repo, then run this script there",
+      "  - preferred flow: install the admin package, then run this script with --package-version",
       "  - auth.json is not copied by this script; import auth profiles later through /admin",
       "  - Slack tokens come from the current shell env or an existing config/broker.env",
       "",
@@ -167,8 +182,11 @@ function printHelp() {
       `  --worker-label <label>              Worker launchd label, default ${DEFAULT_WORKER_LABEL}`,
       "  --start-worker                      Also start the worker after bootstrap",
       "  --node-path <path>                  Node binary for launchd",
-      "  --corepack-path <path>              Corepack binary",
-      "  --pnpm-version <version>            pnpm version to activate",
+      "  --npm-path <path>                   npm binary, default next to --node-path",
+      "  --admin-package-name <name>         Admin npm package name",
+      "  --worker-package-name <name>        Worker npm package name",
+      "  --package-version <version>         Broker npm package version",
+      "  --npm-registry-url <url>            Optional npm registry URL",
       "  --codex-version <version>           codex CLI version to install globally",
       "  --gemini-version <version>          gemini CLI version to install globally"
     ].join("\n")
@@ -408,9 +426,12 @@ function buildPaths(serviceRoot, options) {
     serviceRoot,
     repoRoot: serviceRoot,
     releasesRoot: path.join(serviceRoot, "releases"),
-    currentReleasePath: path.join(serviceRoot, "current"),
-    previousReleasePath: path.join(serviceRoot, "previous"),
-    failedReleasePath: path.join(serviceRoot, "failed"),
+    currentAdminReleasePath: path.join(serviceRoot, "current-admin"),
+    previousAdminReleasePath: path.join(serviceRoot, "previous-admin"),
+    failedAdminReleasePath: path.join(serviceRoot, "failed-admin"),
+    currentWorkerReleasePath: path.join(serviceRoot, "current-worker"),
+    previousWorkerReleasePath: path.join(serviceRoot, "previous-worker"),
+    failedWorkerReleasePath: path.join(serviceRoot, "failed-worker"),
     dataRoot: path.join(serviceRoot, ".data"),
     runtimeSupportRoot: path.join(serviceRoot, "runtime-support"),
     codexSupportHome: path.join(serviceRoot, "runtime-support", "codex"),
@@ -429,16 +450,37 @@ function buildPaths(serviceRoot, options) {
   };
 }
 
-function buildReleaseMetadata(revision) {
+function buildReleaseMetadata(target, packageName, packageVersion) {
   return {
-    revision,
-    shortRevision: revision ? revision.slice(0, 12) : null,
-    branch: runCommand("git", ["branch", "--show-current"], { capture: true, cwd: repoRoot }) || null,
-    builtAt: new Date().toISOString(),
-    builtBy: os.userInfo().username,
-    builtFromHost: os.hostname(),
-    stateSchemaVersion: 1
+    revision: null,
+    shortRevision: null,
+    branch: null,
+    target,
+    packageName,
+    packageVersion,
+    packageSpec: packageSpec(packageName, packageVersion),
+    requestedVersion: packageVersion,
+    installedAt: new Date().toISOString(),
+    installedBy: os.userInfo().username,
+    installedFromHost: os.hostname(),
+    stateSchemaVersion: 3
   };
+}
+
+function packageSpec(packageName, version) {
+  return `${packageName}@${version}`;
+}
+
+function packageRootForInstallRoot(installRoot, packageName) {
+  return path.join(installRoot, "node_modules", ...packageName.split("/"));
+}
+
+function normalizePackageVersion(version) {
+  const normalized = String(version || "").trim();
+  if (!normalized || !/^[0-9A-Za-z][0-9A-Za-z._+-]*$/.test(normalized)) {
+    throw new Error(`Invalid package version: ${version}`);
+  }
+  return normalized;
 }
 
 function buildAdminEnv(paths, options, seedBrokerEnv) {
@@ -468,11 +510,16 @@ function buildAdminEnv(paths, options, seedBrokerEnv) {
     ADMIN_LAUNCHD_LABEL: options.adminLabel,
     WORKER_LAUNCHD_LABEL: options.workerLabel,
     ADMIN_PLIST_PATH: paths.adminPlistPath,
-    RELEASE_REPO_ROOT: paths.repoRoot,
+    RELEASE_ADMIN_PACKAGE_NAME: options.adminPackageName,
+    RELEASE_WORKER_PACKAGE_NAME: options.workerPackageName,
+    ...(options.npmRegistryUrl ? { RELEASE_NPM_REGISTRY_URL: options.npmRegistryUrl } : {}),
     RELEASES_ROOT: paths.releasesRoot,
-    CURRENT_RELEASE_PATH: paths.currentReleasePath,
-    PREVIOUS_RELEASE_PATH: paths.previousReleasePath,
-    FAILED_RELEASE_PATH: paths.failedReleasePath,
+    CURRENT_ADMIN_RELEASE_PATH: paths.currentAdminReleasePath,
+    PREVIOUS_ADMIN_RELEASE_PATH: paths.previousAdminReleasePath,
+    FAILED_ADMIN_RELEASE_PATH: paths.failedAdminReleasePath,
+    CURRENT_WORKER_RELEASE_PATH: paths.currentWorkerReleasePath,
+    PREVIOUS_WORKER_RELEASE_PATH: paths.previousWorkerReleasePath,
+    FAILED_WORKER_RELEASE_PATH: paths.failedWorkerReleasePath,
     WORKER_PLIST_PATH: paths.workerPlistPath
   };
 }
@@ -505,19 +552,22 @@ function buildWorkerEnv(paths, options, seedBrokerEnv) {
     WORKER_LAUNCHD_LABEL: options.workerLabel,
     ADMIN_PLIST_PATH: paths.adminPlistPath,
     WORKER_PLIST_PATH: paths.workerPlistPath,
-    RELEASE_REPO_ROOT: paths.repoRoot,
+    RELEASE_ADMIN_PACKAGE_NAME: options.adminPackageName,
+    RELEASE_WORKER_PACKAGE_NAME: options.workerPackageName,
+    ...(options.npmRegistryUrl ? { RELEASE_NPM_REGISTRY_URL: options.npmRegistryUrl } : {}),
     RELEASES_ROOT: paths.releasesRoot,
-    CURRENT_RELEASE_PATH: paths.currentReleasePath,
-    PREVIOUS_RELEASE_PATH: paths.previousReleasePath,
-    FAILED_RELEASE_PATH: paths.failedReleasePath,
-    BROKER_GEMINI_UI_HELPER: path.join(paths.currentReleasePath, "dist", "src", "tools", "gemini-ui.js")
+    CURRENT_ADMIN_RELEASE_PATH: paths.currentAdminReleasePath,
+    PREVIOUS_ADMIN_RELEASE_PATH: paths.previousAdminReleasePath,
+    FAILED_ADMIN_RELEASE_PATH: paths.failedAdminReleasePath,
+    CURRENT_WORKER_RELEASE_PATH: paths.currentWorkerReleasePath,
+    PREVIOUS_WORKER_RELEASE_PATH: paths.previousWorkerReleasePath,
+    FAILED_WORKER_RELEASE_PATH: paths.failedWorkerReleasePath,
+    BROKER_GEMINI_UI_HELPER: path.join(paths.currentWorkerReleasePath, "dist", "src", "tools", "gemini-ui.js")
   };
 }
 
 async function installTooling(options) {
-  const npmPath = path.join(path.dirname(options.nodePath), "npm");
-  runCommand(options.corepackPath, ["enable"]);
-  runCommand(options.corepackPath, ["prepare", `pnpm@${options.pnpmVersion}`, "--activate"]);
+  const npmPath = options.npmPath || path.join(path.dirname(options.nodePath), "npm");
   runCommand(npmPath, [
     "install",
     "-g",
@@ -525,12 +575,6 @@ async function installTooling(options) {
     `@openai/codex@${options.codexVersion}`,
     `@google/gemini-cli@${options.geminiVersion}`
   ]);
-}
-
-async function installRepoAtPath(repoPath, options) {
-  runCommand(options.corepackPath, ["pnpm", "install", "--frozen-lockfile"], { cwd: repoPath });
-  runCommand(options.corepackPath, ["pnpm", "build"], { cwd: repoPath });
-  runCommand(options.corepackPath, ["pnpm", "install", "--prod", "--frozen-lockfile"], { cwd: repoPath });
 }
 
 async function prepareSharedHomes(paths) {
@@ -548,38 +592,70 @@ async function prepareSharedHomes(paths) {
   await copyDirectoryResolved(sourceAgentsHome, paths.agentsSupportHome);
 }
 
-async function ensureInitialWorkerRelease(paths, options) {
-  const revision = runCommand("git", ["rev-parse", "HEAD"], { capture: true, cwd: paths.repoRoot });
-  const releaseRoot = path.join(paths.releasesRoot, revision);
-  await ensureDir(paths.releasesRoot);
-  if (!(await fileExists(path.join(releaseRoot, ".git")))) {
-    if (await fileExists(releaseRoot)) {
-      await fs.rm(releaseRoot, { recursive: true, force: true });
-    }
-    runCommand("git", ["-C", paths.repoRoot, "worktree", "add", "--detach", releaseRoot, revision]);
+async function ensureInitialReleases(paths, options) {
+  const version = normalizePackageVersion(options.packageVersion);
+  const admin = await ensureInitialReleaseTarget(paths, options, {
+    target: "admin",
+    packageName: options.adminPackageName,
+    currentReleasePath: paths.currentAdminReleasePath
+  }, version);
+  const worker = await ensureInitialReleaseTarget(paths, options, {
+    target: "worker",
+    packageName: options.workerPackageName,
+    currentReleasePath: paths.currentWorkerReleasePath
+  }, version);
+  return {
+    admin,
+    worker
+  };
+}
+
+async function ensureInitialReleaseTarget(paths, options, targetOptions, version) {
+  const installRoot = path.join(paths.releasesRoot, targetOptions.target, `npm-${version}`);
+  const releaseRoot = packageRootForInstallRoot(installRoot, targetOptions.packageName);
+  const npmPath = options.npmPath || path.join(path.dirname(options.nodePath), "npm");
+  await ensureDir(path.dirname(installRoot));
+  if (!(await fileExists(releaseRoot))) {
+    await fs.rm(installRoot, { recursive: true, force: true });
+    runCommand(npmPath, [
+      "install",
+      "--prefix",
+      installRoot,
+      "--omit=dev",
+      "--ignore-scripts",
+      "--no-audit",
+      "--no-fund",
+      ...(options.npmRegistryUrl ? ["--registry", options.npmRegistryUrl] : []),
+      packageSpec(targetOptions.packageName, version)
+    ]);
   }
-  await installRepoAtPath(releaseRoot, options);
   await fs.writeFile(
     path.join(releaseRoot, RELEASE_METADATA_FILENAME),
-    `${JSON.stringify(buildReleaseMetadata(revision), null, 2)}\n`,
+    `${JSON.stringify(buildReleaseMetadata(targetOptions.target, targetOptions.packageName, version), null, 2)}\n`,
     "utf8"
   );
 
-  await fs.rm(paths.currentReleasePath, { recursive: true, force: true });
-  await fs.symlink(path.relative(path.dirname(paths.currentReleasePath), releaseRoot), paths.currentReleasePath, "dir");
+  await fs.rm(targetOptions.currentReleasePath, { recursive: true, force: true });
+  await fs.symlink(
+    path.relative(path.dirname(targetOptions.currentReleasePath), releaseRoot),
+    targetOptions.currentReleasePath,
+    "dir"
+  );
   return {
-    revision,
+    packageName: targetOptions.packageName,
+    packageVersion: version,
     releaseRoot
   };
 }
 
 async function writeLaunchdFiles(paths, options, seedBrokerEnv) {
-  const launcherPath = path.join(paths.currentReleasePath, "scripts", "ops", "macos-launchd-launcher.mjs");
+  const adminLauncherPath = path.join(paths.currentAdminReleasePath, "scripts", "ops", "macos-launchd-launcher.mjs");
+  const workerLauncherPath = path.join(paths.currentWorkerReleasePath, "scripts", "ops", "macos-launchd-launcher.mjs");
   const adminPlist = renderPlist({
     label: options.adminLabel,
     nodePath: options.nodePath,
-    launcherPath,
-    repoRootPath: paths.currentReleasePath,
+    launcherPath: adminLauncherPath,
+    repoRootPath: paths.currentAdminReleasePath,
     envFilePath: paths.adminEnvFile,
     entryPoint: "dist/src/admin-index.js",
     stdoutPath: paths.adminStdoutPath,
@@ -588,8 +664,8 @@ async function writeLaunchdFiles(paths, options, seedBrokerEnv) {
   const workerPlist = renderPlist({
     label: options.workerLabel,
     nodePath: options.nodePath,
-    launcherPath,
-    repoRootPath: paths.currentReleasePath,
+    launcherPath: workerLauncherPath,
+    repoRootPath: paths.currentWorkerReleasePath,
     envFilePath: paths.workerEnvFile,
     entryPoint: "dist/src/worker-index.js",
     stdoutPath: paths.workerStdoutPath,
@@ -633,8 +709,7 @@ async function main() {
 
   await prepareSharedHomes(paths);
   await installTooling(options);
-  await installRepoAtPath(paths.repoRoot, options);
-  const initialRelease = await ensureInitialWorkerRelease(paths, options);
+  const initialReleases = await ensureInitialReleases(paths, options);
   await writeLaunchdFiles(paths, options, seedBrokerEnv);
 
   bootout(paths.adminPlistPath);
@@ -654,8 +729,9 @@ async function main() {
         serviceRoot: paths.serviceRoot,
         adminPlistPath: paths.adminPlistPath,
         workerPlistPath: paths.workerPlistPath,
-        currentReleasePath: paths.currentReleasePath,
-        initialRelease,
+        currentAdminReleasePath: paths.currentAdminReleasePath,
+        currentWorkerReleasePath: paths.currentWorkerReleasePath,
+        initialReleases,
         workerStarted: options.startWorker
       },
       null,

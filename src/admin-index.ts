@@ -86,11 +86,13 @@ export async function startAdminService(): Promise<{
 function createReleaseDeploymentService(config: ReturnType<typeof loadConfig>): ReleaseDeploymentService | undefined {
   if (
     !config.serviceRoot ||
-    !config.releaseRepoRoot ||
     !config.releasesRoot ||
-    !config.currentReleasePath ||
-    !config.previousReleasePath ||
-    !config.failedReleasePath ||
+    !config.currentAdminReleasePath ||
+    !config.previousAdminReleasePath ||
+    !config.failedAdminReleasePath ||
+    !config.currentWorkerReleasePath ||
+    !config.previousWorkerReleasePath ||
+    !config.failedWorkerReleasePath ||
     !config.adminPlistPath ||
     !config.adminLaunchdLabel ||
     !config.workerPlistPath ||
@@ -101,11 +103,13 @@ function createReleaseDeploymentService(config: ReturnType<typeof loadConfig>): 
 
   return new ReleaseDeploymentService({
     serviceRoot: config.serviceRoot,
-    repoRoot: config.releaseRepoRoot,
     releasesRoot: config.releasesRoot,
-    currentReleasePath: config.currentReleasePath,
-    previousReleasePath: config.previousReleasePath,
-    failedReleasePath: config.failedReleasePath,
+    currentAdminReleasePath: config.currentAdminReleasePath,
+    previousAdminReleasePath: config.previousAdminReleasePath,
+    failedAdminReleasePath: config.failedAdminReleasePath,
+    currentWorkerReleasePath: config.currentWorkerReleasePath,
+    previousWorkerReleasePath: config.previousWorkerReleasePath,
+    failedWorkerReleasePath: config.failedWorkerReleasePath,
     adminPlistPath: config.adminPlistPath,
     adminLaunchdLabel: config.adminLaunchdLabel,
     adminBaseUrl: config.adminBaseUrl,
@@ -113,7 +117,11 @@ function createReleaseDeploymentService(config: ReturnType<typeof loadConfig>): 
     workerLaunchdLabel: config.workerLaunchdLabel,
     workerBaseUrl: config.workerBaseUrl,
     codexAppServerPort: config.codexAppServerPort,
-    releaseRepoUrl: config.releaseRepoUrl,
+    packages: {
+      admin: config.releaseAdminPackageName,
+      worker: config.releaseWorkerPackageName
+    },
+    npmRegistryUrl: config.releaseNpmRegistryUrl,
     scheduleAdminRestart: scheduleAdminRestartAfterResponse
   });
 }
