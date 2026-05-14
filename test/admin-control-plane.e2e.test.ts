@@ -121,43 +121,51 @@ describe("admin control plane e2e", () => {
         expect.objectContaining({
           type: "agent_system_prompt",
           title: "系统 Prompt",
-          detail: expect.stringContaining("System core instruction")
+          detailAvailable: true
         }),
         expect.objectContaining({
           type: "agent_memory",
           title: "记忆",
-          detail: expect.stringContaining("prefer Chinese admin pages")
+          detailAvailable: true
         }),
         expect.objectContaining({
           type: "agent_user_message",
           title: "用户消息",
-          detail: expect.stringContaining("请检查发布状态")
+          detailAvailable: true
         }),
         expect.objectContaining({
           type: "agent_runtime_reminder",
           title: "Runtime 提醒",
-          detail: expect.stringContaining("Runtime reminder")
+          detailAvailable: true
         }),
         expect.objectContaining({
           type: "agent_assistant_message",
           title: "Assistant 消息",
-          detail: expect.stringContaining("我会先检查状态")
+          detailAvailable: true
         }),
         expect.objectContaining({
           type: "agent_tool_call",
           title: "工具调用",
           toolName: "exec_command",
-          detail: expect.stringContaining("pnpm lint")
+          detailAvailable: true
         }),
         expect.objectContaining({
           type: "agent_tool_result",
           title: "工具结果",
           callId: "call-1",
           turnId: "turn-1",
-          detail: expect.stringContaining("PASS admin-control-plane")
+          detailAvailable: true
         })
       ])
     );
+    expect(JSON.stringify(timeline.events)).not.toContain("System core instruction");
+    const toolResultDetail = await readJson(`${baseUrl}/admin/api/sessions/${encodeURIComponent("C123:111.222")}/timeline-events/${encodeURIComponent("C123:111.222:runtime:tool-result")}`);
+    expect(toolResultDetail).toMatchObject({
+      ok: true,
+      event: {
+        detail: expect.stringContaining("PASS admin-control-plane")
+      }
+    });
 
     const preflight = await readJson(`${baseUrl}/admin/api/preflight?operation=deploy`);
     expect(preflight).toMatchObject({

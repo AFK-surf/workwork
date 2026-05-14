@@ -323,7 +323,7 @@ export class AdminService {
     const agentEvents = visibleTimelineTraceEvents(tracePage.events);
     const pageLimit = clampPositiveInteger(options.limit ?? 100, 1, 500);
     const timelinePage = selectTimelinePageEvents({
-      agentEvents: agentEvents.map(agentTraceEventToTimelineEvent),
+      agentEvents: agentEvents.map((event) => agentTraceEventToTimelineEvent(event)),
       limit: pageLimit,
       traceHasMore: tracePage.hasMore,
       traceNextBeforeSequence: tracePage.nextBeforeSequence
@@ -345,6 +345,40 @@ export class AdminService {
         nextBeforeSequence: timelinePage.nextBeforeSequence
       },
       events: timelinePage.events
+    };
+  }
+
+  async getSessionTimelineEvent(sessionKey: string, eventId: string): Promise<Record<string, unknown>> {
+    const session = this.options.sessions.getSessionByKey(sessionKey);
+    if (!session) {
+      return {
+        ok: false,
+        error: "session_not_found",
+        sessionKey
+      };
+    }
+    const event = this.options.sessions.getAgentTraceEvent(sessionKey, eventId);
+    if (!event) {
+      return {
+        ok: false,
+        error: "trace_event_not_found",
+        sessionKey,
+        eventId
+      };
+    }
+    if (!isVisibleTimelineTraceEvent(event)) {
+      return {
+        ok: false,
+        error: "trace_event_hidden",
+        sessionKey,
+        eventId
+      };
+    }
+    return {
+      ok: true,
+      event: agentTraceEventToTimelineEvent(event, {
+        includeDetail: true
+      })
     };
   }
 
@@ -2175,15 +2209,19 @@ function toolTraceKey(event: Pick<PersistedAgentTraceEvent, "turnId" | "callId" 
   return [event.turnId ?? "", event.toolName ?? ""].join("\u001f");
 }
 
-function agentTraceEventToTimelineEvent(event: PersistedAgentTraceEvent): Record<string, JsonLike> {
+function agentTraceEventToTimelineEvent(event: PersistedAgentTraceEvent, options: {
+  readonly includeDetail?: boolean | undefined;
+} = {}): Record<string, JsonLike> {
   return withoutUndefined({
     id: event.id,
+    sessionKey: event.sessionKey,
     type: event.type,
     at: event.at,
     sequence: event.sequence,
     title: event.title,
     summary: event.summary,
-    detail: event.detail,
+    detail: options.includeDetail ? event.detail : undefined,
+    detailAvailable: Boolean(event.detail),
     status: event.status,
     role: event.role,
     toolName: event.toolName,

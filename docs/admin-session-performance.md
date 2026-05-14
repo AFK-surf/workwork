@@ -43,6 +43,8 @@ The remaining problems are data-contract problems:
 - The React detail view fetches only the selected session's first timeline page.
   It starts with a small latest page and prepends older pages only when the user
   asks for more.
+- Timeline page rows carry summaries only. Full trace `detail` payloads are
+  loaded per event when the user opens a row's detail disclosure.
 - Realtime events append to the loaded timeline page without forcing a full
   timeline reload.
 - Read-heavy admin API responses include `Server-Timing` and
@@ -67,6 +69,8 @@ The remaining problems are data-contract problems:
 - The React session detail initial request includes a bounded `limit`.
 - The React session detail has an explicit `加载更早活动` action when the API says
   older activity exists.
+- The first timeline page does not inline large trace details; details are lazy
+  loaded by event id.
 - Timeline, sessions, overview, usage, and status responses expose backend
   duration headers for request-level tracing.
 - `pnpm test` and `pnpm build` pass.

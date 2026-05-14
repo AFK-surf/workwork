@@ -546,6 +546,10 @@ export class SessionManager {
     return this.#stateStore.listAgentTraceEvents(sessionKey, limit);
   }
 
+  getAgentTraceEvent(sessionKey: string, id: string): PersistedAgentTraceEvent | undefined {
+    return this.#stateStore.getAgentTraceEvent(sessionKey, id);
+  }
+
   listAgentTraceEventsPage(sessionKey: string, options?: {
     readonly limit?: number | undefined;
     readonly beforeSequence?: number | undefined;

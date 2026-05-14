@@ -163,6 +163,7 @@ describe("admin session performance contract", () => {
         sequence: index,
         title: `event ${index}`,
         summary: `summary ${index}`,
+        detail: `detail ${index}`,
         status: "completed",
         role: "assistant",
         createdAt: "2026-03-19T00:00:00.000Z",
@@ -207,6 +208,11 @@ describe("admin session performance contract", () => {
     );
     expect(firstTraceSequences.slice(0, 3)).toEqual([96, 97, 98]);
     expect(firstTraceSequences.at(-1)).toBe(120);
+    const firstEvents = first.events as Array<Record<string, unknown>>;
+    expect(firstEvents[0]).toMatchObject({
+      detailAvailable: true
+    });
+    expect(firstEvents[0]).not.toHaveProperty("detail");
     expect(first.page).toMatchObject({
       limit: 25,
       hasMore: true,
@@ -228,6 +234,15 @@ describe("admin session performance contract", () => {
     expect(older.page).toMatchObject({
       hasMore: true,
       nextBeforeSequence: 71
+    });
+
+    const detail = await service.getSessionTimelineEvent("C123:111.222", "trace-120");
+    expect(detail).toMatchObject({
+      ok: true,
+      event: {
+        id: "trace-120",
+        detail: "detail 120"
+      }
     });
   });
 

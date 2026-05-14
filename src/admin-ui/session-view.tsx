@@ -1155,15 +1155,39 @@ function Timeline({ events }: { readonly events: readonly TimelineEvent[] }): Re
 }
 
 function TimelineRow({ event }: { readonly event: TimelineEvent }): React.JSX.Element {
+  const [detail, setDetail] = useState<string | null>(typeof event.detail === "string" ? event.detail : null);
+  const [detailStatus, setDetailStatus] = useState<string | null>(null);
   const display = getTimelineEventDisplay(event);
   const badgeTone = statusTone(event.status === "failed" || event.status === "error" ? event.status : event.type);
   const isCommandEvent = event.toolName === "exec_command";
+  const canLoadDetail = Boolean(event.detailAvailable && event.id && event.sessionKey);
   const meta = [
     event.status ? ("状态 " + statusLabel(event.status)) : "",
     !isCommandEvent && event.role ? ("角色 " + event.role) : "",
     !isCommandEvent && event.toolName ? ("工具 " + event.toolName) : "",
     event.detailTruncated ? "内容已截断" : ""
   ].filter(Boolean).join(" · ");
+
+  useEffect(() => {
+    setDetail(typeof event.detail === "string" ? event.detail : null);
+    setDetailStatus(null);
+  }, [event.id, event.detail]);
+
+  async function loadDetail(): Promise<void> {
+    if (detail || detailStatus === "loading" || !canLoadDetail) {
+      return;
+    }
+    setDetailStatus("loading");
+    try {
+      const payload = await requestJson(sessionTimelineEventApiPath(String(event.sessionKey), String(event.id))) as Record<string, any>;
+      const nextDetail = typeof payload.event?.detail === "string" ? payload.event.detail : "";
+      setDetail(nextDetail || "没有详情");
+      setDetailStatus(null);
+    } catch (error) {
+      setDetailStatus(error instanceof Error ? error.message : String(error));
+    }
+  }
+
   return (
     <div className="timeline-event">
       <span>{fmtTime(event.at)}</span>
@@ -1174,10 +1198,14 @@ function TimelineRow({ event }: { readonly event: TimelineEvent }): React.JSX.El
           {display.summary ? <span title={display.summary}>{display.summary}</span> : null}
         </div>
         {meta ? <div className="trace-meta">{meta}</div> : null}
-        {event.detail ? (
-          <details className="trace-details">
+        {detail || canLoadDetail ? (
+          <details className="trace-details" onToggle={(toggleEvent) => {
+            if ((toggleEvent.currentTarget as HTMLDetailsElement).open) {
+              void loadDetail();
+            }
+          }}>
             <summary>查看详情</summary>
-            <pre>{event.detail}</pre>
+            <pre>{detail || (detailStatus === "loading" ? "正在加载" : detailStatus || "")}</pre>
           </details>
         ) : null}
       </div>
@@ -1461,6 +1489,10 @@ function sessionTimelineApiPath(sessionKey: string, options: {
   }
   const query = params.toString();
   return "/admin/api/sessions/" + encodeURIComponent(sessionKey) + "/timeline" + (query ? "?" + query : "");
+}
+
+function sessionTimelineEventApiPath(sessionKey: string, eventId: string): string {
+  return "/admin/api/sessions/" + encodeURIComponent(sessionKey) + "/timeline-events/" + encodeURIComponent(eventId);
 }
 
 function sessionJobCancelApiPath(sessionKey: string, jobId: string): string {

@@ -71,6 +71,17 @@ export async function handleAdminRequest(
     return true;
   }
 
+  const timelineEventMatch = matchSessionTimelineEventPath(url.pathname);
+  if (method === "GET" && timelineEventMatch) {
+    const result = await options.adminService.getSessionTimelineEvent(
+      timelineEventMatch.sessionKey,
+      timelineEventMatch.eventId
+    );
+    response.setHeader("server-timing", "admin;desc=\"session-timeline-event\";dur=0");
+    respondJson(response, result.ok === false ? 404 : 200, result);
+    return true;
+  }
+
   if (method === "GET" && url.pathname.startsWith("/admin/api/sessions/") && url.pathname.endsWith("/slack-thread-url")) {
     const sessionKey = decodeURIComponent(url.pathname.slice(
       "/admin/api/sessions/".length,
@@ -464,6 +475,31 @@ function matchSessionJobCancelPath(pathname: string): {
   return {
     sessionKey: decodeURIComponent(encodedSessionKey),
     jobId: decodeURIComponent(encodedJobId)
+  };
+}
+
+function matchSessionTimelineEventPath(pathname: string): {
+  readonly sessionKey: string;
+  readonly eventId: string;
+} | null {
+  const prefix = "/admin/api/sessions/";
+  const marker = "/timeline-events/";
+  if (!pathname.startsWith(prefix)) {
+    return null;
+  }
+  const middle = pathname.slice(prefix.length);
+  const markerIndex = middle.indexOf(marker);
+  if (markerIndex <= 0) {
+    return null;
+  }
+  const encodedSessionKey = middle.slice(0, markerIndex);
+  const encodedEventId = middle.slice(markerIndex + marker.length);
+  if (!encodedSessionKey || !encodedEventId || encodedSessionKey.includes("/") || encodedEventId.includes("/")) {
+    return null;
+  }
+  return {
+    sessionKey: decodeURIComponent(encodedSessionKey),
+    eventId: decodeURIComponent(encodedEventId)
   };
 }
 

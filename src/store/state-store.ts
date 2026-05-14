@@ -1168,6 +1168,13 @@ export class StateStore {
       .map((row) => this.#rowToAgentTraceEvent(row as SqlRow));
   }
 
+  getAgentTraceEvent(sessionKey: string, id: string): PersistedAgentTraceEvent | undefined {
+    const row = this.#databaseRequired()
+      .prepare("SELECT * FROM agent_trace_events WHERE session_key = ? AND id = ?")
+      .get(sessionKey, id) as SqlRow | undefined;
+    return row ? this.#rowToAgentTraceEvent(row) : undefined;
+  }
+
   listAgentTraceEventsPage(sessionKey: string, options?: {
     readonly limit?: number | undefined;
     readonly beforeSequence?: number | undefined;
