@@ -20,6 +20,7 @@ import {
   isAuthProfileUnavailableError,
   type AuthProfileUnavailableError
 } from "../agent-runtime/session-auth-profile-runtime.js";
+import { isAuthProfileProbeFailureReason } from "../session-auth-profile-selector.js";
 import { AgentTraceRecorder } from "../agent-runtime/agent-trace-recorder.js";
 import {
   SlackApi,
@@ -104,6 +105,7 @@ export class SlackConversationService {
   readonly #turnRunner: SlackTurnRunner;
   readonly #turnReconciler: SlackTurnReconciler;
   readonly #agentRuntimeEventHandler: (event: AgentRuntimeEvent) => void;
+  readonly #sessionPageLinkPosts = new Map<string, Promise<SlackSessionRecord>>();
   #botUserId = "";
   #activeTurnReconcileTimer: NodeJS.Timeout | undefined;
   #catchUpPromise: Promise<void> | undefined;
@@ -899,21 +901,44 @@ export class SlackConversationService {
   }
 
   async #postSessionPageLinkIfNeeded(session: SlackSessionRecord): Promise<SlackSessionRecord> {
-    if (session.sessionPageLinkPostedAt) {
-      return session;
+    const latestSession = this.#findSessionByKey(session.key);
+    if (latestSession.sessionPageLinkPostedAt) {
+      return latestSession;
+    }
+
+    const inflight = this.#sessionPageLinkPosts.get(session.key);
+    if (inflight) {
+      return await inflight;
+    }
+
+    const posting = this.#postSessionPageLinkOnce(latestSession);
+    this.#sessionPageLinkPosts.set(session.key, posting);
+    try {
+      return await posting;
+    } finally {
+      if (this.#sessionPageLinkPosts.get(session.key) === posting) {
+        this.#sessionPageLinkPosts.delete(session.key);
+      }
+    }
+  }
+
+  async #postSessionPageLinkOnce(session: SlackSessionRecord): Promise<SlackSessionRecord> {
+    const latestSession = this.#findSessionByKey(session.key);
+    if (latestSession.sessionPageLinkPostedAt) {
+      return latestSession;
     }
 
     const url = buildAdminSessionUrl(this.#config.adminBaseUrl, session.key);
     try {
       await this.#postBotThreadMessage(
-        session.channelId,
-        session.rootThreadTs,
-        this.#formatSessionPageLinkMessage(session, url),
+        latestSession.channelId,
+        latestSession.rootThreadTs,
+        this.#formatSessionPageLinkMessage(latestSession, url),
         { alreadyFormatted: true }
       );
       return await this.#sessions.setSessionPageLinkPostedAt(
-        session.channelId,
-        session.rootThreadTs,
+        latestSession.channelId,
+        latestSession.rootThreadTs,
         new Date().toISOString()
       );
     } catch (error) {
@@ -1753,6 +1778,11 @@ export class SlackConversationService {
     error: AuthProfileUnavailableError,
     runtime: RuntimeSessionState
   ): Promise<void> {
+    if (isAuthProfileProbeFailureReason(error.reason)) {
+      await this.#handleAuthProfileProbeFailure(session, error, runtime);
+      return;
+    }
+
     logger.warn("Pausing Slack session until a human switches auth profile", {
       sessionKey: session.key,
       profileName: error.profileName ?? null,
@@ -1798,6 +1828,31 @@ export class SlackConversationService {
     }
 
     this.#clearAssistantStatus(blockedSession.channelId, blockedSession.rootThreadTs);
+  }
+
+  async #handleAuthProfileProbeFailure(
+    session: SlackSessionRecord,
+    error: AuthProfileUnavailableError,
+    runtime: RuntimeSessionState
+  ): Promise<void> {
+    logger.warn("Deferring Slack session until auth profile status can be read", {
+      sessionKey: session.key,
+      profileName: error.profileName ?? null,
+      reason: error.reason
+    });
+
+    runtime.blockedUntilMs = undefined;
+    runtime.blockedFailureFingerprint = `auth-probe:${error.profileName ?? "none"}:${error.reason}`;
+    const latestSession = session.authBlockedAt && isAuthProfileProbeFailureReason(session.authBlockReason)
+      ? await this.#sessions.clearSessionAuthBlock(session.key)
+      : session;
+    await this.#sessions.setActiveTurnId(
+      latestSession.channelId,
+      latestSession.rootThreadTs,
+      undefined
+    );
+    this.#scheduleAutoResume(latestSession.key);
+    this.#clearAssistantStatus(latestSession.channelId, latestSession.rootThreadTs);
   }
 
   async #recordAuthBlockedTrace(

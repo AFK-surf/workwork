@@ -70,6 +70,7 @@ const BROKER_ENV_PASSTHROUGH_KEYS = [
   "GEMINI_HTTPS_PROXY",
   "GEMINI_ALL_PROXY",
   "BROKER_ADMIN_TOKEN",
+  "ADMIN_BASE_URL",
   "GITHUB_API_BASE_URL",
   "GITHUB_OAUTH_SCOPES",
   "BROKER_DEFAULT_GITHUB_LOGIN",
@@ -498,12 +499,13 @@ function normalizePackageVersion(version) {
 }
 
 function buildAdminEnv(paths, options, seedBrokerEnv) {
+  const adminBaseUrl = seedBrokerEnv.ADMIN_BASE_URL || "http://127.0.0.1:3000";
   return {
     ...seedBrokerEnv,
     NODE_ENV: "production",
     PATH: "/opt/homebrew/opt/node@24/bin:/opt/homebrew/bin:/usr/bin:/bin",
     PORT: "3000",
-    ADMIN_BASE_URL: "http://127.0.0.1:3000",
+    ADMIN_BASE_URL: adminBaseUrl,
     WORKER_PORT: "3001",
     WORKER_BIND_HOST: "127.0.0.1",
     WORKER_BASE_URL: "http://127.0.0.1:3001",
@@ -539,12 +541,13 @@ function buildAdminEnv(paths, options, seedBrokerEnv) {
 }
 
 function buildWorkerEnv(paths, options, seedBrokerEnv) {
+  const adminBaseUrl = seedBrokerEnv.ADMIN_BASE_URL || "http://127.0.0.1:3000";
   return {
     ...seedBrokerEnv,
     NODE_ENV: "production",
     PATH: "/opt/homebrew/opt/node@24/bin:/opt/homebrew/bin:/usr/bin:/bin",
     PORT: "3001",
-    ADMIN_BASE_URL: "http://127.0.0.1:3000",
+    ADMIN_BASE_URL: adminBaseUrl,
     WORKER_PORT: "3001",
     WORKER_BIND_HOST: "127.0.0.1",
     WORKER_BASE_URL: "http://127.0.0.1:3001",

@@ -16,6 +16,11 @@ The page should answer these questions first:
 Operational and debug metadata still exists, but it should not be the primary
 reading path.
 
+The Slack thread should receive exactly one session activity link for each
+broker session. Posting the link must be idempotent even when multiple inbound
+Slack messages or recovery paths start dispatch for the same new session at the
+same time.
+
 ## Current State
 
 The current React page already has the right data and core controls, but the

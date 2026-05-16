@@ -94,6 +94,9 @@ Status data flows through a React hook backed by `admin-status-store`:
   outcomes, not a session-level problem state; they stay visible in the jobs
   table/debug data but must not turn the whole session red, enter the `有问题`
   filter, or create a separate top-level `失败` pill;
+- Pending input badges must use plain product language. Human pending input is
+  shown as `待处理`; the fact that it is user input belongs in the detail/title,
+  not in awkward badge text such as `待人处理`;
 - session detail exposes a cancel action for registered/running background jobs.
   The browser must call an admin API only; job tokens stay server-side. The admin
   process validates session/job ownership and delegates cancellation to the

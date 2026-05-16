@@ -619,6 +619,20 @@ describe("admin session row display", () => {
     });
   });
 
+  it("uses plain pending labels for human Slack input", () => {
+    const state = sessionQueueState({
+      openInboundCount: 1,
+      openHumanInboundCount: 1
+    });
+
+    expect(state).toMatchObject({
+      label: "待处理",
+      tone: "warn",
+      detail: "1 条用户消息"
+    });
+    expect(state.label).not.toContain("待人处理");
+  });
+
   it("does not show account-switch state when the bound profile quota has recovered", () => {
     const profile = {
       name: "profile-a",
@@ -654,6 +668,37 @@ describe("admin session row display", () => {
 
     expect(state.label).toBe("待处理");
     expect(state.detail).toBe("1 条系统消息");
+    expect(meta.map((item) => item.key)).not.toContain("auth-blocked");
+    expect(meta.map((item) => item.label)).not.toContain("账号待切换");
+  });
+
+  it("does not show account-switch state for probe-failure-only auth blocks", () => {
+    const profile = {
+      name: "profile-a",
+      account: {
+        ok: false,
+        error: "account status read failed"
+      },
+      rateLimits: {
+        ok: false,
+        error: "rate limits read failed"
+      }
+    };
+    const session = {
+      key: "C123:111.222",
+      channelId: "C123",
+      authProfileName: "profile-a",
+      authBlockedAt: "2026-05-09T01:00:00.000Z",
+      authBlockReason: "account_probe_failed",
+      openInboundCount: 1,
+      openHumanInboundCount: 1
+    };
+
+    const state = sessionQueueState(session, profile);
+    const meta = renderSessionMeta(session, new Map([["profile-a", profile]]));
+
+    expect(state.label).toBe("待处理");
+    expect(state.detail).toBe("1 条用户消息");
     expect(meta.map((item) => item.key)).not.toContain("auth-blocked");
     expect(meta.map((item) => item.label)).not.toContain("账号待切换");
   });

@@ -449,7 +449,8 @@ describe("admin routes", () => {
     expect(sessionViewSource).toContain("compareSessionsForMode");
     expect(sessionViewSource).toContain("session-card");
     expect(sessionViewSource).toContain("session-meta-pill");
-    expect(sessionRowDisplaySource).toContain("待人处理");
+    expect(sessionRowDisplaySource).not.toContain("待人处理");
+    expect(sessionRowDisplaySource).toContain("待处理");
     expect(sessionRowDisplaySource).not.toContain("任务失败");
     expect(sessionViewSource).toContain('mode === "issues" && !sessionAuthBlockActive');
     expect(sessionViewSource).toContain('mode === "usage"');

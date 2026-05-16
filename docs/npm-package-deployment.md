@@ -136,8 +136,10 @@ commits.
   the requested target.
 - Admin launchd runs through the admin current symlink.
 - Worker launchd runs through the worker current symlink.
-- Bootstrap preserves explicit operator runtime configuration for logging,
-  cleanup, GitHub PR fallback, and API/OAuth settings instead of silently
-  rewriting those values to defaults.
+- Bootstrap preserves explicit operator runtime configuration for public admin
+  URL, logging, cleanup, GitHub PR fallback, and API/OAuth settings instead of
+  silently rewriting those values to defaults. `ADMIN_BASE_URL` is the public URL
+  used in Slack session links and must not be replaced with localhost when it is
+  already configured.
 - Regression tests avoid private-string negative assertions.
 - `pnpm test` and `pnpm build` pass.

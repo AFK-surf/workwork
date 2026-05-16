@@ -26,6 +26,16 @@ export interface AuthProfileEvaluation {
   readonly weightedWeeklyQuotaScore?: number | undefined;
 }
 
+export function isAuthProfileProbeFailureReason(
+  reason: string | undefined
+): reason is "account_probe_failed" | "rate_limits_probe_failed" {
+  return reason === "account_probe_failed" || reason === "rate_limits_probe_failed";
+}
+
+export function isAuthProfileProbeFailure(evaluation: AuthProfileEvaluation): boolean {
+  return !evaluation.usable && isAuthProfileProbeFailureReason(evaluation.reason);
+}
+
 export function selectBestAuthProfile(
   status: AuthProfilesStatus,
   options: { readonly now?: Date | number | string | undefined } = {}

@@ -8,7 +8,7 @@ interface QuotaLabelOptions {
 export function profileAccountLabel(profile: AuthProfileRecord): string {
   const accountStatus = profile.account || {};
   if (accountStatus.ok === false) {
-    return "账号不可用";
+    return "账号状态读取失败";
   }
 
   const account = accountStatus.account || {};
@@ -66,7 +66,7 @@ export function profileIsSelectable(profile: AuthProfileRecord): boolean {
 export function profileQuotaLabel(profile: AuthProfileRecord, options: QuotaLabelOptions = {}): string {
   const rateLimits = profile.rateLimits || {};
   if (rateLimits.ok === false) {
-    return "不可用";
+    return "额度状态读取失败";
   }
 
   const limits = rateLimits.rateLimits || {};

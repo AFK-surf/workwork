@@ -100,7 +100,7 @@ describe("admin auth profile display", () => {
     }), { now })).toBe("7d 50% / 0.5 | 5h 30% / 0.3");
   });
 
-  it("keeps unusable profiles readable without presenting their UUID as the label", () => {
+  it("keeps probe-failed profiles readable without presenting their UUID as the label", () => {
     const profile = {
       name: "39c7bde2-02d0-4cf2-a87e-20374ea71c74",
       account: {
@@ -113,8 +113,9 @@ describe("admin auth profile display", () => {
       }
     };
 
-    expect(profileAccountLabel(profile)).toBe("账号不可用");
-    expect(profileOptionLabel(profile)).toBe("账号不可用 · 不可用");
+    expect(profileAccountLabel(profile)).toBe("账号状态读取失败");
+    expect(profileQuotaLabel(profile)).toBe("额度状态读取失败");
+    expect(profileOptionLabel(profile)).toBe("账号状态读取失败 · 额度状态读取失败");
   });
 });
 

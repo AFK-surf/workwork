@@ -2,7 +2,11 @@ import {
   profileTitle,
   profileWeeklyQuotaLabel
 } from "./auth-profile-display.js";
-import { evaluateAuthProfile } from "../services/session-auth-profile-selector.js";
+import {
+  evaluateAuthProfile,
+  isAuthProfileProbeFailure,
+  isAuthProfileProbeFailureReason
+} from "../services/session-auth-profile-selector.js";
 
 type SessionRecord = Record<string, any>;
 
@@ -76,7 +80,7 @@ export function sessionQueueState(session: SessionRecord, authProfile?: SessionR
     return { label: "账号待切换", tone: "danger", rank: 70, detail: String(session.authBlockReasonLabel || session.authBlockReason || "账号不可用") };
   }
   if (Number(session.openHumanInboundCount || 0) > 0) {
-    return { label: "待人处理", tone: "warn", rank: 50, detail: session.openHumanInboundCount + " 条用户消息" };
+    return { label: "待处理", tone: "warn", rank: 50, detail: session.openHumanInboundCount + " 条用户消息" };
   }
   if (Number(session.openInboundCount || 0) > 0) {
     return { label: "待处理", tone: "warn", rank: 40, detail: session.openInboundCount + " 条系统消息" };
@@ -96,12 +100,15 @@ export function sessionQueueState(session: SessionRecord, authProfile?: SessionR
 
 export function sessionAuthBlockActive(session: SessionRecord, authProfile?: SessionRecord | null | undefined): boolean {
   if (!session.authBlockedAt) return false;
+  if (isAuthProfileProbeFailureReason(stringOrUndefined(session.authBlockReason))) return false;
   if (!authProfile) return true;
   if (session.authProfileName && authProfile.name && String(session.authProfileName) !== String(authProfile.name)) {
     return true;
   }
   try {
-    return !evaluateAuthProfile(authProfile as never).usable;
+    const evaluation = evaluateAuthProfile(authProfile as never);
+    if (isAuthProfileProbeFailure(evaluation)) return false;
+    return !evaluation.usable;
   } catch {
     return true;
   }

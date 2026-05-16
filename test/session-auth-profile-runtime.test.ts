@@ -145,6 +145,58 @@ describe("SessionAuthProfileRuntime", () => {
     expect(sessions.get(session.key)?.authProfileName).toBe("empty");
   });
 
+  it("continues through the bound auth profile when quota status reads fail", async () => {
+    const dataRoot = await fs.mkdtemp(path.join(os.tmpdir(), "session-auth-runtime-probe-failed-"));
+    tempDirs.push(dataRoot);
+    const config = loadConfig({
+      SLACK_APP_TOKEN: "xapp-test",
+      SLACK_BOT_TOKEN: "xoxb-test",
+      DATA_ROOT: dataRoot
+    } as NodeJS.ProcessEnv);
+    const session = createSession({
+      authProfileName: "bound",
+      authProfileBoundAt: "2026-05-09T00:00:00.000Z",
+      authBlockedAt: "2026-05-09T01:00:00.000Z",
+      authBlockReason: "account_probe_failed",
+      authBlockedNoticePostedAt: "2026-05-09T01:00:05.000Z"
+    });
+    const sessions = createSessionManagerMock(session);
+    const runtimes = new Map<string, MockAgentRuntime>();
+    const runtime = new SessionAuthProfileRuntime({
+      config,
+      sessions: sessions as never,
+      authProfiles: authProfilesMock(profileStatus([
+        profile("bound", 0, 0, {
+          accountOk: false,
+          rateLimitsOk: false
+        }),
+        profile("usable", 0, 0)
+      ])) as never,
+      createProfileRuntime: ({ profile }) => {
+        const mockRuntime = new MockAgentRuntime(profile.name);
+        runtimes.set(profile.name, mockRuntime);
+        return mockRuntime;
+      }
+    });
+
+    await runtime.submitInput({
+      session,
+      input: [],
+      inputId: "input-1",
+      source: "slack_user"
+    });
+
+    expect(sessions.clearSessionAuthBlock).toHaveBeenCalledWith(session.key);
+    expect(runtimes.get("bound")?.submitInput).toHaveBeenCalledTimes(1);
+    expect(runtimes.has("usable")).toBe(false);
+    expect(sessions.get(session.key)).toMatchObject({
+      authProfileName: "bound",
+      authBlockedAt: undefined,
+      authBlockReason: undefined,
+      authBlockedNoticePostedAt: undefined
+    });
+  });
+
   it("clears a stale auth block when the same bound profile becomes usable again", async () => {
     const dataRoot = await fs.mkdtemp(path.join(os.tmpdir(), "session-auth-runtime-recovered-"));
     tempDirs.push(dataRoot);
@@ -307,40 +359,60 @@ function profileStatus(profiles: readonly AuthProfileSummary[]): AuthProfilesSta
   };
 }
 
-function profile(name: string, primaryUsed: number, secondaryUsed: number): AuthProfileSummary {
+function profile(
+  name: string,
+  primaryUsed: number,
+  secondaryUsed: number,
+  options: {
+    readonly accountOk?: boolean | undefined;
+    readonly rateLimitsOk?: boolean | undefined;
+  } = {}
+): AuthProfileSummary {
+  const accountOk = options.accountOk ?? true;
+  const rateLimitsOk = options.rateLimitsOk ?? true;
   return {
     name,
     path: `/tmp/auth-profiles/docker/profiles/${name}.json`,
     source: "probe",
     checkedAt: "2026-05-09T00:00:00.000Z",
-    account: {
-      ok: true,
-      account: {
-        email: `${name}@example.com`,
-        type: "chatgpt",
-        planType: "pro"
-      },
-      requiresOpenaiAuth: false
-    },
-    rateLimits: {
-      ok: true,
-      rateLimits: {
-        limitId: "codex",
-        limitName: "Codex",
-        primary: {
-          usedPercent: primaryUsed,
-          windowDurationMins: 300,
-          resetsAt: 1_779_000_000
+    account: accountOk
+      ? {
+          ok: true,
+          account: {
+            email: `${name}@example.com`,
+            type: "chatgpt",
+            planType: "pro"
+          },
+          requiresOpenaiAuth: false
+        }
+      : {
+          ok: false,
+          error: "account status read failed"
         },
-        secondary: {
-          usedPercent: secondaryUsed,
-          windowDurationMins: 10_080,
-          resetsAt: 1_780_000_000
-        },
-        credits: null,
-        planType: "pro"
-      },
-      rateLimitsByLimitId: {}
-    }
+    rateLimits: rateLimitsOk
+      ? {
+          ok: true,
+          rateLimits: {
+            limitId: "codex",
+            limitName: "Codex",
+            primary: {
+              usedPercent: primaryUsed,
+              windowDurationMins: 300,
+              resetsAt: 1_779_000_000
+            },
+            secondary: {
+              usedPercent: secondaryUsed,
+              windowDurationMins: 10_080,
+              resetsAt: 1_780_000_000
+            },
+            credits: null,
+            planType: "pro"
+          },
+          rateLimitsByLimitId: {}
+        }
+      : {
+          ok: false,
+          error: "rate limits read failed"
+        }
   };
 }

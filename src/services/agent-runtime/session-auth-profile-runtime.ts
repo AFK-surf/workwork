@@ -9,6 +9,8 @@ import {
   authProfileReasonLabel,
   evaluateAuthProfile,
   findAuthProfile,
+  isAuthProfileProbeFailure,
+  isAuthProfileProbeFailureReason,
   selectBestAuthProfile,
   type AuthProfileUnavailableReason
 } from "../session-auth-profile-selector.js";
@@ -194,6 +196,15 @@ export class SessionAuthProfileRuntime extends EventEmitter implements AgentRunt
 
       const evaluation = evaluateAuthProfile(profile);
       if (!evaluation.usable) {
+        if (isAuthProfileProbeFailure(evaluation)) {
+          const resolvedSession = session.authBlockedAt && isAuthProfileProbeFailureReason(session.authBlockReason)
+            ? await this.#sessions.clearSessionAuthBlock(session.key)
+            : session;
+          return {
+            session: resolvedSession,
+            runtime: this.#runtimeForProfile(profile)
+          };
+        }
         throw new AuthProfileUnavailableError({
           sessionKey: session.key,
           profileName: profile.name,
@@ -213,9 +224,12 @@ export class SessionAuthProfileRuntime extends EventEmitter implements AgentRunt
 
     const selected = selectBestAuthProfile(status);
     if (!selected) {
+      const probeFailure = status.profiles
+        .map((profile) => evaluateAuthProfile(profile))
+        .find((evaluation) => isAuthProfileProbeFailure(evaluation));
       throw new AuthProfileUnavailableError({
         sessionKey: session.key,
-        reason: "no_usable_auth_profiles"
+        reason: probeFailure?.reason ?? "no_usable_auth_profiles"
       });
     }
 
