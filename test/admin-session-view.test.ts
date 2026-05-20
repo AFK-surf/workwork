@@ -7,9 +7,46 @@ import {
   sessionQueueState,
   shouldShowSessionState
 } from "../src/admin-ui/session-row-display.js";
+import { requestCancelSessionJob } from "../src/admin-ui/session-job-actions.js";
 import { filterVisibleTimelineEvents, getTimelineEventDisplay, isTimelineEventVisible } from "../src/admin-ui/timeline-display.js";
 
 describe("admin session timeline display", () => {
+  it("sends session job cancellation through the POST admin endpoint", async () => {
+    const originalFetch = globalThis.fetch;
+    let capturedInput: RequestInfo | URL | undefined;
+    let capturedInit: RequestInit | undefined;
+    globalThis.fetch = (async (input, init) => {
+      capturedInput = input;
+      capturedInit = init;
+      return new Response(JSON.stringify({
+        ok: true,
+        session: {
+          key: "C123:111.222"
+        },
+        job: {
+          id: "job-1",
+          status: "cancelled"
+        }
+      }), {
+        status: 200,
+        headers: {
+          "content-type": "application/json"
+        }
+      });
+    }) as typeof fetch;
+
+    try {
+      await requestCancelSessionJob("C123:111.222", "job-1");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+
+    expect(String(capturedInput)).toBe("/admin/api/sessions/C123%3A111.222/jobs/job-1/cancel");
+    expect(capturedInit).toMatchObject({
+      method: "POST"
+    });
+  });
+
   it("uses category badges instead of duplicating the event title", () => {
     expect(getTimelineEventDisplay({
       type: "agent_turn_started",

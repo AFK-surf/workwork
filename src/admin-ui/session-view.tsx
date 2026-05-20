@@ -17,6 +17,7 @@ import {
   subscribeTimeline
 } from "./admin-status-store";
 import { agentTranscriptAvatar, agentTranscriptKind, agentTranscriptSpeaker } from "./agent-transcript-display";
+import { requestCancelSessionJob } from "./session-job-actions";
 import { stableSessionOrder } from "./session-order";
 import {
   activeBackgroundJobCount,
@@ -1521,7 +1522,7 @@ function JobsTable({ session, jobs, expectedCount }: {
     setBusyJobId(jobId);
     setMessage(null);
     try {
-      const payload = await requestJson(sessionJobCancelApiPath(sessionKey, jobId)) as Record<string, any>;
+      const payload = await requestCancelSessionJob(sessionKey, jobId);
       if (payload.session && typeof payload.session === "object") {
         applyAdminRealtimeEvent({
           sequence: 0,
@@ -1677,10 +1678,6 @@ function sessionTimelineApiPath(sessionKey: string, options: {
 
 function sessionTimelineEventApiPath(sessionKey: string, eventId: string): string {
   return "/admin/api/sessions/" + encodeURIComponent(sessionKey) + "/timeline-events/" + encodeURIComponent(eventId);
-}
-
-function sessionJobCancelApiPath(sessionKey: string, jobId: string): string {
-  return "/admin/api/sessions/" + encodeURIComponent(sessionKey) + "/jobs/" + encodeURIComponent(jobId) + "/cancel";
 }
 
 function slackThreadUrlApiPath(sessionKey: string): string {
