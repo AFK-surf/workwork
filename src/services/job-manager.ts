@@ -68,7 +68,7 @@ export class JobManager {
         continue;
       }
 
-      await this.#startExistingJob(job);
+      await this.#startExistingJob(job, { respectExistingRuntimeAge: true });
     }
   }
 
@@ -126,7 +126,7 @@ export class JobManager {
     };
 
     await this.#sessions.upsertBackgroundJob(job);
-    await this.#startExistingJob(job);
+    await this.#startExistingJob(job, { respectExistingRuntimeAge: false });
 
     return this.#requireJob(id);
   }
@@ -297,12 +297,17 @@ export class JobManager {
     });
   }
 
-  async #startExistingJob(job: PersistedBackgroundJob): Promise<void> {
+  async #startExistingJob(
+    job: PersistedBackgroundJob,
+    options: {
+      readonly respectExistingRuntimeAge: boolean;
+    }
+  ): Promise<void> {
     if (this.#runtimeJobs.has(job.id)) {
       return;
     }
 
-    if (this.#jobRuntimeRemainingMs(job) <= 0) {
+    if (options.respectExistingRuntimeAge && this.#jobRuntimeRemainingMs(job) <= 0) {
       await this.#cancelTimedOutJob(job);
       return;
     }
@@ -337,7 +342,7 @@ export class JobManager {
 
       const runtime: RuntimeBackgroundJob = {
         process: child,
-        timeoutTimer: this.#createTimeoutTimer(job),
+        timeoutTimer: this.#createTimeoutTimer(job, options),
         stderrTail: "",
         stopping: false
       };
@@ -482,8 +487,16 @@ export class JobManager {
     this.#runtimeJobs.delete(jobId);
   }
 
-  #createTimeoutTimer(job: PersistedBackgroundJob): ReturnType<typeof setTimeout> {
-    const delayMs = Math.max(0, this.#jobRuntimeRemainingMs(job));
+  #createTimeoutTimer(
+    job: PersistedBackgroundJob,
+    options: {
+      readonly respectExistingRuntimeAge: boolean;
+    }
+  ): ReturnType<typeof setTimeout> {
+    const delayMs = Math.max(
+      0,
+      options.respectExistingRuntimeAge ? this.#jobRuntimeRemainingMs(job) : this.#maxRuntimeMs
+    );
     const timeoutTimer = setTimeout(() => {
       void this.#handleJobTimeout(job.id);
     }, delayMs);

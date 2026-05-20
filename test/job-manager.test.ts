@@ -84,7 +84,6 @@ describe("JobManager", () => {
     await sessions.load();
     const session = await sessions.ensureSession("C123", "111.333");
     await fs.mkdir(session.workspacePath, { recursive: true });
-    const childPidPath = path.join(session.workspacePath, "child.pid");
 
     const seenEvents: Array<{ payload: { summary: string; jobId: string; eventKind: string } }> = [];
     const jobs = new JobManager({
@@ -108,15 +107,13 @@ describe("JobManager", () => {
       channelId: "C123",
       rootThreadTs: "111.333",
       kind: "watch_ci",
-      script: `#!/usr/bin/env bash\nsleep 30 &\necho $! > ${shellQuote(childPidPath)}\nwait`
+      script: "#!/usr/bin/env bash\nsleep 30"
     });
 
-    const childPid = Number(await waitForFileContents(childPidPath));
     const timedOut = await waitForJobStatus(sessions, job.id, "cancelled");
     expect(timedOut.cancelledAt).toEqual(expect.any(String));
     expect(timedOut.completedAt).toEqual(expect.any(String));
     expect(timedOut.error).toContain("runtime limit");
-    await waitForProcessExit(childPid);
     expect(seenEvents).toEqual([
       {
         payload: {
@@ -128,7 +125,7 @@ describe("JobManager", () => {
     ]);
 
     await jobs.stop();
-  });
+  }, 15_000);
 
   it("cancels restartable jobs that are already past the runtime limit on startup", async () => {
     const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "slack-codex-state-"));
@@ -301,6 +298,7 @@ describe("JobManager", () => {
     await sessions.load();
     const session = await sessions.ensureSession("C123", "444.555");
     await fs.mkdir(session.workspacePath, { recursive: true });
+    const childPidPath = path.join(session.workspacePath, "child.pid");
 
     const seenEvents: string[] = [];
     const jobs = new JobManager({
@@ -317,8 +315,9 @@ describe("JobManager", () => {
       channelId: "C123",
       rootThreadTs: "444.555",
       kind: "watch_ci",
-      script: "#!/usr/bin/env bash\nsleep 30"
+      script: `#!/usr/bin/env bash\nsleep 30 &\necho $! > ${shellQuote(childPidPath)}\nwait`
     });
+    const childPid = Number(await waitForFileContents(childPidPath));
 
     await expect(jobs.cancelJobFromAdmin(job.id, {
       sessionKey: "C999:000.000"
@@ -336,6 +335,7 @@ describe("JobManager", () => {
       completedAt: expect.any(String)
     });
     expect(seenEvents).toEqual([]);
+    await waitForProcessExit(childPid);
     await expect(jobs.cancelJobFromAdmin(job.id, {
       sessionKey: session.key
     })).rejects.toThrow("job_not_cancellable:cancelled");
