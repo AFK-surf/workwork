@@ -29,7 +29,7 @@ describe("RFC 0001 test plan verifier", () => {
   });
 
   it("passes against the checked-in RFC 0001 test plan", async () => {
-    const report = await collectRfc0001TestPlanVerification();
+    const report = await collectRfc0001TestPlanVerification({ env: {} });
 
     expect(report.ok).toBe(true);
     expect(report.nextActions).toEqual([]);
