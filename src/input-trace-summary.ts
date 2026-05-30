@@ -5,12 +5,7 @@ export interface InputTraceDisplaySummary {
   readonly metadata: Record<string, string | number | boolean | null>;
 }
 
-export function summarizeInputTraceDisplay(options: {
-  readonly source?: string | undefined;
-  readonly text?: unknown;
-  readonly fallbackTitle?: string | undefined;
-  readonly fallbackSummary?: string | undefined;
-}): InputTraceDisplaySummary | undefined {
+export function summarizeInputTraceDisplay(options: { readonly source?: string | undefined; readonly text?: unknown; readonly fallbackTitle?: string | undefined; readonly fallbackSummary?: string | undefined }): InputTraceDisplaySummary | undefined {
   const source = normalizeString(options.source);
   const text = normalizeString(options.text);
   const extracted = extractInputPayload(text);
@@ -26,24 +21,18 @@ export function summarizeInputTraceDisplay(options: {
       title: normalizeString(options.fallbackTitle) || "输入",
       summary: "",
       metadata: {
-        source
-      }
+        source,
+      },
     };
   }
 
   return undefined;
 }
 
-function summarizePayload(
-  payload: Record<string, unknown>,
-  source: string,
-  kind: InputPayloadKind
-): InputTraceDisplaySummary {
+function summarizePayload(payload: Record<string, unknown>, source: string, kind: InputPayloadKind): InputTraceDisplaySummary {
   if (kind === "recovered_message_batch" || Array.isArray(payload.messages)) {
     const messagePayloads = Array.isArray(payload.messages) ? payload.messages : [];
-    const messages = messagePayloads
-      .map((entry) => asRecord(entry))
-      .filter((entry): entry is Record<string, unknown> => Boolean(entry));
+    const messages = messagePayloads.map((entry) => asRecord(entry)).filter((entry): entry is Record<string, unknown> => Boolean(entry));
     const first = messages[0];
     const firstText = messageText(extractSlackText(first));
     return {
@@ -52,8 +41,8 @@ function summarizePayload(
       summary: `批量恢复 ${messages.length} 条消息`,
       metadata: {
         source,
-        batchMessageCount: messages.length
-      }
+        batchMessageCount: messages.length,
+      },
     };
   }
 
@@ -71,16 +60,8 @@ function summarizePayload(
 
   const slackText = messageText(extractSlackText(payload));
   const sender = summarizeSender(asRecord(payload.sender));
-  const attachmentCount = Array.isArray(payload.attachments)
-    ? payload.attachments.length
-    : Array.isArray(payload.images)
-      ? payload.images.length
-      : 0;
-  const summary = [
-    sender,
-    sourceLabel(normalizeString(payload.source) || source),
-    attachmentCount > 0 ? `${attachmentCount} 个附件` : ""
-  ].filter(Boolean).join(" · ");
+  const attachmentCount = Array.isArray(payload.attachments) ? payload.attachments.length : Array.isArray(payload.images) ? payload.images.length : 0;
+  const summary = [sender, sourceLabel(normalizeString(payload.source) || source), attachmentCount > 0 ? `${attachmentCount} 个附件` : ""].filter(Boolean).join(" · ");
 
   return {
     badgeLabel: "Slack",
@@ -90,17 +71,12 @@ function summarizePayload(
       source: normalizeString(payload.source) || source,
       messageTs: normalizeString(payload.message_ts),
       sender,
-      attachmentCount
-    })
+      attachmentCount,
+    }),
   };
 }
 
-type InputPayloadKind =
-  | "structured_message"
-  | "recovered_message_batch"
-  | "background_job_event"
-  | "unexpected_turn_stop"
-  | "admin_session_reset";
+type InputPayloadKind = "structured_message" | "recovered_message_batch" | "background_job_event" | "unexpected_turn_stop" | "admin_session_reset";
 
 interface ExtractedInputPayload {
   readonly kind: InputPayloadKind;
@@ -114,24 +90,15 @@ function summarizeBackgroundJobPayload(payload: Record<string, unknown>, source:
   const jobId = normalizeString(job?.job_id);
   return {
     badgeLabel: "后台任务",
-    title: compactText(
-      normalizeString(payload.summary) ||
-        normalizeString(payload.details_text) ||
-        "后台任务事件",
-      220
-    ),
-    summary: [
-      jobKind,
-      eventKind,
-      jobId ? `Job ${jobId}` : ""
-    ].filter(Boolean).join(" · "),
+    title: compactText(normalizeString(payload.summary) || normalizeString(payload.details_text) || "后台任务事件", 220),
+    summary: [jobKind, eventKind, jobId ? `Job ${jobId}` : ""].filter(Boolean).join(" · "),
     metadata: compactMetadataRecord({
       source: normalizeString(payload.source) || source,
       messageTs: normalizeString(payload.message_ts),
       jobKind,
       eventKind,
-      jobId
-    })
+      jobId,
+    }),
   };
 }
 
@@ -145,8 +112,8 @@ function summarizeUnexpectedTurnStopPayload(payload: Record<string, unknown>, so
     metadata: compactMetadataRecord({
       source: normalizeString(payload.source) || source,
       messageTs: normalizeString(payload.message_ts),
-      previousTurnId: normalizeString(previousTurn?.turn_id)
-    })
+      previousTurnId: normalizeString(previousTurn?.turn_id),
+    }),
   };
 }
 
@@ -158,8 +125,8 @@ function summarizeAdminSessionResetPayload(payload: Record<string, unknown>, sou
     summary: compactText(reason || "已清空 agent history 并重新唤起 bot", 220),
     metadata: compactMetadataRecord({
       source: normalizeString(payload.source) || source,
-      messageTs: normalizeString(payload.message_ts)
-    })
+      messageTs: normalizeString(payload.message_ts),
+    }),
   };
 }
 
@@ -180,27 +147,17 @@ function extractInputPayload(text: string): ExtractedInputPayload | undefined {
   const blocks = extractJsonBlocks(text)
     .map((block) => parseJsonObject(block))
     .filter((payload): payload is Record<string, unknown> => Boolean(payload));
-  const currentMessage = [...blocks].reverse().find((payload) =>
-    normalizeString(payload.source) !== "thread_history" &&
-      (
-        payload.text !== undefined ||
-        payload.text_with_resolved_mentions !== undefined ||
-        payload.attachments !== undefined ||
-        payload.images !== undefined
-      )
-  );
+  const currentMessage = [...blocks].reverse().find((payload) => normalizeString(payload.source) !== "thread_history" && (payload.text !== undefined || payload.text_with_resolved_mentions !== undefined || payload.attachments !== undefined || payload.images !== undefined));
   const payload = currentMessage ?? blocks[blocks.length - 1];
-  return payload ? {
-    kind: "structured_message",
-    payload
-  } : undefined;
+  return payload
+    ? {
+        kind: "structured_message",
+        payload,
+      }
+    : undefined;
 }
 
-function extractNamedJsonPayload(
-  text: string,
-  label: string,
-  kind: InputPayloadKind
-): ExtractedInputPayload | undefined {
+function extractNamedJsonPayload(text: string, label: string, kind: InputPayloadKind): ExtractedInputPayload | undefined {
   const index = text.indexOf(label);
   if (index < 0) {
     return undefined;
@@ -209,10 +166,12 @@ function extractNamedJsonPayload(
   const afterLabel = text.slice(index + label.length);
   const block = extractJsonBlocks(afterLabel)[0];
   const payload = block ? parseJsonObject(block) : undefined;
-  return payload ? {
-    kind,
-    payload
-  } : undefined;
+  return payload
+    ? {
+        kind,
+        payload,
+      }
+    : undefined;
 }
 
 function extractJsonBlocks(text: string): string[] {
@@ -239,9 +198,7 @@ function extractSlackText(payload: Record<string, unknown> | undefined): string 
   if (!payload) {
     return "";
   }
-  const text = normalizeString(payload.text_with_resolved_mentions) ||
-    normalizeString(payload.text) ||
-    normalizeString(payload.summary);
+  const text = normalizeString(payload.text_with_resolved_mentions) || normalizeString(payload.text) || normalizeString(payload.summary);
   return text === "[no text body]" ? "" : text;
 }
 
@@ -249,12 +206,7 @@ function summarizeSender(sender: Record<string, unknown> | undefined): string {
   if (!sender) {
     return "";
   }
-  return normalizeString(sender.display_name) ||
-    normalizeString(sender.real_name) ||
-    normalizeString(sender.username) ||
-    normalizeString(sender.mention) ||
-    normalizeString(sender.user_id) ||
-    normalizeString(sender.sender_id);
+  return normalizeString(sender.display_name) || normalizeString(sender.real_name) || normalizeString(sender.username) || normalizeString(sender.mention) || normalizeString(sender.user_id) || normalizeString(sender.sender_id);
 }
 
 function sourceLabel(source: string): string {
@@ -266,15 +218,13 @@ function sourceLabel(source: string): string {
     broker_recovery: "恢复",
     background_job: "后台任务",
     background_job_event: "后台任务",
-    admin_session_reset: "重置"
+    admin_session_reset: "重置",
   };
   return labels[source] || source;
 }
 
 function looksLikeBrokerWrapper(value: string): boolean {
-  return value.startsWith("A newer Slack message arrived") ||
-    value.startsWith("The broker detected Slack thread messages") ||
-    value.startsWith("The broker server restarted or reconnected");
+  return value.startsWith("A newer Slack message arrived") || value.startsWith("The broker detected Slack thread messages") || value.startsWith("The broker server restarted or reconnected");
 }
 
 function compactText(value: string, maxLength: number): string {
@@ -294,20 +244,13 @@ function normalizeString(value: unknown): string {
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : undefined;
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
 }
 
 function compactMetadataRecord(record: Record<string, unknown>): Record<string, string | number | boolean | null> {
   const compacted: Record<string, string | number | boolean | null> = {};
   for (const [key, value] of Object.entries(record)) {
-    if (
-      value === null ||
-      typeof value === "string" ||
-      typeof value === "number" ||
-      typeof value === "boolean"
-    ) {
+    if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
       if (value !== "" && value !== 0) {
         compacted[key] = value;
       }

@@ -9,7 +9,7 @@ function createJsonRequest(body: unknown) {
     headers: Record<string, string>;
   };
   request.headers = {
-    "content-type": "application/json"
+    "content-type": "application/json",
   };
   request.end(JSON.stringify(body));
   return request;
@@ -22,7 +22,7 @@ function createResponse() {
     write(chunk, _encoding, callback) {
       chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
       callback();
-    }
+    },
   }) as Writable & {
     statusCode: number;
     writeHead: (code: number) => typeof response;
@@ -51,22 +51,16 @@ describe("handleSlackRequest", () => {
     const deleteSession = vi.fn(async () => ({
       deleted: true,
       interruptedActiveTurn: true,
-      clearedInboundCount: 2
+      clearedInboundCount: 2,
     }));
     const response = createResponse();
 
-    const handled = await handleSlackRequest(
-      "DELETE",
-      new URL(`http://localhost/slack/sessions/${encodeURIComponent("C123:111.222")}`),
-      createJsonRequest({}) as never,
-      response as never,
-      {
-        bridge: {
-          deleteSession
-        } as never,
-        config: {} as never
-      }
-    );
+    const handled = await handleSlackRequest("DELETE", new URL(`http://localhost/slack/sessions/${encodeURIComponent("C123:111.222")}`), createJsonRequest({}) as never, response as never, {
+      bridge: {
+        deleteSession,
+      } as never,
+      config: {} as never,
+    });
 
     expect(handled).toBe(true);
     expect(deleteSession).toHaveBeenCalledWith("C123:111.222");
@@ -77,8 +71,8 @@ describe("handleSlackRequest", () => {
       delete: {
         deleted: true,
         interruptedActiveTurn: true,
-        clearedInboundCount: 2
-      }
+        clearedInboundCount: 2,
+      },
     });
   });
 
@@ -88,24 +82,18 @@ describe("handleSlackRequest", () => {
     });
     const response = createResponse();
 
-    const handled = await handleSlackRequest(
-      "DELETE",
-      new URL(`http://localhost/slack/sessions/${encodeURIComponent("C123:missing")}`),
-      createJsonRequest({}) as never,
-      response as never,
-      {
-        bridge: {
-          deleteSession
-        } as never,
-        config: {} as never
-      }
-    );
+    const handled = await handleSlackRequest("DELETE", new URL(`http://localhost/slack/sessions/${encodeURIComponent("C123:missing")}`), createJsonRequest({}) as never, response as never, {
+      bridge: {
+        deleteSession,
+      } as never,
+      config: {} as never,
+    });
 
     expect(handled).toBe(true);
     expect(response.statusCode).toBe(404);
     expect(JSON.parse(response.bodyText || "{}")).toMatchObject({
       ok: false,
-      error: "Unknown session runtime key: C123:missing"
+      error: "Unknown session runtime key: C123:missing",
     });
   });
 
@@ -122,28 +110,22 @@ describe("handleSlackRequest", () => {
       selectedUserIds: [],
       resolvedCoAuthors: [],
       missingSelectedUserIds: [],
-      candidates: []
+      candidates: [],
     }));
 
     const request = createJsonRequest({
       cwd: "/tmp/workspace",
       coauthors: ["   "],
-      user_ids: [""]
+      user_ids: [""],
     });
     const response = createResponse();
 
-    const handled = await handleSlackRequest(
-      "POST",
-      new URL("http://localhost/slack/git-coauthors/configure-session"),
-      request as never,
-      response as never,
-      {
-        bridge: {
-          configureSessionCoauthors
-        } as never,
-        config: {} as never
-      }
-    );
+    const handled = await handleSlackRequest("POST", new URL("http://localhost/slack/git-coauthors/configure-session"), request as never, response as never, {
+      bridge: {
+        configureSessionCoauthors,
+      } as never,
+      config: {} as never,
+    });
 
     expect(handled).toBe(true);
     expect(configureSessionCoauthors).toHaveBeenCalledWith({
@@ -151,7 +133,7 @@ describe("handleSlackRequest", () => {
       coauthors: undefined,
       userIds: undefined,
       ignoreMissing: undefined,
-      mappings: undefined
+      mappings: undefined,
     });
     expect(response.statusCode).toBe(200);
   });
@@ -164,31 +146,25 @@ describe("handleSlackRequest", () => {
       mappings: [
         {
           slack_user: "Alice Example",
-          github_author: "Alice Example <alice@example.com>"
-        }
-      ]
+          github_author: "Alice Example <alice@example.com>",
+        },
+      ],
     });
     const response = createResponse();
 
-    const handled = await handleSlackRequest(
-      "POST",
-      new URL("http://localhost/slack/git-coauthors/configure-session"),
-      request as never,
-      response as never,
-      {
-        bridge: {
-          configureSessionCoauthors
-        } as never,
-        config: {} as never
-      }
-    );
+    const handled = await handleSlackRequest("POST", new URL("http://localhost/slack/git-coauthors/configure-session"), request as never, response as never, {
+      bridge: {
+        configureSessionCoauthors,
+      } as never,
+      config: {} as never,
+    });
 
     expect(handled).toBe(true);
     expect(configureSessionCoauthors).not.toHaveBeenCalled();
     expect(response.statusCode).toBe(400);
     expect(JSON.parse(response.bodyText || "{}")).toMatchObject({
       ok: false,
-      error: "Manual co-author mappings are no longer supported. Bind GitHub OAuth for Slack users instead."
+      error: "Manual co-author mappings are no longer supported. Bind GitHub OAuth for Slack users instead.",
     });
   });
 
@@ -198,37 +174,31 @@ describe("handleSlackRequest", () => {
       mode: "initiator",
       slackUserId: "U_STARTER",
       githubLogin: "alice",
-      token: "alice-token"
+      token: "alice-token",
     }));
     const request = createJsonRequest({
       cwd: "/tmp/session/workspace",
-      command: ["pr", "create", "--fill"]
+      command: ["pr", "create", "--fill"],
     });
     const response = createResponse();
 
-    const handled = await handleSlackRequest(
-      "POST",
-      new URL("http://localhost/slack/github-token/resolve"),
-      request as never,
-      response as never,
-      {
-        bridge: {
-          resolveGitHubPrToken
-        } as never,
-        config: {} as never
-      }
-    );
+    const handled = await handleSlackRequest("POST", new URL("http://localhost/slack/github-token/resolve"), request as never, response as never, {
+      bridge: {
+        resolveGitHubPrToken,
+      } as never,
+      config: {} as never,
+    });
 
     expect(handled).toBe(true);
     expect(resolveGitHubPrToken).toHaveBeenCalledWith({
       cwd: "/tmp/session/workspace",
-      command: ["pr", "create", "--fill"]
+      command: ["pr", "create", "--fill"],
     });
     expect(response.statusCode).toBe(200);
     expect(JSON.parse(response.bodyText || "{}")).toMatchObject({
       ok: true,
       githubLogin: "alice",
-      token: "alice-token"
+      token: "alice-token",
     });
   });
 
@@ -237,33 +207,27 @@ describe("handleSlackRequest", () => {
       ok: false,
       mode: "blocked",
       reason: "initiator_token_invalid",
-      message: "GitHub token for alice is invalid."
+      message: "GitHub token for alice is invalid.",
     }));
     const request = createJsonRequest({
       cwd: "/tmp/session/workspace",
-      command: ["pr", "create"]
+      command: ["pr", "create"],
     });
     const response = createResponse();
 
-    const handled = await handleSlackRequest(
-      "POST",
-      new URL("http://localhost/slack/github-token/resolve"),
-      request as never,
-      response as never,
-      {
-        bridge: {
-          resolveGitHubPrToken
-        } as never,
-        config: {} as never
-      }
-    );
+    const handled = await handleSlackRequest("POST", new URL("http://localhost/slack/github-token/resolve"), request as never, response as never, {
+      bridge: {
+        resolveGitHubPrToken,
+      } as never,
+      config: {} as never,
+    });
 
     expect(handled).toBe(true);
     expect(response.statusCode).toBe(409);
     expect(JSON.parse(response.bodyText || "{}")).toMatchObject({
       ok: false,
       reason: "initiator_token_invalid",
-      message: "GitHub token for alice is invalid."
+      message: "GitHub token for alice is invalid.",
     });
   });
 });

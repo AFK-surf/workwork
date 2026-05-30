@@ -19,7 +19,7 @@ const LEVEL_ORDER: Record<LogLevel, number> = {
   debug: 10,
   info: 20,
   warn: 30,
-  error: 40
+  error: 40,
 };
 
 let currentConfig: LoggerConfig = {
@@ -28,7 +28,7 @@ let currentConfig: LoggerConfig = {
   rawSlackEvents: false,
   rawCodexRpc: false,
   rawHttpRequests: false,
-  rawMaxBytes: 128 * 1024
+  rawMaxBytes: 128 * 1024,
 };
 
 const writeChains = new Map<string, Promise<void>>();
@@ -36,12 +36,12 @@ const writeChains = new Map<string, Promise<void>>();
 export function configureLogger(config: LoggerConfig): void {
   currentConfig = {
     ...config,
-    rawMaxBytes: config.rawMaxBytes ?? 128 * 1024
+    rawMaxBytes: config.rawMaxBytes ?? 128 * 1024,
   };
 }
 
 export async function flushLoggerForTests(): Promise<void> {
-  await Promise.all([...writeChains.values()]);
+  await Promise.all(writeChains.values());
 }
 
 export function getBrokerLogDirectory(logDir: string): string {
@@ -80,10 +80,10 @@ export const logger = {
       type: "raw",
       stream,
       payload: limitRawPayload(payload, currentConfig.rawMaxBytes ?? 128 * 1024),
-      meta: sanitizeMeta(meta)
+      meta: sanitizeMeta(meta),
     };
     queueFileWrites(record, meta, path.join("raw", stream, `${getLogBucket(ts)}.jsonl`));
-  }
+  },
 };
 
 function writeLog(level: LogLevel, message: string, meta?: Record<string, unknown>): void {
@@ -101,7 +101,7 @@ function writeLog(level: LogLevel, message: string, meta?: Record<string, unknow
     type: "log",
     level,
     message,
-    meta: sanitizedMeta
+    meta: sanitizedMeta,
   };
   queueFileWrites(record, sanitizedMeta, path.join("broker", `${getLogBucket(ts)}.jsonl`));
 }
@@ -138,9 +138,7 @@ function queueAppend(filePath: string, content: string): void {
       await fs.appendFile(filePath, content, "utf8");
     })
     .catch((error) => {
-      process.stderr.write(
-        `${new Date().toISOString()} ERROR Failed to write log file ${filePath} ${String(error)}\n`
-      );
+      process.stderr.write(`${new Date().toISOString()} ERROR Failed to write log file ${filePath} ${String(error)}\n`);
     });
 
   writeChains.set(filePath, next);
@@ -185,7 +183,7 @@ function limitRawPayload(payload: unknown, maxBytes: number): unknown {
     truncated: true,
     originalBytes: byteLength,
     maxBytes,
-    preview: truncateUtf8(json, maxBytes)
+    preview: truncateUtf8(json, maxBytes),
   };
 }
 

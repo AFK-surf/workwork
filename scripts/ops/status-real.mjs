@@ -1,18 +1,12 @@
 #!/usr/bin/env node
 
-import {
-  dockerExecNode,
-  getDataRootSource,
-  getPublishedPort,
-  inspectContainer,
-  readDetailedStateFromHost
-} from "./lib.mjs";
+import { dockerExecNode, getDataRootSource, getPublishedPort, inspectContainer, readDetailedStateFromHost } from "./lib.mjs";
 
 function parseArgs(argv) {
   const options = {
     containerName: "slack-codex-broker-real",
     openInboundLimit: 20,
-    logLineLimit: 40
+    logLineLimit: 40,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -36,9 +30,7 @@ function parseArgs(argv) {
         break;
       case "--help":
       case "-h":
-        console.log(
-          "Usage: node scripts/ops/status-real.mjs [--container <name>] [--open-inbound-limit <n>] [--log-lines <n>]"
-        );
+        console.log("Usage: node scripts/ops/status-real.mjs [--container <name>] [--open-inbound-limit <n>] [--log-lines <n>]");
         process.exit(0);
       default:
         throw new Error(`Unknown argument: ${argument}`);
@@ -63,12 +55,12 @@ async function readHealthSummary(hostPort) {
     return {
       ok: response.ok,
       status: response.status,
-      body: safeParseJson(body)
+      body: safeParseJson(body),
     };
   } catch (error) {
     return {
       ok: false,
-      error: error instanceof Error ? error.message : String(error)
+      error: error instanceof Error ? error.message : String(error),
     };
   }
 }
@@ -95,14 +87,14 @@ function readReadySummary(containerName) {
           "  })",
           "  .catch((error) => {",
           "    console.log(JSON.stringify({ ok: false, error: error.stack || String(error) }));",
-          "  });"
-        ].join("\n")
-      )
+          "  });",
+        ].join("\n"),
+      ),
     );
   } catch (error) {
     return {
       ok: false,
-      error: error instanceof Error ? error.message : String(error)
+      error: error instanceof Error ? error.message : String(error),
     };
   }
 }
@@ -113,7 +105,7 @@ const hostPort = getPublishedPort(inspect);
 const dataRootSource = getDataRootSource(inspect);
 const detailedState = await readDetailedStateFromHost(dataRootSource, {
   openInboundLimit: options.openInboundLimit,
-  logLineLimit: options.logLineLimit
+  logLineLimit: options.logLineLimit,
 });
 const health = await readHealthSummary(hostPort);
 const ready = readReadySummary(options.containerName);
@@ -128,13 +120,13 @@ console.log(
         startedAt: inspect.State?.StartedAt ?? null,
         restartCount: inspect.RestartCount ?? 0,
         hostPort,
-        dataRootSource
+        dataRootSource,
       },
       health,
       ready,
-      state: detailedState
+      state: detailedState,
     },
     null,
-    2
-  )
+    2,
+  ),
 );

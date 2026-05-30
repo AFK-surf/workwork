@@ -3,6 +3,8 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { normalizeSourceWhitespace, readCompanionSource } from "./source-helpers.js";
+
 const repoRoot = new URL("..", import.meta.url);
 const adminUiRoot = new URL("../src/admin-ui/", import.meta.url);
 
@@ -38,9 +40,7 @@ describe("admin React UI architecture", () => {
     const shell = await readAdminShellSource();
     expect(shell).toContain("const nextStatus = await loadAdminSessionsStatus()");
     expect(shell).toContain("void loadAdminOverview()");
-    expect(shell.indexOf("const nextStatus = await loadAdminSessionsStatus()")).toBeLessThan(
-      shell.indexOf("void loadAdminOverview()")
-    );
+    expect(shell.indexOf("const nextStatus = await loadAdminSessionsStatus()")).toBeLessThan(shell.indexOf("void loadAdminOverview()"));
     expect(shell).toContain('requestJson("/admin/api/sessions", { timeoutMs: 45_000 })');
     expect(shell).toContain('requestJson("/admin/api/overview", { timeoutMs: 45_000 })');
     expect(shell).toContain('requestJson("/admin/api/logs?limit=40", { timeoutMs: 5_000 })');
@@ -56,7 +56,7 @@ describe("admin React UI architecture", () => {
 
   it("binds GitHub OAuth from existing Slack account rows instead of adding Slack ids", async () => {
     const shell = await readAdminShellSource();
-    const sessionView = await fs.readFile(new URL("session-view.tsx", adminUiRoot), "utf8");
+    const sessionView = await readCompanionSource(new URL("session-view.tsx", adminUiRoot));
     expect(shell).toContain("startGitHubAccountDeviceAuthorization");
     expect(shell).toContain("githubAccountDeviceStartApiPath");
     expect(sessionView).toContain("GitHubBindPage");
@@ -82,7 +82,7 @@ describe("admin React UI architecture", () => {
 
   it("keeps the default GitHub PR account control from repeating the current account", async () => {
     const shell = await readAdminShellSource();
-    const css = await fs.readFile(new URL("admin.css", adminUiRoot), "utf8");
+    const css = normalizeSourceWhitespace(await fs.readFile(new URL("admin.css", adminUiRoot), "utf8"));
     expect(shell).toContain("github-default-field");
     expect(shell).toContain("defaultSelectValue");
     expect(shell).toContain("selectableDefaultAccounts");
@@ -101,12 +101,12 @@ describe("admin React UI architecture", () => {
 
   it("uses selectable package versions instead of a free-form publish ref input", async () => {
     const shell = await readAdminShellSource();
-    const css = await fs.readFile(new URL("admin.css", adminUiRoot), "utf8");
+    const css = normalizeSourceWhitespace(await fs.readFile(new URL("admin.css", adminUiRoot), "utf8"));
     expect(shell).toContain("buildDeployTargetOptions");
     expect(shell).toContain("recentPackageVersions");
     expect(shell).toContain('id="deploy-package-target-select"');
     expect(shell).toContain('id="deploy-package-version-select"');
-    expect(shell).toContain('body: JSON.stringify({');
+    expect(shell).toContain("body: JSON.stringify({");
     expect(shell).toContain("target: selectedDeployTarget");
     expect(shell).toContain("Package 版本");
     expect(shell).toContain("部署版本");
@@ -127,7 +127,7 @@ describe("admin React UI architecture", () => {
   });
 
   it("keeps session auth profile action detailed without expanding dense quota labels", async () => {
-    const sessionView = await fs.readFile(new URL("session-view.tsx", adminUiRoot), "utf8");
+    const sessionView = await readCompanionSource(new URL("session-view.tsx", adminUiRoot));
     const authProfileDisplay = await fs.readFile(new URL("auth-profile-display.ts", adminUiRoot), "utf8");
     expect(authProfileDisplay).toContain("export function profileSessionActionLabel");
     expect(sessionView).toContain("profileSessionActionLabel(currentProfile)");
@@ -136,7 +136,7 @@ describe("admin React UI architecture", () => {
 
   it("renders the account pool as structured profile cards instead of plain quota rows", async () => {
     const shell = await readAdminShellSource();
-    const css = await fs.readFile(new URL("admin.css", adminUiRoot), "utf8");
+    const css = normalizeSourceWhitespace(await fs.readFile(new URL("admin.css", adminUiRoot), "utf8"));
     expect(shell).toContain("profile-card");
     expect(shell).toContain("profile-quota-metrics");
     expect(shell).toContain("profile-quota-metric");
@@ -155,7 +155,7 @@ describe("admin React UI architecture", () => {
 
   it("gives operation page modules distinct boundaries without table-like internals", async () => {
     const shell = await readAdminShellSource();
-    const css = await fs.readFile(new URL("admin.css", adminUiRoot), "utf8");
+    const css = normalizeSourceWhitespace(await fs.readFile(new URL("admin.css", adminUiRoot), "utf8"));
     expect(shell).toContain('className="ops-page"');
     expect(shell).toContain('className="view-grid ops-grid"');
     expect(shell).toContain('className="panel ops-panel"');
@@ -170,7 +170,7 @@ describe("admin React UI architecture", () => {
 
   it("does not render free-text search controls in the admin UI", async () => {
     const shell = await readAdminShellSource();
-    const sessionView = await fs.readFile(new URL("session-view.tsx", adminUiRoot), "utf8");
+    const sessionView = await readCompanionSource(new URL("session-view.tsx", adminUiRoot));
     const combined = shell + "\n" + sessionView;
     expect(combined).not.toContain('type="search"');
     expect(combined).not.toContain("sessionSearch");
@@ -181,19 +181,17 @@ describe("admin React UI architecture", () => {
   });
 
   it("opens Slack threads through a backend permalink resolver", async () => {
-    const sessionView = await fs.readFile(new URL("session-view.tsx", adminUiRoot), "utf8");
+    const sessionView = await readCompanionSource(new URL("session-view.tsx", adminUiRoot));
     expect(sessionView).toContain("openSlackThread");
     expect(sessionView).toContain("slackThreadUrlApiPath");
     expect(sessionView).toContain("window.open");
     expect(sessionView).toContain("Slack Thread 跳转失败");
-    expect(sessionView).not.toContain('href={session.threadUrl}');
+    expect(sessionView).not.toContain("href={session.threadUrl}");
   });
 
   it("prefers backend GitHub account identities over session fallback rows", async () => {
     const shell = await readAdminShellSource();
-    expect(shell.indexOf("const accounts = status.githubAccounts?.accounts")).toBeLessThan(
-      shell.indexOf("const fallback = buildFallbackGitHubAccounts(status)")
-    );
+    expect(shell.indexOf("const accounts = status.githubAccounts?.accounts")).toBeLessThan(shell.indexOf("const fallback = buildFallbackGitHubAccounts(status)"));
   });
 
   it("keeps business UI free of imperative DOM rendering and event binding", async () => {
@@ -219,7 +217,7 @@ describe("admin React UI architecture", () => {
 async function readAdminShellSource(): Promise<string> {
   for (const candidate of ["admin-shell.tsx", "admin-shell.ts"]) {
     try {
-      return await fs.readFile(new URL(candidate, adminUiRoot), "utf8");
+      return await readCompanionSource(new URL(candidate, adminUiRoot));
     } catch (error) {
       if (!isEnoent(error)) throw error;
     }

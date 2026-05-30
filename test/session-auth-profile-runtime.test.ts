@@ -6,18 +6,8 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { loadConfig } from "../src/config.js";
-import {
-  AuthProfileUnavailableError,
-  SessionAuthProfileRuntime
-} from "../src/services/agent-runtime/session-auth-profile-runtime.js";
-import type {
-  AgentRuntime,
-  AgentRuntimeCapabilities,
-  AgentSession,
-  AgentSubmitInputResult,
-  AgentTurnSnapshot,
-  SubmitAgentInput
-} from "../src/services/agent-runtime/types.js";
+import { AuthProfileUnavailableError, SessionAuthProfileRuntime } from "../src/services/agent-runtime/session-auth-profile-runtime.js";
+import type { AgentRuntime, AgentRuntimeCapabilities, AgentSession, AgentSubmitInputResult, AgentTurnSnapshot, SubmitAgentInput } from "../src/services/agent-runtime/types.js";
 import type { AuthProfileSummary, AuthProfilesStatus } from "../src/services/auth-profile-service.js";
 import type { SlackSessionRecord, SlackUserIdentity } from "../src/types.js";
 
@@ -34,7 +24,7 @@ describe("SessionAuthProfileRuntime", () => {
     const config = loadConfig({
       SLACK_APP_TOKEN: "xapp-test",
       SLACK_BOT_TOKEN: "xoxb-test",
-      DATA_ROOT: dataRoot
+      DATA_ROOT: dataRoot,
     } as NodeJS.ProcessEnv);
     const session = createSession();
     const sessions = createSessionManagerMock(session);
@@ -42,27 +32,26 @@ describe("SessionAuthProfileRuntime", () => {
     const runtime = new SessionAuthProfileRuntime({
       config,
       sessions: sessions as never,
-      authProfiles: authProfilesMock(profileStatus([
-        profile("low", 10, 80),
-        profile("best", 20, 10)
-      ])) as never,
+      authProfiles: authProfilesMock(profileStatus([profile("low", 10, 80), profile("best", 20, 10)])) as never,
       createProfileRuntime: ({ profile }) => {
         const mockRuntime = new MockAgentRuntime(profile.name);
         runtimes.set(profile.name, mockRuntime);
         return mockRuntime;
-      }
+      },
     });
 
     const agentSession = await runtime.ensureSession(session);
 
     expect(agentSession).toMatchObject({
       id: "best-thread",
-      runtime: "codex-app-server"
+      runtime: "codex-app-server",
     });
     expect(sessions.get(session.key)?.authProfileName).toBe("best");
-    expect(runtimes.get("best")?.ensureSession).toHaveBeenCalledWith(expect.objectContaining({
-      authProfileName: "best"
-    }));
+    expect(runtimes.get("best")?.ensureSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        authProfileName: "best",
+      }),
+    );
     expect(runtimes.has("low")).toBe(false);
   });
 
@@ -72,33 +61,30 @@ describe("SessionAuthProfileRuntime", () => {
     const config = loadConfig({
       SLACK_APP_TOKEN: "xapp-test",
       SLACK_BOT_TOKEN: "xoxb-test",
-      DATA_ROOT: dataRoot
+      DATA_ROOT: dataRoot,
     } as NodeJS.ProcessEnv);
     const session = createSession({
       authProfileName: "bound",
-      authProfileBoundAt: "2026-05-09T00:00:00.000Z"
+      authProfileBoundAt: "2026-05-09T00:00:00.000Z",
     });
     const sessions = createSessionManagerMock(session);
     const runtimes = new Map<string, MockAgentRuntime>();
     const runtime = new SessionAuthProfileRuntime({
       config,
       sessions: sessions as never,
-      authProfiles: authProfilesMock(profileStatus([
-        profile("bound", 60, 40),
-        profile("bigger", 1, 1)
-      ])) as never,
+      authProfiles: authProfilesMock(profileStatus([profile("bound", 60, 40), profile("bigger", 1, 1)])) as never,
       createProfileRuntime: ({ profile }) => {
         const mockRuntime = new MockAgentRuntime(profile.name);
         runtimes.set(profile.name, mockRuntime);
         return mockRuntime;
-      }
+      },
     });
 
     await runtime.submitInput({
       session,
       input: [],
       inputId: "input-1",
-      source: "slack_user"
+      source: "slack_user",
     });
 
     expect(runtimes.get("bound")?.submitInput).toHaveBeenCalledTimes(1);
@@ -112,34 +98,33 @@ describe("SessionAuthProfileRuntime", () => {
     const config = loadConfig({
       SLACK_APP_TOKEN: "xapp-test",
       SLACK_BOT_TOKEN: "xoxb-test",
-      DATA_ROOT: dataRoot
+      DATA_ROOT: dataRoot,
     } as NodeJS.ProcessEnv);
     const session = createSession({
       authProfileName: "empty",
-      authProfileBoundAt: "2026-05-09T00:00:00.000Z"
+      authProfileBoundAt: "2026-05-09T00:00:00.000Z",
     });
     const sessions = createSessionManagerMock(session);
     const runtimes = new Map<string, MockAgentRuntime>();
     const runtime = new SessionAuthProfileRuntime({
       config,
       sessions: sessions as never,
-      authProfiles: authProfilesMock(profileStatus([
-        profile("empty", 100, 10),
-        profile("usable", 0, 0)
-      ])) as never,
+      authProfiles: authProfilesMock(profileStatus([profile("empty", 100, 10), profile("usable", 0, 0)])) as never,
       createProfileRuntime: ({ profile }) => {
         const mockRuntime = new MockAgentRuntime(profile.name);
         runtimes.set(profile.name, mockRuntime);
         return mockRuntime;
-      }
+      },
     });
 
-    await expect(runtime.submitInput({
-      session,
-      input: [],
-      inputId: "input-1",
-      source: "slack_user"
-    })).rejects.toBeInstanceOf(AuthProfileUnavailableError);
+    await expect(
+      runtime.submitInput({
+        session,
+        input: [],
+        inputId: "input-1",
+        source: "slack_user",
+      }),
+    ).rejects.toBeInstanceOf(AuthProfileUnavailableError);
 
     expect(runtimes.size).toBe(0);
     expect(sessions.get(session.key)?.authProfileName).toBe("empty");
@@ -151,39 +136,41 @@ describe("SessionAuthProfileRuntime", () => {
     const config = loadConfig({
       SLACK_APP_TOKEN: "xapp-test",
       SLACK_BOT_TOKEN: "xoxb-test",
-      DATA_ROOT: dataRoot
+      DATA_ROOT: dataRoot,
     } as NodeJS.ProcessEnv);
     const session = createSession({
       authProfileName: "bound",
       authProfileBoundAt: "2026-05-09T00:00:00.000Z",
       authBlockedAt: "2026-05-09T01:00:00.000Z",
       authBlockReason: "account_probe_failed",
-      authBlockedNoticePostedAt: "2026-05-09T01:00:05.000Z"
+      authBlockedNoticePostedAt: "2026-05-09T01:00:05.000Z",
     });
     const sessions = createSessionManagerMock(session);
     const runtimes = new Map<string, MockAgentRuntime>();
     const runtime = new SessionAuthProfileRuntime({
       config,
       sessions: sessions as never,
-      authProfiles: authProfilesMock(profileStatus([
-        profile("bound", 0, 0, {
-          accountOk: false,
-          rateLimitsOk: false
-        }),
-        profile("usable", 0, 0)
-      ])) as never,
+      authProfiles: authProfilesMock(
+        profileStatus([
+          profile("bound", 0, 0, {
+            accountOk: false,
+            rateLimitsOk: false,
+          }),
+          profile("usable", 0, 0),
+        ]),
+      ) as never,
       createProfileRuntime: ({ profile }) => {
         const mockRuntime = new MockAgentRuntime(profile.name);
         runtimes.set(profile.name, mockRuntime);
         return mockRuntime;
-      }
+      },
     });
 
     await runtime.submitInput({
       session,
       input: [],
       inputId: "input-1",
-      source: "slack_user"
+      source: "slack_user",
     });
 
     expect(sessions.clearSessionAuthBlock).toHaveBeenCalledWith(session.key);
@@ -193,7 +180,7 @@ describe("SessionAuthProfileRuntime", () => {
       authProfileName: "bound",
       authBlockedAt: undefined,
       authBlockReason: undefined,
-      authBlockedNoticePostedAt: undefined
+      authBlockedNoticePostedAt: undefined,
     });
   });
 
@@ -203,36 +190,33 @@ describe("SessionAuthProfileRuntime", () => {
     const config = loadConfig({
       SLACK_APP_TOKEN: "xapp-test",
       SLACK_BOT_TOKEN: "xoxb-test",
-      DATA_ROOT: dataRoot
+      DATA_ROOT: dataRoot,
     } as NodeJS.ProcessEnv);
     const session = createSession({
       authProfileName: "bound",
       authProfileBoundAt: "2026-05-09T00:00:00.000Z",
       authBlockedAt: "2026-05-09T01:00:00.000Z",
       authBlockReason: "primary_quota_exhausted",
-      authBlockedNoticePostedAt: "2026-05-09T01:00:05.000Z"
+      authBlockedNoticePostedAt: "2026-05-09T01:00:05.000Z",
     });
     const sessions = createSessionManagerMock(session);
     const runtimes = new Map<string, MockAgentRuntime>();
     const runtime = new SessionAuthProfileRuntime({
       config,
       sessions: sessions as never,
-      authProfiles: authProfilesMock(profileStatus([
-        profile("bound", 10, 20),
-        profile("bigger", 0, 0)
-      ])) as never,
+      authProfiles: authProfilesMock(profileStatus([profile("bound", 10, 20), profile("bigger", 0, 0)])) as never,
       createProfileRuntime: ({ profile }) => {
         const mockRuntime = new MockAgentRuntime(profile.name);
         runtimes.set(profile.name, mockRuntime);
         return mockRuntime;
-      }
+      },
     });
 
     await runtime.submitInput({
       session,
       input: [],
       inputId: "input-1",
-      source: "slack_user"
+      source: "slack_user",
     });
 
     expect(sessions.clearSessionAuthBlock).toHaveBeenCalledWith(session.key);
@@ -240,40 +224,46 @@ describe("SessionAuthProfileRuntime", () => {
       authProfileName: "bound",
       authBlockedAt: undefined,
       authBlockReason: undefined,
-      authBlockedNoticePostedAt: undefined
+      authBlockedNoticePostedAt: undefined,
     });
-    expect(runtimes.get("bound")?.submitInput).toHaveBeenCalledWith(expect.objectContaining({
-      session: expect.objectContaining({
-        authProfileName: "bound",
-        authBlockedAt: undefined
-      })
-    }));
+    expect(runtimes.get("bound")?.submitInput).toHaveBeenCalledWith(
+      expect.objectContaining({
+        session: expect.objectContaining({
+          authProfileName: "bound",
+          authBlockedAt: undefined,
+        }),
+      }),
+    );
     expect(runtimes.has("bigger")).toBe(false);
   });
 });
 
 class MockAgentRuntime extends EventEmitter implements AgentRuntime {
-  readonly ensureSession = vi.fn(async (session: SlackSessionRecord): Promise<AgentSession> => ({
-    id: `${this.profileName}-thread`,
-    brokerSessionKey: session.key,
-    runtime: "codex-app-server",
-    createdAt: "2026-05-09T00:00:00.000Z"
-  }));
-  readonly submitInput = vi.fn(async (input: SubmitAgentInput): Promise<AgentSubmitInputResult> => ({
-    receipt: {
-      agentSessionId: `${this.profileName}-thread`,
-      turnId: `${this.profileName}-turn`,
-      inputId: input.inputId,
-      delivery: "started_turn",
-      deliveredAt: "2026-05-09T00:00:00.000Z"
-    },
-    completion: Promise.resolve({
-      agentSessionId: `${this.profileName}-thread`,
-      turnId: `${this.profileName}-turn`,
-      finalMessage: "",
-      aborted: false
-    })
-  }));
+  readonly ensureSession = vi.fn(
+    async (session: SlackSessionRecord): Promise<AgentSession> => ({
+      id: `${this.profileName}-thread`,
+      brokerSessionKey: session.key,
+      runtime: "codex-app-server",
+      createdAt: "2026-05-09T00:00:00.000Z",
+    }),
+  );
+  readonly submitInput = vi.fn(
+    async (input: SubmitAgentInput): Promise<AgentSubmitInputResult> => ({
+      receipt: {
+        agentSessionId: `${this.profileName}-thread`,
+        turnId: `${this.profileName}-turn`,
+        inputId: input.inputId,
+        delivery: "started_turn",
+        deliveredAt: "2026-05-09T00:00:00.000Z",
+      },
+      completion: Promise.resolve({
+        agentSessionId: `${this.profileName}-thread`,
+        turnId: `${this.profileName}-turn`,
+        finalMessage: "",
+        aborted: false,
+      }),
+    }),
+  );
   readonly interrupt = vi.fn(async () => undefined);
   readonly readSession = vi.fn(async () => null);
   readonly readTurn = vi.fn(async (): Promise<AgentTurnSnapshot | null> => null);
@@ -294,7 +284,7 @@ class MockAgentRuntime extends EventEmitter implements AgentRuntime {
       rawEvents: true,
       tokenUsage: "exact",
       toolCalls: true,
-      systemPromptEcho: true
+      systemPromptEcho: true,
     };
   }
 }
@@ -307,7 +297,7 @@ function createSession(patch: Partial<SlackSessionRecord> = {}): SlackSessionRec
     workspacePath: "/tmp/workspace",
     createdAt: "2026-05-09T00:00:00.000Z",
     updatedAt: "2026-05-09T00:00:00.000Z",
-    ...patch
+    ...patch,
   };
 }
 
@@ -324,7 +314,7 @@ function createSessionManagerMock(initial: SlackSessionRecord) {
         ...existing,
         authProfileName: profileName,
         authProfileBoundAt: "2026-05-09T00:00:01.000Z",
-        updatedAt: "2026-05-09T00:00:01.000Z"
+        updatedAt: "2026-05-09T00:00:01.000Z",
       };
       sessions.set(sessionKey, updated);
       return updated;
@@ -337,17 +327,17 @@ function createSessionManagerMock(initial: SlackSessionRecord) {
         authBlockedAt: undefined,
         authBlockReason: undefined,
         authBlockedNoticePostedAt: undefined,
-        updatedAt: "2026-05-09T00:00:02.000Z"
+        updatedAt: "2026-05-09T00:00:02.000Z",
       };
       sessions.set(sessionKey, updated);
       return updated;
-    })
+    }),
   };
 }
 
 function authProfilesMock(status: AuthProfilesStatus) {
   return {
-    listProfilesStatus: vi.fn(async () => status)
+    listProfilesStatus: vi.fn(async () => status),
   };
 }
 
@@ -355,7 +345,7 @@ function profileStatus(profiles: readonly AuthProfileSummary[]): AuthProfilesSta
   return {
     managedRoot: "/tmp/auth-profiles",
     profilesRoot: "/tmp/auth-profiles/docker/profiles",
-    profiles
+    profiles,
   };
 }
 
@@ -366,7 +356,7 @@ function profile(
   options: {
     readonly accountOk?: boolean | undefined;
     readonly rateLimitsOk?: boolean | undefined;
-  } = {}
+  } = {},
 ): AuthProfileSummary {
   const accountOk = options.accountOk ?? true;
   const rateLimitsOk = options.rateLimitsOk ?? true;
@@ -381,13 +371,13 @@ function profile(
           account: {
             email: `${name}@example.com`,
             type: "chatgpt",
-            planType: "pro"
+            planType: "pro",
           },
-          requiresOpenaiAuth: false
+          requiresOpenaiAuth: false,
         }
       : {
           ok: false,
-          error: "account status read failed"
+          error: "account status read failed",
         },
     rateLimits: rateLimitsOk
       ? {
@@ -398,21 +388,21 @@ function profile(
             primary: {
               usedPercent: primaryUsed,
               windowDurationMins: 300,
-              resetsAt: 1_779_000_000
+              resetsAt: 1_779_000_000,
             },
             secondary: {
               usedPercent: secondaryUsed,
               windowDurationMins: 10_080,
-              resetsAt: 1_780_000_000
+              resetsAt: 1_780_000_000,
             },
             credits: null,
-            planType: "pro"
+            planType: "pro",
           },
-          rateLimitsByLimitId: {}
+          rateLimitsByLimitId: {},
         }
       : {
           ok: false,
-          error: "rate limits read failed"
-        }
+          error: "rate limits read failed",
+        },
   };
 }

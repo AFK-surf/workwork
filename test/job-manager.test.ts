@@ -19,7 +19,7 @@ describe("JobManager", () => {
     const store = new StateStore(stateDir, sessionsRoot);
     const sessions = new SessionManager({
       stateStore: store,
-      sessionsRoot
+      sessionsRoot,
     });
     await sessions.load();
     const session = await sessions.ensureSession("C123", "111.222");
@@ -36,17 +36,17 @@ describe("JobManager", () => {
           payload: {
             summary: event.payload.summary,
             jobId: event.payload.jobId,
-            eventKind: event.payload.eventKind
-          }
+            eventKind: event.payload.eventKind,
+          },
         });
-      }
+      },
     });
 
     const job = await jobs.registerJob({
       channelId: "C123",
       rootThreadTs: "111.222",
       kind: "watch_ci",
-      script: "#!/usr/bin/env bash\nsleep 30"
+      script: "#!/usr/bin/env bash\nsleep 30",
     });
 
     expect(job.status).toBe("running");
@@ -54,7 +54,7 @@ describe("JobManager", () => {
 
     await jobs.emitJobEvent(job.id, job.token, {
       eventKind: "state_changed",
-      summary: "CI turned green."
+      summary: "CI turned green.",
     });
 
     expect(seenEvents).toEqual([
@@ -62,9 +62,9 @@ describe("JobManager", () => {
         payload: {
           summary: "CI turned green.",
           jobId: job.id,
-          eventKind: "state_changed"
-        }
-      }
+          eventKind: "state_changed",
+        },
+      },
     ]);
 
     await jobs.cancelJob(job.id, job.token);
@@ -79,7 +79,7 @@ describe("JobManager", () => {
     const store = new StateStore(stateDir, sessionsRoot);
     const sessions = new SessionManager({
       stateStore: store,
-      sessionsRoot
+      sessionsRoot,
     });
     await sessions.load();
     const session = await sessions.ensureSession("C123", "111.333");
@@ -97,17 +97,17 @@ describe("JobManager", () => {
           payload: {
             summary: event.payload.summary,
             jobId: event.payload.jobId,
-            eventKind: event.payload.eventKind
-          }
+            eventKind: event.payload.eventKind,
+          },
         });
-      }
+      },
     });
 
     const job = await jobs.registerJob({
       channelId: "C123",
       rootThreadTs: "111.333",
       kind: "watch_ci",
-      script: "#!/usr/bin/env bash\nsleep 30"
+      script: "#!/usr/bin/env bash\nsleep 30",
     });
 
     const timedOut = await waitForJobStatus(sessions, job.id, "cancelled");
@@ -119,9 +119,9 @@ describe("JobManager", () => {
         payload: {
           summary: expect.stringContaining("runtime limit"),
           jobId: job.id,
-          eventKind: "job_cancelled"
-        }
-      }
+          eventKind: "job_cancelled",
+        },
+      },
     ]);
 
     await jobs.stop();
@@ -135,7 +135,7 @@ describe("JobManager", () => {
     const store = new StateStore(stateDir, sessionsRoot);
     const sessions = new SessionManager({
       stateStore: store,
-      sessionsRoot
+      sessionsRoot,
     });
     await sessions.load();
     const session = await sessions.ensureSession("C123", "111.444");
@@ -158,7 +158,7 @@ describe("JobManager", () => {
       restartOnBoot: true,
       status: "running",
       createdAt: new Date(Date.now() - 1_000).toISOString(),
-      updatedAt: new Date(Date.now() - 1_000).toISOString()
+      updatedAt: new Date(Date.now() - 1_000).toISOString(),
     });
 
     const seenEvents: string[] = [];
@@ -170,7 +170,7 @@ describe("JobManager", () => {
       maxRuntimeMs: 100,
       onEvent: async (event) => {
         seenEvents.push(event.payload.eventKind);
-      }
+      },
     });
 
     await jobs.start();
@@ -180,7 +180,7 @@ describe("JobManager", () => {
       status: "cancelled",
       cancelledAt: expect.any(String),
       completedAt: expect.any(String),
-      error: expect.stringContaining("runtime limit")
+      error: expect.stringContaining("runtime limit"),
     });
     expect(seenEvents).toEqual(["job_cancelled"]);
 
@@ -195,7 +195,7 @@ describe("JobManager", () => {
     const store = new StateStore(stateDir, sessionsRoot);
     const sessions = new SessionManager({
       stateStore: store,
-      sessionsRoot
+      sessionsRoot,
     });
     await sessions.load();
     await sessions.ensureSession("C123", "222.333");
@@ -205,14 +205,14 @@ describe("JobManager", () => {
       jobsRoot,
       reposRoot,
       brokerHttpBaseUrl: "http://127.0.0.1:3000",
-      onEvent: async () => {}
+      onEvent: async () => {},
     });
 
     const job = await jobs.registerJob({
       channelId: "C123",
       rootThreadTs: "222.333",
       kind: "watch_ci",
-      script: "#!/usr/bin/env bash\nsleep 30"
+      script: "#!/usr/bin/env bash\nsleep 30",
     });
 
     expect(job.status).toBe("running");
@@ -221,7 +221,7 @@ describe("JobManager", () => {
     expect(sessions.getBackgroundJob(job.id)).toMatchObject({
       id: job.id,
       status: "running",
-      restartOnBoot: true
+      restartOnBoot: true,
     });
   });
 
@@ -233,7 +233,7 @@ describe("JobManager", () => {
     const store = new StateStore(stateDir, sessionsRoot);
     const sessions = new SessionManager({
       stateStore: store,
-      sessionsRoot
+      sessionsRoot,
     });
     await sessions.load();
     const session = await sessions.ensureSession("C123", "333.444");
@@ -250,28 +250,28 @@ describe("JobManager", () => {
           payload: {
             summary: event.payload.summary,
             jobId: event.payload.jobId,
-            eventKind: event.payload.eventKind
-          }
+            eventKind: event.payload.eventKind,
+          },
         });
-      }
+      },
     });
 
     const job = await jobs.registerJob({
       channelId: "C123",
       rootThreadTs: "333.444",
       kind: "watch_ci",
-      script: "#!/usr/bin/env bash\nsleep 30"
+      script: "#!/usr/bin/env bash\nsleep 30",
     });
 
     await sessions.recordTurnSignal("C123", "333.444", {
       turnId: "turn-final",
       kind: "final",
-      occurredAt: new Date(Date.now() + 1_000).toISOString()
+      occurredAt: new Date(Date.now() + 1_000).toISOString(),
     });
 
     await jobs.emitJobEvent(job.id, job.token, {
       eventKind: "state_changed",
-      summary: "already merged"
+      summary: "already merged",
     });
 
     expect(seenEvents).toEqual([]);
@@ -279,7 +279,7 @@ describe("JobManager", () => {
       id: job.id,
       status: "cancelled",
       lastEventKind: "state_changed",
-      lastEventSummary: "already merged"
+      lastEventSummary: "already merged",
     });
 
     await jobs.stop();
@@ -293,7 +293,7 @@ describe("JobManager", () => {
     const store = new StateStore(stateDir, sessionsRoot);
     const sessions = new SessionManager({
       stateStore: store,
-      sessionsRoot
+      sessionsRoot,
     });
     await sessions.load();
     const session = await sessions.ensureSession("C123", "444.555");
@@ -308,23 +308,25 @@ describe("JobManager", () => {
       brokerHttpBaseUrl: "http://127.0.0.1:3000",
       onEvent: async (event) => {
         seenEvents.push(event.payload.eventKind);
-      }
+      },
     });
 
     const job = await jobs.registerJob({
       channelId: "C123",
       rootThreadTs: "444.555",
       kind: "watch_ci",
-      script: `#!/usr/bin/env bash\nsleep 30 &\necho $! > ${shellQuote(childPidPath)}\nwait`
+      script: `#!/usr/bin/env bash\nsleep 30 &\necho $! > ${shellQuote(childPidPath)}\nwait`,
     });
     const childPid = Number(await waitForFileContents(childPidPath));
 
-    await expect(jobs.cancelJobFromAdmin(job.id, {
-      sessionKey: "C999:000.000"
-    })).rejects.toThrow("job_session_mismatch");
+    await expect(
+      jobs.cancelJobFromAdmin(job.id, {
+        sessionKey: "C999:000.000",
+      }),
+    ).rejects.toThrow("job_session_mismatch");
 
     const cancelled = await jobs.cancelJobFromAdmin(job.id, {
-      sessionKey: session.key
+      sessionKey: session.key,
     });
 
     expect(cancelled).toMatchObject({
@@ -332,13 +334,15 @@ describe("JobManager", () => {
       sessionKey: session.key,
       status: "cancelled",
       cancelledAt: expect.any(String),
-      completedAt: expect.any(String)
+      completedAt: expect.any(String),
     });
     expect(seenEvents).toEqual([]);
     await waitForProcessExit(childPid);
-    await expect(jobs.cancelJobFromAdmin(job.id, {
-      sessionKey: session.key
-    })).rejects.toThrow("job_not_cancellable:cancelled");
+    await expect(
+      jobs.cancelJobFromAdmin(job.id, {
+        sessionKey: session.key,
+      }),
+    ).rejects.toThrow("job_not_cancellable:cancelled");
 
     await jobs.stop();
   });
@@ -351,7 +355,7 @@ describe("JobManager", () => {
     const store = new StateStore(stateDir, sessionsRoot);
     const sessions = new SessionManager({
       stateStore: store,
-      sessionsRoot
+      sessionsRoot,
     });
     await sessions.load();
     const session = await sessions.ensureSession("C123", "444.555");
@@ -363,14 +367,14 @@ describe("JobManager", () => {
       jobsRoot,
       reposRoot,
       brokerHttpBaseUrl: "http://127.0.0.1:3000",
-      onEvent: async () => {}
+      onEvent: async () => {},
     });
 
     const job = await jobs.registerJob({
       channelId: "C123",
       rootThreadTs: "444.555",
       kind: "watch_ci",
-      script: `#!/usr/bin/env bash\nprintf '%s' \"$BROKER_JOB_HELPER\" > ${shellQuote(capturePath)}\nsleep 30`
+      script: `#!/usr/bin/env bash\nprintf '%s' "$BROKER_JOB_HELPER" > ${shellQuote(capturePath)}\nsleep 30`,
     });
 
     const helperPath = await waitForFileContents(capturePath);
@@ -395,11 +399,7 @@ async function waitForFileContents(filePath: string): Promise<string> {
   throw new Error(`Timed out waiting for ${filePath}`);
 }
 
-async function waitForJobStatus(
-  sessions: SessionManager,
-  jobId: string,
-  status: string
-): Promise<PersistedBackgroundJob> {
+async function waitForJobStatus(sessions: SessionManager, jobId: string, status: string): Promise<PersistedBackgroundJob> {
   const deadline = Date.now() + 5_000;
   while (Date.now() < deadline) {
     const job = sessions.getBackgroundJob(jobId);
@@ -425,7 +425,7 @@ async function waitForProcessExit(pid: number): Promise<void> {
 }
 
 function shellQuote(value: string): string {
-  return `'${value.replaceAll("'", `'\"'\"'`)}'`;
+  return `'${value.replaceAll("'", `'"'"'`)}'`;
 }
 
 function isProcessAlive(pid: number): boolean {

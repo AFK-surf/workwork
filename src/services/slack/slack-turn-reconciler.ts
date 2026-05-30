@@ -9,11 +9,7 @@ export class SlackTurnReconciler {
   readonly #turnRunner: SlackTurnRunner;
   readonly #inboundStore: SlackInboundStore;
 
-  constructor(options: {
-    readonly sessions: SessionManager;
-    readonly turnRunner: SlackTurnRunner;
-    readonly inboundStore: SlackInboundStore;
-  }) {
+  constructor(options: { readonly sessions: SessionManager; readonly turnRunner: SlackTurnRunner; readonly inboundStore: SlackInboundStore }) {
     this.#sessions = options.sessions;
     this.#turnRunner = options.turnRunner;
     this.#inboundStore = options.inboundStore;
@@ -23,7 +19,7 @@ export class SlackTurnReconciler {
     session: SlackSessionRecord,
     options?: {
       readonly treatMissingAsStale?: boolean | undefined;
-    }
+    },
   ): Promise<"cleared" | "retained"> {
     if (!session.agentSessionId || !session.activeTurnId) {
       await this.#sessions.setActiveTurnId(session.channelId, session.rootThreadTs, undefined);
@@ -34,7 +30,7 @@ export class SlackTurnReconciler {
     const activeTurnId = hydratedSession.activeTurnId!;
     const snapshot = await this.#turnRunner.readTurnSnapshot(hydratedSession, activeTurnId, {
       syncActiveTurn: true,
-      treatMissingAsStale: options?.treatMissingAsStale ?? false
+      treatMissingAsStale: options?.treatMissingAsStale ?? false,
     });
 
     if (!snapshot) {
@@ -42,21 +38,17 @@ export class SlackTurnReconciler {
         logger.info("Active agent turn missing from thread snapshot during stale-turn reconciliation", {
           sessionKey: session.key,
           turnId: activeTurnId,
-          reason: "turn_missing_from_snapshot"
+          reason: "turn_missing_from_snapshot",
         });
         await this.#inboundStore.resetTurnBatchToPending(hydratedSession, activeTurnId);
-        await this.#sessions.setActiveTurnId(
-          hydratedSession.channelId,
-          hydratedSession.rootThreadTs,
-          undefined
-        );
+        await this.#sessions.setActiveTurnId(hydratedSession.channelId, hydratedSession.rootThreadTs, undefined);
         return "cleared";
       }
 
       logger.debug("Active agent turn not present in thread snapshot yet; retaining turn", {
         sessionKey: session.key,
         turnId: activeTurnId,
-        reason: "turn_missing_from_snapshot"
+        reason: "turn_missing_from_snapshot",
       });
       return "retained";
     }
@@ -68,7 +60,7 @@ export class SlackTurnReconciler {
     logger.info("Reconciling terminal agent turn state from snapshot", {
       sessionKey: session.key,
       turnId: activeTurnId,
-      status: snapshot.status
+      status: snapshot.status,
     });
 
     if (snapshot.status === "completed" || snapshot.status === "interrupted") {
@@ -77,11 +69,7 @@ export class SlackTurnReconciler {
       await this.#inboundStore.resetTurnBatchToPending(hydratedSession, activeTurnId);
     }
 
-    await this.#sessions.setActiveTurnId(
-      hydratedSession.channelId,
-      hydratedSession.rootThreadTs,
-      undefined
-    );
+    await this.#sessions.setActiveTurnId(hydratedSession.channelId, hydratedSession.rootThreadTs, undefined);
     return "cleared";
   }
 }

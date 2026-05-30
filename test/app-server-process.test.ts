@@ -5,10 +5,7 @@ import path from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import {
-  AppServerProcess,
-  parseCodexAppServerPidsFromPsOutput
-} from "../src/services/codex/app-server-process.js";
+import { AppServerProcess, parseCodexAppServerPidsFromPsOutput } from "../src/services/codex/app-server-process.js";
 
 async function delay(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
@@ -49,7 +46,7 @@ async function startHealthyHttpServer(): Promise<{
 
           resolve();
         });
-      })
+      }),
   };
 }
 
@@ -66,37 +63,37 @@ describe("AppServerProcess", () => {
 
     const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "broker-app-server-process-"));
     const tempadServer = await startHealthyHttpServer();
-	    const fakeBinDir = path.join(tempRoot, "bin");
-	    const fakeCodexPath = path.join(fakeBinDir, "codex");
-	    const fakeGitPath = path.join(fakeBinDir, "git");
-	    const fakeGhPath = path.join(fakeBinDir, "gh");
-	    const argsFile = path.join(tempRoot, "codex-args.txt");
-	    const hostCodexHomePath = path.join(tempRoot, "host-codex-home");
-	    const hostGeminiHomePath = path.join(tempRoot, "host-gemini-home");
-	    const codexHome = path.join(tempRoot, "codex-home");
-	    const operatorHome = path.join(tempRoot, "operator-home");
-	    const previousHome = process.env.HOME;
-	    const observedWrites: string[] = [];
+    const fakeBinDir = path.join(tempRoot, "bin");
+    const fakeCodexPath = path.join(fakeBinDir, "codex");
+    const fakeGitPath = path.join(fakeBinDir, "git");
+    const fakeGhPath = path.join(fakeBinDir, "gh");
+    const argsFile = path.join(tempRoot, "codex-args.txt");
+    const hostCodexHomePath = path.join(tempRoot, "host-codex-home");
+    const hostGeminiHomePath = path.join(tempRoot, "host-gemini-home");
+    const codexHome = path.join(tempRoot, "codex-home");
+    const operatorHome = path.join(tempRoot, "operator-home");
+    const previousHome = process.env.HOME;
+    const observedWrites: string[] = [];
 
     await fs.mkdir(fakeBinDir, {
-      recursive: true
+      recursive: true,
     });
     await fs.mkdir(hostCodexHomePath, {
-      recursive: true
+      recursive: true,
     });
-	    await fs.mkdir(hostGeminiHomePath, {
-	      recursive: true
-	    });
-	    await fs.mkdir(operatorHome, {
-	      recursive: true
-	    });
+    await fs.mkdir(hostGeminiHomePath, {
+      recursive: true,
+    });
+    await fs.mkdir(operatorHome, {
+      recursive: true,
+    });
 
-	    await fs.writeFile(
-	      fakeCodexPath,
+    await fs.writeFile(
+      fakeCodexPath,
       [
         "#!/usr/bin/env bash",
         "set -euo pipefail",
-        "if [ \"${1:-}\" = \"app-server\" ]; then",
+        'if [ "${1:-}" = "app-server" ]; then',
         `  printf '%s\\n' "$@" > ${shellQuote(argsFile)}`,
         "  printf '%s\\n' 'codex app-server (WebSockets)' >&2",
         "  printf '%s\\n' '  listening on: ws://127.0.0.1:4590' >&2",
@@ -108,20 +105,20 @@ describe("AppServerProcess", () => {
         "fi",
         "printf 'unexpected fake codex args: %s\\n' \"$*\" >&2",
         "exit 1",
-        ""
+        "",
       ].join("\n"),
       {
-        mode: 0o755
-      }
-	    );
-	    await fs.writeFile(fakeGitPath, "#!/usr/bin/env bash\nexit 0\n", { mode: 0o755 });
-	    await fs.writeFile(fakeGhPath, "#!/usr/bin/env bash\nexit 0\n", { mode: 0o755 });
-	    await fs.chmod(fakeCodexPath, 0o755);
-	    await fs.chmod(fakeGitPath, 0o755);
-	    await fs.chmod(fakeGhPath, 0o755);
+        mode: 0o755,
+      },
+    );
+    await fs.writeFile(fakeGitPath, "#!/usr/bin/env bash\nexit 0\n", { mode: 0o755 });
+    await fs.writeFile(fakeGhPath, "#!/usr/bin/env bash\nexit 0\n", { mode: 0o755 });
+    await fs.chmod(fakeCodexPath, 0o755);
+    await fs.chmod(fakeGitPath, 0o755);
+    await fs.chmod(fakeGhPath, 0o755);
 
-	    process.env.PATH = `${fakeBinDir}:${originalPath ?? ""}`;
-	    process.env.HOME = operatorHome;
+    process.env.PATH = `${fakeBinDir}:${originalPath ?? ""}`;
+    process.env.HOME = operatorHome;
 
     vi.spyOn(process.stdout, "write").mockImplementation(((chunk: string | Uint8Array) => {
       observedWrites.push(typeof chunk === "string" ? chunk : chunk.toString());
@@ -134,37 +131,29 @@ describe("AppServerProcess", () => {
       port: 4590,
       hostCodexHomePath,
       hostGeminiHomePath,
-      tempadLinkServiceUrl: tempadServer.url
+      tempadLinkServiceUrl: tempadServer.url,
     });
 
     try {
       await processManager.start();
       await delay(300);
       const observedArgs = (await fs.readFile(argsFile, "utf8")).trim().split("\n");
-      expect(observedArgs).toEqual([
-        "app-server",
-        "--disable",
-        "apps",
-        "--listen",
-        "ws://127.0.0.1:4590"
-      ]);
-	    } finally {
-	      await processManager.stop().catch(() => {});
-	      await tempadServer.close().catch(() => {});
-	      if (previousHome === undefined) {
-	        delete process.env.HOME;
-	      } else {
-	        process.env.HOME = previousHome;
-	      }
-	      await fs.rm(tempRoot, {
-	        force: true,
-        recursive: true
+      expect(observedArgs).toEqual(["app-server", "--disable", "apps", "--listen", "ws://127.0.0.1:4590"]);
+    } finally {
+      await processManager.stop().catch(() => {});
+      await tempadServer.close().catch(() => {});
+      if (previousHome === undefined) {
+        delete process.env.HOME;
+      } else {
+        process.env.HOME = previousHome;
+      }
+      await fs.rm(tempRoot, {
+        force: true,
+        recursive: true,
       });
     }
 
-    expect(observedWrites.join("")).toContain(
-      "disconnecting slow connection after outbound queue filled: ConnectionId(1)"
-    );
+    expect(observedWrites.join("")).toContain("disconnecting slow connection after outbound queue filled: ConnectionId(1)");
   });
 
   it("keeps per-profile CODEX_HOME but uses the VM HOME without leaking global GitHub tokens", async () => {
@@ -185,7 +174,7 @@ describe("AppServerProcess", () => {
       HOME: process.env.HOME,
       GH_TOKEN: process.env.GH_TOKEN,
       GITHUB_TOKEN: process.env.GITHUB_TOKEN,
-      BROKER_DEFAULT_GITHUB_TOKEN: process.env.BROKER_DEFAULT_GITHUB_TOKEN
+      BROKER_DEFAULT_GITHUB_TOKEN: process.env.BROKER_DEFAULT_GITHUB_TOKEN,
     };
 
     await fs.mkdir(fakeBinDir, { recursive: true });
@@ -198,7 +187,7 @@ describe("AppServerProcess", () => {
       [
         "#!/usr/bin/env bash",
         "set -euo pipefail",
-        "if [ \"${1:-}\" = \"app-server\" ]; then",
+        'if [ "${1:-}" = "app-server" ]; then',
         `  { printf 'HOME=%s\\n' "\${HOME-}"; printf 'CODEX_HOME=%s\\n' "\${CODEX_HOME-}"; printf 'GH_TOKEN=%s\\n' "\${GH_TOKEN-}"; printf 'GITHUB_TOKEN=%s\\n' "\${GITHUB_TOKEN-}"; printf 'BROKER_DEFAULT_GITHUB_TOKEN=%s\\n' "\${BROKER_DEFAULT_GITHUB_TOKEN-}"; } > ${shellQuote(appEnvFile)}`,
         "  printf '%s\\n' 'codex app-server (WebSockets)' >&2",
         "  printf '%s\\n' '  listening on: ws://127.0.0.1:4592' >&2",
@@ -206,21 +195,13 @@ describe("AppServerProcess", () => {
         "fi",
         "printf 'unexpected fake codex args: %s\\n' \"$*\" >&2",
         "exit 1",
-        ""
+        "",
       ].join("\n"),
-      { mode: 0o755 }
+      { mode: 0o755 },
     );
-    await fs.writeFile(
-      fakeGitPath,
-      [
-        "#!/usr/bin/env bash",
-        "set -euo pipefail",
-        `printf 'HOME=%s\\nGH_TOKEN=%s\\nGITHUB_TOKEN=%s\\nBROKER_DEFAULT_GITHUB_TOKEN=%s\\n' "\${HOME-}" "\${GH_TOKEN-}" "\${GITHUB_TOKEN-}" "\${BROKER_DEFAULT_GITHUB_TOKEN-}" > ${shellQuote(gitEnvFile)}`,
-        "exit 0",
-        ""
-      ].join("\n"),
-      { mode: 0o755 }
-    );
+    await fs.writeFile(fakeGitPath, ["#!/usr/bin/env bash", "set -euo pipefail", `printf 'HOME=%s\\nGH_TOKEN=%s\\nGITHUB_TOKEN=%s\\nBROKER_DEFAULT_GITHUB_TOKEN=%s\\n' "\${HOME-}" "\${GH_TOKEN-}" "\${GITHUB_TOKEN-}" "\${BROKER_DEFAULT_GITHUB_TOKEN-}" > ${shellQuote(gitEnvFile)}`, "exit 0", ""].join("\n"), {
+      mode: 0o755,
+    });
     await fs.writeFile(fakeGhPath, "#!/usr/bin/env bash\nexit 0\n", { mode: 0o755 });
     await fs.chmod(fakeCodexPath, 0o755);
     await fs.chmod(fakeGitPath, 0o755);
@@ -238,7 +219,7 @@ describe("AppServerProcess", () => {
       port: 4592,
       hostCodexHomePath,
       hostGeminiHomePath,
-      tempadLinkServiceUrl: tempadServer.url
+      tempadLinkServiceUrl: tempadServer.url,
     });
 
     try {
@@ -247,13 +228,13 @@ describe("AppServerProcess", () => {
         (await fs.readFile(appEnvFile, "utf8"))
           .trim()
           .split("\n")
-          .map((line) => line.split("=", 2))
+          .map((line) => line.split("=", 2)),
       );
       const gitEnv = Object.fromEntries(
         (await fs.readFile(gitEnvFile, "utf8"))
           .trim()
           .split("\n")
-          .map((line) => line.split("=", 2))
+          .map((line) => line.split("=", 2)),
       );
 
       expect(appEnv).toMatchObject({
@@ -261,13 +242,13 @@ describe("AppServerProcess", () => {
         CODEX_HOME: codexHome,
         GH_TOKEN: "",
         GITHUB_TOKEN: "",
-        BROKER_DEFAULT_GITHUB_TOKEN: ""
+        BROKER_DEFAULT_GITHUB_TOKEN: "",
       });
       expect(gitEnv).toMatchObject({
         HOME: operatorHome,
         GH_TOKEN: "",
         GITHUB_TOKEN: "",
-        BROKER_DEFAULT_GITHUB_TOKEN: ""
+        BROKER_DEFAULT_GITHUB_TOKEN: "",
       });
     } finally {
       await processManager.stop().catch(() => {});
@@ -303,7 +284,7 @@ describe("AppServerProcess", () => {
       "124 /opt/homebrew/bin/codex app-server --listen ws://localhost:4590",
       "125 /opt/homebrew/bin/codex app-server --disable apps --listen ws://127.0.0.1:4591",
       "126 /opt/homebrew/bin/codex exec --listen ws://127.0.0.1:4590",
-      "123 /opt/homebrew/bin/codex app-server --disable apps --listen ws://127.0.0.1:4590"
+      "123 /opt/homebrew/bin/codex app-server --disable apps --listen ws://127.0.0.1:4590",
     ].join("\n");
 
     expect(parseCodexAppServerPidsFromPsOutput(output, 4590)).toEqual([123, 124]);

@@ -1,9 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import {
-  completeChatGptDeviceCodeLogin,
-  requestChatGptDeviceCode
-} from "../src/services/codex/chatgpt-device-auth-api.js";
+import { completeChatGptDeviceCodeLogin, requestChatGptDeviceCode } from "../src/services/codex/chatgpt-device-auth-api.js";
 
 describe("ChatGPT device auth API", () => {
   it("requests a Codex device code from the ChatGPT accounts API", async () => {
@@ -11,12 +8,12 @@ describe("ChatGPT device auth API", () => {
       expect(input.toString()).toBe("https://auth.openai.com/api/accounts/deviceauth/usercode");
       expect(new Headers(init?.headers).get("Content-Type")).toBe("application/json");
       expect(JSON.parse(String(init?.body))).toEqual({
-        client_id: "app_EMoamEEZ73f0CkXaXp7hrann"
+        client_id: "app_EMoamEEZ73f0CkXaXp7hrann",
       });
       return jsonResponse({
         device_auth_id: "device-1",
         user_code: "ABCD-EFGH",
-        interval: "7"
+        interval: "7",
       });
     });
 
@@ -27,7 +24,7 @@ describe("ChatGPT device auth API", () => {
       userCode: "ABCD-EFGH",
       verificationUrl: "https://auth.openai.com/codex/device",
       intervalSeconds: 7,
-      expiresInSeconds: 900
+      expiresInSeconds: 900,
     });
     expect(Date.parse(deviceCode.expiresAt)).toBeGreaterThan(Date.now());
   });
@@ -39,12 +36,12 @@ describe("ChatGPT device auth API", () => {
       deviceAuthId: "device-1",
       userCode: "ABCD-EFGH",
       retryAfterSeconds: 9,
-      fetchImpl: fetchMock as unknown as typeof fetch
+      fetchImpl: fetchMock as unknown as typeof fetch,
     });
 
     expect(result).toEqual({
       status: "pending",
-      retryAfterSeconds: 9
+      retryAfterSeconds: 9,
     });
   });
 
@@ -53,8 +50,8 @@ describe("ChatGPT device auth API", () => {
       email: "bot@example.com",
       "https://api.openai.com/auth": {
         chatgpt_account_id: "account-1",
-        chatgpt_plan_type: "pro"
-      }
+        chatgpt_plan_type: "pro",
+      },
     });
     const calls: Array<{
       readonly url: string;
@@ -66,12 +63,12 @@ describe("ChatGPT device auth API", () => {
       if (url.endsWith("/deviceauth/token")) {
         expect(JSON.parse(String(init?.body))).toEqual({
           device_auth_id: "device-1",
-          user_code: "ABCD-EFGH"
+          user_code: "ABCD-EFGH",
         });
         return jsonResponse({
           authorization_code: "authorization-code",
           code_challenge: "challenge",
-          code_verifier: "verifier"
+          code_verifier: "verifier",
         });
       }
 
@@ -85,20 +82,17 @@ describe("ChatGPT device auth API", () => {
       return jsonResponse({
         id_token: idToken,
         access_token: "access-token",
-        refresh_token: "refresh-token"
+        refresh_token: "refresh-token",
       });
     });
 
     const result = await completeChatGptDeviceCodeLogin({
       deviceAuthId: "device-1",
       userCode: "ABCD-EFGH",
-      fetchImpl: fetchMock as unknown as typeof fetch
+      fetchImpl: fetchMock as unknown as typeof fetch,
     });
 
-    expect(calls.map((call) => call.url)).toEqual([
-      "https://auth.openai.com/api/accounts/deviceauth/token",
-      "https://auth.openai.com/oauth/token"
-    ]);
+    expect(calls.map((call) => call.url)).toEqual(["https://auth.openai.com/api/accounts/deviceauth/token", "https://auth.openai.com/oauth/token"]);
     expect(result.status).toBe("complete");
     if (result.status !== "complete") {
       throw new Error("unexpected pending result");
@@ -115,7 +109,7 @@ describe("ChatGPT device auth API", () => {
       id_token: idToken,
       access_token: "access-token",
       refresh_token: "refresh-token",
-      account_id: "account-1"
+      account_id: "account-1",
     });
     expect(authJson.last_refresh).toEqual(expect.any(String));
   });
@@ -124,15 +118,11 @@ describe("ChatGPT device auth API", () => {
 function jsonResponse(payload: unknown): Response {
   return new Response(JSON.stringify(payload), {
     headers: {
-      "Content-Type": "application/json"
-    }
+      "Content-Type": "application/json",
+    },
   });
 }
 
 function jwtWithClaims(claims: Record<string, unknown>): string {
-  return [
-    Buffer.from(JSON.stringify({ alg: "none" })).toString("base64url"),
-    Buffer.from(JSON.stringify(claims)).toString("base64url"),
-    "signature"
-  ].join(".");
+  return [Buffer.from(JSON.stringify({ alg: "none" })).toString("base64url"), Buffer.from(JSON.stringify(claims)).toString("base64url"), "signature"].join(".");
 }

@@ -1,7 +1,4 @@
-import type {
-  AppServerAccountSummary,
-  AppServerRateLimitsResponse
-} from "./codex/app-server-client.js";
+import type { AppServerAccountSummary, AppServerRateLimitsResponse } from "./codex/app-server-client.js";
 
 export interface RuntimeControl {
   restartRuntime(reason: string): Promise<void>;

@@ -1,10 +1,4 @@
-import type {
-  PersistedInboundMessage,
-  PersistedInboundSource,
-  SlackInboundSource,
-  SlackSessionRecord,
-  SlackTurnSignalKind
-} from "../../types.js";
+import type { PersistedInboundMessage, PersistedInboundSource, SlackInboundSource, SlackSessionRecord, SlackTurnSignalKind } from "../../types.js";
 
 const AUTO_RECOVERY_SESSION_LOOKBACK_MS = 24 * 60 * 60 * 1_000;
 const DEFAULT_FAILURE_NOTIFICATION_COOLDOWN_MS = 5 * 60 * 1_000;
@@ -66,13 +60,7 @@ export function shouldAutoRecoverSession(session: SlackSessionRecord, nowMs: num
   return nowMs - updatedAtMs <= AUTO_RECOVERY_SESSION_LOOKBACK_MS;
 }
 
-export function shouldForceResetStaleIdleRuntime(options: {
-  readonly activeTurnId?: string | undefined;
-  readonly runtimeProcessing: boolean;
-  readonly latestOpenMessageUpdatedAt?: string | undefined;
-  readonly nowMs: number;
-  readonly staleAfterMs: number;
-}): boolean {
+export function shouldForceResetStaleIdleRuntime(options: { readonly activeTurnId?: string | undefined; readonly runtimeProcessing: boolean; readonly latestOpenMessageUpdatedAt?: string | undefined; readonly nowMs: number; readonly staleAfterMs: number }): boolean {
   if (options.activeTurnId || !options.runtimeProcessing || !options.latestOpenMessageUpdatedAt) {
     return false;
   }
@@ -108,27 +96,12 @@ export function clampHistoryLimit(requested: number | undefined, fallback: numbe
 
 export function isRecoverableAgentTurnFailure(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
-  return [
-    "app-server websocket is not connected",
-    "app-server websocket closed",
-    "websocket is not connected",
-    "websocket closed",
-    "WebSocket is not open",
-    "readyState 3",
-    "socket hang up",
-    "ECONNREFUSED",
-    "EPIPE",
-    "closed"
-  ].some((pattern) => message.includes(pattern));
+  return ["app-server websocket is not connected", "app-server websocket closed", "websocket is not connected", "websocket closed", "WebSocket is not open", "readyState 3", "socket hang up", "ECONNREFUSED", "EPIPE", "closed"].some((pattern) => message.includes(pattern));
 }
 
 export function isMissingAgentSessionError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
-  return (
-    /no rollout found for thread id/i.test(message) ||
-    /thread .* not found/i.test(message) ||
-    /unknown thread/i.test(message)
-  );
+  return /no rollout found for thread id/i.test(message) || /thread .* not found/i.test(message) || /unknown thread/i.test(message);
 }
 
 export function createSlackFailureFingerprint(error: unknown): string {
@@ -136,13 +109,7 @@ export function createSlackFailureFingerprint(error: unknown): string {
   return message.trim().replace(/\s+/g, " ");
 }
 
-export function shouldNotifySlackFailure(options: {
-  readonly previousFingerprint?: string | undefined;
-  readonly previousNotifiedAtMs?: number | undefined;
-  readonly error: unknown;
-  readonly nowMs: number;
-  readonly cooldownMs?: number | undefined;
-}): boolean {
+export function shouldNotifySlackFailure(options: { readonly previousFingerprint?: string | undefined; readonly previousNotifiedAtMs?: number | undefined; readonly error: unknown; readonly nowMs: number; readonly cooldownMs?: number | undefined }): boolean {
   const fingerprint = createSlackFailureFingerprint(options.error);
   if (!options.previousFingerprint || options.previousNotifiedAtMs === undefined) {
     return true;
@@ -198,19 +165,12 @@ export function parseActiveTurnMismatch(error: unknown): {
 
   return {
     expectedTurnId: match[1]!,
-    actualTurnId: match[2]!
+    actualTurnId: match[2]!,
   };
 }
 
-export function shouldResetConflictingActiveTurnMismatch(
-  inflightBatchIds: readonly (string | undefined)[],
-  actualTurnId: string
-): boolean {
-  const distinct = new Set(
-    inflightBatchIds
-      .map((batchId) => batchId?.trim())
-      .filter((batchId): batchId is string => Boolean(batchId))
-  );
+export function shouldResetConflictingActiveTurnMismatch(inflightBatchIds: readonly (string | undefined)[], actualTurnId: string): boolean {
+  const distinct = new Set(inflightBatchIds.map((batchId) => batchId?.trim()).filter((batchId): batchId is string => Boolean(batchId)));
 
   if (distinct.size === 0) {
     return false;
@@ -223,9 +183,7 @@ export function shouldResetConflictingActiveTurnMismatch(
   return true;
 }
 
-export function isSlackInboundSource(
-  source: PersistedInboundSource | "recovered_thread_batch"
-): source is SlackInboundSource {
+export function isSlackInboundSource(source: PersistedInboundSource | "recovered_thread_batch"): source is SlackInboundSource {
   return source === "app_mention" || source === "direct_message" || source === "thread_reply";
 }
 

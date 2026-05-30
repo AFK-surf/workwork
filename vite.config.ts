@@ -26,7 +26,7 @@ export default defineConfig({
             response.writeHead(200, {
               "content-type": "text/event-stream; charset=utf-8",
               "cache-control": "no-store",
-              connection: "keep-alive"
+              connection: "keep-alive",
             });
             response.write(": local preview realtime disabled\n\n");
             const timer = setInterval(() => response.write(": keepalive\n\n"), 15_000);
@@ -39,20 +39,7 @@ export default defineConfig({
             request.on("data", (chunk: Buffer) => chunks.push(chunk));
             request.on("end", () => {
               const body = Buffer.concat(chunks);
-              const args = [
-                "--silent",
-                "--show-error",
-                "--max-time",
-                "60",
-                "--request",
-                request.method || "GET",
-                "--dump-header",
-                "-",
-                "--output",
-                "-",
-                "--header",
-                `accept: ${request.headers.accept || "application/json"}`
-              ];
+              const args = ["--silent", "--show-error", "--max-time", "60", "--request", request.method || "GET", "--dump-header", "-", "--output", "-", "--header", `accept: ${request.headers.accept || "application/json"}`];
               if (adminApiProxyCookie) {
                 args.push("--header", `cookie: ${adminApiProxyCookie}`);
               }
@@ -65,7 +52,7 @@ export default defineConfig({
               args.push(target.toString());
 
               const child = spawn("curl", args, {
-                stdio: ["pipe", "pipe", "pipe"]
+                stdio: ["pipe", "pipe", "pipe"],
               });
               const stdout: Buffer[] = [];
               const stderr: Buffer[] = [];
@@ -80,16 +67,18 @@ export default defineConfig({
                 const headerEnd = output.indexOf(Buffer.from("\r\n\r\n"));
                 if (code !== 0 || headerEnd < 0) {
                   response.writeHead(502, { "content-type": "application/json" });
-                  response.end(JSON.stringify({
-                    ok: false,
-                    error: Buffer.concat(stderr).toString("utf8") || `curl exited with status ${code}`
-                  }));
+                  response.end(
+                    JSON.stringify({
+                      ok: false,
+                      error: Buffer.concat(stderr).toString("utf8") || `curl exited with status ${code}`,
+                    }),
+                  );
                   return;
                 }
                 const rawHeaders = output.subarray(0, headerEnd).toString("utf8").split("\r\n");
                 const status = Number(rawHeaders[0]?.match(/\s(\d{3})\s/)?.[1] || 502);
                 const headers: Record<string, string> = {
-                  "cache-control": "no-store"
+                  "cache-control": "no-store",
                 };
                 for (const line of rawHeaders.slice(1)) {
                   const index = line.indexOf(":");
@@ -110,15 +99,15 @@ export default defineConfig({
             request.resume();
           });
         }
-      }
+      },
     },
-    react()
+    react(),
   ],
   server: {
     host: "127.0.0.1",
     port: Number(process.env.ADMIN_UI_DEV_PORT || 5173),
     strictPort: true,
-    cors: true
+    cors: true,
   },
   build: {
     outDir: "../../dist/admin-ui",
@@ -132,8 +121,8 @@ export default defineConfig({
           const names = "names" in assetInfo && Array.isArray(assetInfo.names) ? assetInfo.names : [];
           const name = assetInfo.name ?? names[0] ?? "";
           return name.endsWith(".css") ? "assets/admin-ui.css" : "assets/[name][extname]";
-        }
-      }
-    }
-  }
+        },
+      },
+    },
+  },
 });

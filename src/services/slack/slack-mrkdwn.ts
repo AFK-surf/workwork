@@ -183,7 +183,7 @@ function protectCodeSegments(text: string): readonly [string, ProtectedCodeSegme
     protectedText += token;
     protectedSegments.push({
       token,
-      replacement: sanitizeSlackCodeSegment(segment.text)
+      replacement: sanitizeSlackCodeSegment(segment.text),
     });
   }
 
@@ -265,12 +265,8 @@ function convertMarkdownTable(text: string): string {
   const lines = text.split("\n");
   const result: string[] = [];
 
-  for (let index = 0; index < lines.length;) {
-    if (
-      index + 1 < lines.length &&
-      mdTableRowRe.test(lines[index]!) &&
-      mdTableSepRe.test(lines[index + 1]!)
-    ) {
+  for (let index = 0; index < lines.length; ) {
+    if (index + 1 < lines.length && mdTableRowRe.test(lines[index]!) && mdTableSepRe.test(lines[index + 1]!)) {
       const headers = parseTableRow(lines[index]!);
       index += 2;
 

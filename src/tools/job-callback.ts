@@ -15,9 +15,9 @@ async function main(): Promise<void> {
   const response = await fetch(url, {
     method: "POST",
     headers: {
-      "content-type": "application/json"
+      "content-type": "application/json",
     },
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
   });
 
   const text = await response.text();
@@ -63,18 +63,12 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
 
   return {
     action: actionCandidate,
-    values
+    values,
   };
 }
 
 function isJobAction(value: string): value is JobAction {
-  return (
-    value === "heartbeat" ||
-    value === "event" ||
-    value === "complete" ||
-    value === "fail" ||
-    value === "cancel"
-  );
+  return value === "heartbeat" || value === "event" || value === "complete" || value === "fail" || value === "cancel";
 }
 
 function buildUrl(action: JobAction): string {
@@ -88,7 +82,7 @@ function buildBody(parsed: ParsedArgs): Record<string, unknown> {
   const detailsText = parsed.values.get("details-text");
   const detailsJson = parseOptionalJson(parsed.values.get("details-json"));
   const common = {
-    token
+    token,
   } as Record<string, unknown>;
 
   if (parsed.action === "heartbeat" || parsed.action === "cancel") {
@@ -101,7 +95,7 @@ function buildBody(parsed: ParsedArgs): Record<string, unknown> {
       event_kind: readRequiredArg(parsed.values, "kind"),
       summary: readRequiredArg(parsed.values, "summary"),
       details_text: detailsText,
-      details_json: detailsJson
+      details_json: detailsJson,
     };
   }
 
@@ -110,7 +104,7 @@ function buildBody(parsed: ParsedArgs): Record<string, unknown> {
       ...common,
       summary: parsed.values.get("summary"),
       details_text: detailsText,
-      details_json: detailsJson
+      details_json: detailsJson,
     };
   }
 
@@ -119,7 +113,7 @@ function buildBody(parsed: ParsedArgs): Record<string, unknown> {
     summary: parsed.values.get("summary"),
     error: parsed.values.get("error"),
     details_text: detailsText,
-    details_json: detailsJson
+    details_json: detailsJson,
   };
 }
 

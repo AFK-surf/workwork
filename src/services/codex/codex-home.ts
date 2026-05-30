@@ -6,17 +6,7 @@ import { ensureDir, fileExists } from "../../utils/fs.js";
 
 export const PERSONAL_MEMORY_FILENAME = "AGENT.md";
 
-const mirroredEntries = [
-  PERSONAL_MEMORY_FILENAME,
-  "AGENTS.md",
-  "memory.md",
-  "config.toml",
-  "memories",
-  "skills",
-  "superpowers",
-  "rules",
-  "vendor_imports"
-] as const;
+const mirroredEntries = [PERSONAL_MEMORY_FILENAME, "AGENTS.md", "memory.md", "config.toml", "memories", "skills", "superpowers", "rules", "vendor_imports"] as const;
 
 const detachedMarkdownEntries = new Set<string>([PERSONAL_MEMORY_FILENAME, "AGENTS.md"]);
 const linkedMarkdownEntries = new Set<string>(["memory.md"]);
@@ -25,14 +15,8 @@ function isDirectoryEntry(entry: string): boolean {
   return !entry.endsWith(".md") && !entry.endsWith(".toml");
 }
 
-async function resolveSourceCodexHome(
-  codexHome: string,
-  hostCodexHomePath?: string
-): Promise<string | undefined> {
-  const candidates = [
-    hostCodexHomePath,
-    path.join(os.homedir(), ".codex")
-  ].filter((value): value is string => Boolean(value));
+async function resolveSourceCodexHome(codexHome: string, hostCodexHomePath?: string): Promise<string | undefined> {
+  const candidates = [hostCodexHomePath, path.join(os.homedir(), ".codex")].filter((value): value is string => Boolean(value));
 
   const resolvedTarget = path.resolve(codexHome);
 
@@ -53,14 +37,14 @@ async function resolveSourceCodexHome(
 async function replaceWithCopy(targetPath: string, sourcePath: string, isDirectory: boolean): Promise<void> {
   await fs.rm(targetPath, {
     force: true,
-    recursive: true
+    recursive: true,
   });
 
   if (isDirectory) {
     await fs.cp(sourcePath, targetPath, {
       dereference: true,
       force: true,
-      recursive: true
+      recursive: true,
     });
     return;
   }
@@ -68,14 +52,10 @@ async function replaceWithCopy(targetPath: string, sourcePath: string, isDirecto
   await fs.copyFile(sourcePath, targetPath);
 }
 
-async function replaceWithSymlink(
-  targetPath: string,
-  sourcePath: string,
-  type: "file" | "dir" = "file"
-): Promise<void> {
+async function replaceWithSymlink(targetPath: string, sourcePath: string, type: "file" | "dir" = "file"): Promise<void> {
   await fs.rm(targetPath, {
     force: true,
-    recursive: true
+    recursive: true,
   });
   await fs.symlink(sourcePath, targetPath, type);
 }
@@ -85,7 +65,7 @@ async function ensureDetachedMarkdownFile(targetPath: string, sourcePath?: strin
 
   const targetExists = await fileExists(targetPath);
   if (!targetExists) {
-    if (sourcePath && await fileExists(sourcePath)) {
+    if (sourcePath && (await fileExists(sourcePath))) {
       await fs.copyFile(sourcePath, targetPath);
       return;
     }
@@ -102,7 +82,7 @@ async function ensureDetachedMarkdownFile(targetPath: string, sourcePath?: strin
   const currentContent = await fs.readFile(targetPath, "utf8").catch(() => "");
   await fs.rm(targetPath, {
     force: true,
-    recursive: true
+    recursive: true,
   });
   await fs.writeFile(targetPath, currentContent);
 }
@@ -161,18 +141,13 @@ async function migrateLegacyPersonalMemory(targetPath: string, legacyPath?: stri
   await fs.writeFile(targetPath, legacyContent);
 }
 
-async function ensureRuntimePersonalMemoryAlias(options: {
-  readonly codexHome: string;
-  readonly teamCodexHomePath?: string | undefined;
-  readonly runtimeHomePath?: string | undefined;
-  readonly legacyPersonalMemoryPath?: string | undefined;
-}): Promise<void> {
+async function ensureRuntimePersonalMemoryAlias(options: { readonly codexHome: string; readonly teamCodexHomePath?: string | undefined; readonly runtimeHomePath?: string | undefined; readonly legacyPersonalMemoryPath?: string | undefined }): Promise<void> {
   if (!options.runtimeHomePath) {
     return;
   }
 
   const targetPath = getPersonalMemoryPath(options.codexHome, {
-    teamCodexHomePath: options.teamCodexHomePath
+    teamCodexHomePath: options.teamCodexHomePath,
   });
   await migrateLegacyPersonalMemory(targetPath, options.legacyPersonalMemoryPath);
 
@@ -204,7 +179,7 @@ export function getPersonalMemoryPath(
   codexHome: string,
   options: {
     readonly teamCodexHomePath?: string | undefined;
-  } = {}
+  } = {},
 ): string {
   return resolvePersonalMemoryPath(options.teamCodexHomePath ?? codexHome);
 }
@@ -213,10 +188,7 @@ export async function readPersonalMemory(codexHome: string): Promise<string> {
   return await readTextIfExists(getPersonalMemoryPath(codexHome));
 }
 
-async function ensureTeamCodexHome(options: {
-  readonly teamCodexHomePath: string;
-  readonly legacyPersonalMemoryPath?: string | undefined;
-}): Promise<void> {
+async function ensureTeamCodexHome(options: { readonly teamCodexHomePath: string; readonly legacyPersonalMemoryPath?: string | undefined }): Promise<void> {
   await ensureDir(options.teamCodexHomePath);
 
   for (const entry of mirroredEntries) {
@@ -235,10 +207,7 @@ async function ensureTeamCodexHome(options: {
     await fs.writeFile(targetPath, "");
   }
 
-  await migrateLegacyPersonalMemory(
-    path.join(options.teamCodexHomePath, PERSONAL_MEMORY_FILENAME),
-    options.legacyPersonalMemoryPath
-  );
+  await migrateLegacyPersonalMemory(path.join(options.teamCodexHomePath, PERSONAL_MEMORY_FILENAME), options.legacyPersonalMemoryPath);
 }
 
 async function symlinkSharedEntriesToTeamHome(codexHome: string, teamCodexHomePath: string): Promise<void> {
@@ -255,13 +224,7 @@ async function symlinkSharedEntriesToTeamHome(codexHome: string, teamCodexHomePa
   }
 }
 
-export async function syncUserCodexHome(options: {
-  readonly codexHome: string;
-  readonly hostCodexHomePath?: string | undefined;
-  readonly teamCodexHomePath?: string | undefined;
-  readonly runtimeHomePath?: string | undefined;
-  readonly legacyPersonalMemoryPath?: string | undefined;
-}): Promise<void> {
+export async function syncUserCodexHome(options: { readonly codexHome: string; readonly hostCodexHomePath?: string | undefined; readonly teamCodexHomePath?: string | undefined; readonly runtimeHomePath?: string | undefined; readonly legacyPersonalMemoryPath?: string | undefined }): Promise<void> {
   await ensureDir(options.codexHome);
 
   const sourceHome = await resolveSourceCodexHome(options.codexHome, options.hostCodexHomePath);
@@ -269,21 +232,19 @@ export async function syncUserCodexHome(options: {
   if (options.teamCodexHomePath) {
     const teamHasSharedContent = await codexHomeHasSharedContent(options.teamCodexHomePath);
     const existingHomeHasSharedContent = await codexHomeHasSharedContent(options.codexHome);
-    const sourceHomeHasSharedContent = sourceHome
-      ? await codexHomeHasSharedContent(sourceHome)
-      : false;
+    const sourceHomeHasSharedContent = sourceHome ? await codexHomeHasSharedContent(sourceHome) : false;
 
     if (teamHasSharedContent || (!existingHomeHasSharedContent && !sourceHomeHasSharedContent)) {
       await ensureTeamCodexHome({
         teamCodexHomePath: options.teamCodexHomePath,
-        legacyPersonalMemoryPath: options.legacyPersonalMemoryPath
+        legacyPersonalMemoryPath: options.legacyPersonalMemoryPath,
       });
       await symlinkSharedEntriesToTeamHome(options.codexHome, options.teamCodexHomePath);
       await ensureRuntimePersonalMemoryAlias({
         codexHome: options.codexHome,
         teamCodexHomePath: options.teamCodexHomePath,
         runtimeHomePath: options.runtimeHomePath,
-        legacyPersonalMemoryPath: options.legacyPersonalMemoryPath
+        legacyPersonalMemoryPath: options.legacyPersonalMemoryPath,
       });
       return;
     }
@@ -293,7 +254,7 @@ export async function syncUserCodexHome(options: {
     await ensureRuntimePersonalMemoryAlias({
       codexHome: options.codexHome,
       runtimeHomePath: options.runtimeHomePath,
-      legacyPersonalMemoryPath: options.legacyPersonalMemoryPath
+      legacyPersonalMemoryPath: options.legacyPersonalMemoryPath,
     });
     return;
   }
@@ -336,13 +297,13 @@ export async function syncUserCodexHome(options: {
 
     await fs.rm(targetPath, {
       force: true,
-      recursive: true
+      recursive: true,
     });
   }
 
   await ensureRuntimePersonalMemoryAlias({
     codexHome: options.codexHome,
     runtimeHomePath: options.runtimeHomePath,
-    legacyPersonalMemoryPath: options.legacyPersonalMemoryPath
+    legacyPersonalMemoryPath: options.legacyPersonalMemoryPath,
   });
 }

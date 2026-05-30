@@ -1,18 +1,30 @@
 import fs from "node:fs/promises";
+
 import http from "node:http";
+
 import os from "node:os";
+
 import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
 import { loadConfig } from "../src/config.js";
+
 import { createHttpHandler } from "../src/http/router.js";
+
 import { AdminService } from "../src/services/admin-service.js";
+
 import type { AuthProfilesStatus } from "../src/services/auth-profile-service.js";
+
 import { SessionManager } from "../src/services/session-manager.js";
+
 import { StateStore } from "../src/store/state-store.js";
+
 import type { AppConfig } from "../src/config.js";
+
 import type { PersistedAgentTraceEvent, PersistedBackgroundJob, PersistedInboundMessage } from "../src/types.js";
+
+import { seedAgentTraceFixture, seedActiveSession, inboundMessage, backgroundJob, deploymentStatus, authProfilesStatusFixture, authProfileFixture, readJson, postJson } from "./admin-control-plane.e2e-helpers.js";
 
 describe("admin control plane e2e", () => {
   const cleanups: Array<() => Promise<void>> = [];
@@ -22,6 +34,123 @@ describe("admin control plane e2e", () => {
       await cleanups.pop()?.();
     }
   });
+
+  async function startAdminFixture(options?: { readonly authProfilesStatus?: AuthProfilesStatus | undefined; readonly workerBaseUrl?: string | undefined }): Promise<{
+    readonly baseUrl: string;
+    readonly config: AppConfig;
+    readonly sessions: SessionManager;
+    readonly deploymentCalls: Array<Record<string, unknown>>;
+  }> {
+    const dataRoot = await fs.mkdtemp(path.join(os.tmpdir(), "admin-control-plane-"));
+    cleanups.push(async () => {
+      await fs.rm(dataRoot, { force: true, recursive: true });
+    });
+
+    const config = loadConfig({
+      SLACK_APP_TOKEN: "xapp-test",
+      SLACK_BOT_TOKEN: "xoxb-test",
+      DATA_ROOT: dataRoot,
+      SERVICE_ROOT: dataRoot,
+      ADMIN_LAUNCHD_LABEL: "admin.test",
+      WORKER_LAUNCHD_LABEL: "worker.test",
+      ADMIN_PLIST_PATH: path.join(dataRoot, "admin.plist"),
+      WORKER_PLIST_PATH: path.join(dataRoot, "worker.plist"),
+      ...(options?.workerBaseUrl ? { WORKER_BASE_URL: options.workerBaseUrl } : {}),
+    } as NodeJS.ProcessEnv);
+    await fs.mkdir(config.codexHome, { recursive: true });
+    await fs.mkdir(config.logDir, { recursive: true });
+
+    const stateStore = new StateStore(config.stateDir, config.sessionsRoot);
+    const sessions = new SessionManager({
+      stateStore,
+      sessionsRoot: config.sessionsRoot,
+    });
+    await sessions.load();
+    cleanups.push(async () => {
+      stateStore.close();
+    });
+
+    const deploymentCalls: Array<Record<string, unknown>> = [];
+    const adminService = new AdminService({
+      config,
+      sessions,
+      startedAt: new Date("2026-03-19T00:00:00.000Z"),
+      authProfiles: {
+        listProfilesStatus: async () =>
+          options?.authProfilesStatus ?? {
+            managedRoot: path.join(dataRoot, "auth-profiles"),
+            profilesRoot: path.join(dataRoot, "auth-profiles", "docker", "profiles"),
+            profiles: [],
+          },
+        addProfile: async () => ({ name: "profile" }),
+        deleteProfile: async () => {},
+      } as never,
+      githubAuthorMappings: {
+        load: async () => {},
+        listMappings: () => [],
+        upsertManualMapping: async () => ({}),
+        deleteMapping: async () => {},
+      } as never,
+      runtime: {
+        restartRuntime: async () => {},
+        readAccountSummary: async () => ({
+          account: {
+            email: "admin@example.com",
+            type: "chatgpt",
+            planType: "team",
+          },
+          requiresOpenaiAuth: false,
+        }),
+        readAccountRateLimits: async () => ({
+          rateLimits: null,
+          rateLimitsByLimitId: {},
+        }),
+      } as never,
+      deployment: {
+        getStatus: async () => deploymentStatus(config),
+        deploy: async ({ target, version }: { readonly target: "admin" | "worker"; readonly version: string }) => {
+          deploymentCalls.push({ kind: "deploy", target, version });
+          return deploymentStatus(config);
+        },
+        rollback: async ({ target, version }: { readonly target: "admin" | "worker"; readonly version?: string | undefined }) => {
+          deploymentCalls.push({ kind: "rollback", target, version: version ?? null });
+          return deploymentStatus(config);
+        },
+        restartWorker: async () => {},
+      } as never,
+    });
+
+    const server = http.createServer(
+      createHttpHandler({
+        adminService,
+        config,
+      }),
+    );
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    cleanups.push(async () => {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve();
+        });
+      });
+    });
+
+    const address = server.address();
+    if (!address || typeof address === "string") {
+      throw new Error("failed to start admin fixture");
+    }
+
+    return {
+      baseUrl: `http://127.0.0.1:${address.port}`,
+      config,
+      sessions,
+      deploymentCalls,
+    };
+  }
 
   it("exposes overview, sessions, timeline, and preflight as separate control-plane resources", async () => {
     const { baseUrl, sessions } = await startAdminFixture();
@@ -36,8 +165,8 @@ describe("admin control plane e2e", () => {
       state: {
         activeCount: 1,
         openInboundCount: 0,
-        runningBackgroundJobCount: 1
-      }
+        runningBackgroundJobCount: 1,
+      },
     });
     expect((overview.state as Record<string, unknown>).sessions).toBeUndefined();
     expect((overview.state as Record<string, unknown>).recentBrokerLogs).toBeUndefined();
@@ -52,17 +181,17 @@ describe("admin control plane e2e", () => {
           channelLabel: "C123",
           threadUrl: "https://slack.com/app_redirect?channel=C123&message_ts=111.222",
           firstUserMessage: {
-            textPreview: "initial request"
+            textPreview: "initial request",
           },
           lastUserMessage: {
-            textPreview: "follow up"
+            textPreview: "follow up",
           },
           openInboundCount: 1,
           runningBackgroundJobCount: 1,
           backgroundJobCount: 3,
-          failedBackgroundJobCount: 1
-        }
-      ]
+          failedBackgroundJobCount: 1,
+        },
+      ],
     });
     expect((sessionList.sessions as Array<Record<string, unknown>>)[0]).not.toHaveProperty("backgroundJobs");
     expect((sessionList.sessions as Array<Record<string, unknown>>)[0]).not.toHaveProperty("failedBackgroundJobs");
@@ -74,7 +203,7 @@ describe("admin control plane e2e", () => {
       session: {
         key: "C123:111.222",
         agentSessionId,
-        lastTurnSignalKind: "wait"
+        lastTurnSignalKind: "wait",
       },
       trace: {
         source: "broker_db",
@@ -87,9 +216,9 @@ describe("admin control plane e2e", () => {
           agent_runtime_reminder: 1,
           agent_assistant_message: 1,
           agent_tool_call: 1,
-          agent_tool_result: 1
-        }
-      }
+          agent_tool_result: 1,
+        },
+      },
     });
     expect(timeline.trace).not.toHaveProperty("rolloutPath");
     expect(JSON.stringify(timeline)).not.toContain(".jsonl");
@@ -101,70 +230,57 @@ describe("admin control plane e2e", () => {
     expect(eventTypes).not.toContain("agent_turn_completed");
     expect(trace.categories).not.toHaveProperty("agent_token_count");
     expect(JSON.stringify(timeline.events)).not.toContain("tokenUsage");
-    expect(eventTypes).toEqual([
-      "agent_system_prompt",
-      "agent_memory",
-      "agent_user_message",
-      "agent_runtime_reminder",
-      "agent_assistant_message",
-      "agent_tool_call",
-      "agent_tool_result"
-    ]);
-    expect(eventTypes).not.toEqual(expect.arrayContaining([
-      "session_created",
-      "inbound_message",
-      "background_job",
-      "turn_signal"
-    ]));
+    expect(eventTypes).toEqual(["agent_system_prompt", "agent_memory", "agent_user_message", "agent_runtime_reminder", "agent_assistant_message", "agent_tool_call", "agent_tool_result"]);
+    expect(eventTypes).not.toEqual(expect.arrayContaining(["session_created", "inbound_message", "background_job", "turn_signal"]));
     expect(timeline.events).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           type: "agent_system_prompt",
           title: "系统 Prompt",
-          detailAvailable: true
+          detailAvailable: true,
         }),
         expect.objectContaining({
           type: "agent_memory",
           title: "记忆",
-          detailAvailable: true
+          detailAvailable: true,
         }),
         expect.objectContaining({
           type: "agent_user_message",
           title: "用户消息",
-          detailAvailable: true
+          detailAvailable: true,
         }),
         expect.objectContaining({
           type: "agent_runtime_reminder",
           title: "Runtime 提醒",
-          detailAvailable: true
+          detailAvailable: true,
         }),
         expect.objectContaining({
           type: "agent_assistant_message",
           title: "Assistant 消息",
-          detailAvailable: true
+          detailAvailable: true,
         }),
         expect.objectContaining({
           type: "agent_tool_call",
           title: "工具调用",
           toolName: "exec_command",
-          detailAvailable: true
+          detailAvailable: true,
         }),
         expect.objectContaining({
           type: "agent_tool_result",
           title: "工具结果",
           callId: "call-1",
           turnId: "turn-1",
-          detailAvailable: true
-        })
-      ])
+          detailAvailable: true,
+        }),
+      ]),
     );
     expect(JSON.stringify(timeline.events)).not.toContain("System core instruction");
     const toolResultDetail = await readJson(`${baseUrl}/admin/api/sessions/${encodeURIComponent("C123:111.222")}/timeline-events/${encodeURIComponent("C123:111.222:runtime:tool-result")}`);
     expect(toolResultDetail).toMatchObject({
       ok: true,
       event: {
-        detail: expect.stringContaining("PASS admin-control-plane")
-      }
+        detail: expect.stringContaining("PASS admin-control-plane"),
+      },
     });
 
     const preflight = await readJson(`${baseUrl}/admin/api/preflight?operation=deploy`);
@@ -175,15 +291,9 @@ describe("admin control plane e2e", () => {
       requiresAllowActive: true,
       activeCount: 1,
       openInboundCount: 1,
-      runningBackgroundJobCount: 1
+      runningBackgroundJobCount: 1,
     });
-    expect(preflight.impacts).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ type: "active_turn", sessionKey: "C123:111.222" }),
-        expect.objectContaining({ type: "open_inbound", sessionKey: "C123:111.222" }),
-        expect.objectContaining({ type: "running_background_job", sessionKey: "C123:111.222" })
-      ])
-    );
+    expect(preflight.impacts).toEqual(expect.arrayContaining([expect.objectContaining({ type: "active_turn", sessionKey: "C123:111.222" }), expect.objectContaining({ type: "open_inbound", sessionKey: "C123:111.222" }), expect.objectContaining({ type: "running_background_job", sessionKey: "C123:111.222" })]));
   });
 
   it("switches a blocked session auth profile and asks the worker to resume pending dispatch", async () => {
@@ -209,47 +319,42 @@ describe("admin control plane e2e", () => {
 
     const { baseUrl, sessions } = await startAdminFixture({
       workerBaseUrl: `http://127.0.0.1:${address.port}`,
-      authProfilesStatus: authProfilesStatusFixture()
+      authProfilesStatus: authProfilesStatusFixture(),
     });
     let session = await sessions.ensureSession("C123", "111.222");
     session = await sessions.setAgentSessionId(session.channelId, session.rootThreadTs, "old-thread");
     session = await sessions.setActiveTurnId(session.channelId, session.rootThreadTs, "old-turn");
     session = await sessions.setSessionAuthProfile(session.key, "empty-profile", {
-      boundAt: "2026-05-09T00:00:00.000Z"
+      boundAt: "2026-05-09T00:00:00.000Z",
     });
     await sessions.markSessionAuthBlocked(session.key, {
       reason: "primary_quota_exhausted",
-      blockedAt: "2026-05-09T01:00:00.000Z"
+      blockedAt: "2026-05-09T01:00:00.000Z",
     });
 
-    const result = await postJson(
-      `${baseUrl}/admin/api/sessions/${encodeURIComponent(session.key)}/auth-profile`,
-      { name: "usable-profile" }
-    );
+    const result = await postJson(`${baseUrl}/admin/api/sessions/${encodeURIComponent(session.key)}/auth-profile`, { name: "usable-profile" });
 
     expect(result).toMatchObject({
       ok: true,
       workerResume: {
         ok: true,
-        resumedCount: 1
+        resumedCount: 1,
       },
       session: {
         key: session.key,
         authProfileName: "usable-profile",
         authBlockedAt: null,
         agentSessionId: null,
-        activeTurnId: null
-      }
+        activeTurnId: null,
+      },
     });
-    expect(workerResumePaths).toEqual([
-      `/slack/sessions/${encodeURIComponent(session.key)}/resume-pending`
-    ]);
+    expect(workerResumePaths).toEqual([`/slack/sessions/${encodeURIComponent(session.key)}/resume-pending`]);
     expect(sessions.getSessionByKey(session.key)).toMatchObject({
       authProfileName: "usable-profile",
       authBlockedAt: undefined,
       authBlockReason: undefined,
       agentSessionId: undefined,
-      activeTurnId: undefined
+      activeTurnId: undefined,
     });
   });
 
@@ -276,23 +381,20 @@ describe("admin control plane e2e", () => {
 
     const { baseUrl, sessions } = await startAdminFixture({
       workerBaseUrl: `http://127.0.0.1:${address.port}`,
-      authProfilesStatus: authProfilesStatusFixture()
+      authProfilesStatus: authProfilesStatusFixture(),
     });
     let session = await sessions.ensureSession("C123", "111.222");
     session = await sessions.setAgentSessionId(session.channelId, session.rootThreadTs, "old-thread");
     session = await sessions.setActiveTurnId(session.channelId, session.rootThreadTs, "old-turn");
     session = await sessions.setSessionAuthProfile(session.key, "empty-profile", {
-      boundAt: "2026-05-09T00:00:00.000Z"
+      boundAt: "2026-05-09T00:00:00.000Z",
     });
     await sessions.markSessionAuthBlocked(session.key, {
       reason: "primary_quota_exhausted",
-      blockedAt: "2026-05-09T01:00:00.000Z"
+      blockedAt: "2026-05-09T01:00:00.000Z",
     });
 
-    const result = await postJson(
-      `${baseUrl}/admin/api/sessions/${encodeURIComponent(session.key)}/auth-profile`,
-      { mode: "auto" }
-    );
+    const result = await postJson(`${baseUrl}/admin/api/sessions/${encodeURIComponent(session.key)}/auth-profile`, { mode: "auto" });
 
     expect(result).toMatchObject({
       ok: true,
@@ -300,921 +402,31 @@ describe("admin control plane e2e", () => {
       selectedProfileName: "usable-profile",
       workerResume: {
         ok: true,
-        resumedCount: 1
+        resumedCount: 1,
       },
       session: {
         key: session.key,
         authProfileName: "usable-profile",
         authBlockedAt: null,
         agentSessionId: null,
-        activeTurnId: null
-      }
+        activeTurnId: null,
+      },
     });
-    expect(workerResumePaths).toEqual([
-      `/slack/sessions/${encodeURIComponent(session.key)}/resume-pending`
-    ]);
+    expect(workerResumePaths).toEqual([`/slack/sessions/${encodeURIComponent(session.key)}/resume-pending`]);
     expect(sessions.getSessionByKey(session.key)).toMatchObject({
       authProfileName: "usable-profile",
       authBlockedAt: undefined,
       authBlockReason: undefined,
       agentSessionId: undefined,
-      activeTurnId: undefined
+      activeTurnId: undefined,
     });
     expect(sessions.listAgentTraceEvents(session.key, 10).at(-1)).toMatchObject({
       title: "Auth Profile 已切换",
       summary: "自动分配到 usable-profile，继续处理待处理消息",
       metadata: {
         profileName: "usable-profile",
-        selectionMode: "auto"
-      }
+        selectionMode: "auto",
+      },
     });
   });
-
-  it("exposes a tracked session reset operation and delegates history clearing to the worker", async () => {
-    const workerPaths: string[] = [];
-    let sessionsRef: SessionManager | undefined;
-    const worker = http.createServer((request, response) => {
-      void (async () => {
-        workerPaths.push(request.url ?? "");
-        const session = sessionsRef?.getSessionByKey("C123:111.222");
-        if (session) {
-          await sessionsRef?.resetSessionRuntimeState(session.key);
-        }
-        response.writeHead(200, { "content-type": "application/json" });
-        response.end(JSON.stringify({
-          ok: true,
-          sessionKey: "C123:111.222",
-          reset: {
-            clearedInboundCount: 2,
-            resetMessageTs: "1778316208.809479",
-            resumedCount: 1,
-            interruptedActiveTurn: true,
-            previousAgentSessionId: "old-thread",
-            previousActiveTurnId: "old-turn",
-            historyMessageCount: 4,
-            authBlocked: false
-          }
-        }));
-      })().catch((error) => {
-        response.writeHead(500, { "content-type": "application/json" });
-        response.end(JSON.stringify({ ok: false, error: error instanceof Error ? error.message : String(error) }));
-      });
-    });
-    await new Promise<void>((resolve) => worker.listen(0, "127.0.0.1", resolve));
-    cleanups.push(async () => {
-      await new Promise<void>((resolve, reject) => {
-        worker.close((error) => {
-          if (error) reject(error);
-          else resolve();
-        });
-      });
-    });
-    const address = worker.address();
-    if (!address || typeof address === "string") {
-      throw new Error("failed to start worker fixture");
-    }
-
-    const { baseUrl, sessions } = await startAdminFixture({
-      workerBaseUrl: `http://127.0.0.1:${address.port}`
-    });
-    sessionsRef = sessions;
-    let session = await sessions.ensureSession("C123", "111.222");
-    session = await sessions.setAgentSessionId(session.channelId, session.rootThreadTs, "old-thread");
-    session = await sessions.setActiveTurnId(session.channelId, session.rootThreadTs, "old-turn");
-
-    const result = await postJson(
-      `${baseUrl}/admin/api/sessions/${encodeURIComponent(session.key)}/reset`,
-      {}
-    );
-
-    expect(result).toMatchObject({
-      ok: true,
-      operation: {
-        kind: "session_reset",
-        status: "succeeded",
-        request: {
-          sessionKey: session.key
-        }
-      },
-      workerReset: {
-        ok: true,
-        reset: {
-          clearedInboundCount: 2,
-          resumedCount: 1,
-          previousAgentSessionId: "old-thread",
-          previousActiveTurnId: "old-turn"
-        }
-      },
-      session: {
-        key: session.key,
-        agentSessionId: null,
-        activeTurnId: null
-      }
-    });
-    expect(workerPaths).toEqual([
-      `/slack/sessions/${encodeURIComponent(session.key)}/reset`
-    ]);
-  });
-
-  it("cancels a session background job through the admin control plane", async () => {
-    const workerRequests: Array<{ readonly url: string; readonly body: Record<string, unknown> }> = [];
-    let sessionsRef: SessionManager | undefined;
-    const worker = http.createServer((request, response) => {
-      void (async () => {
-        const chunks: Buffer[] = [];
-        for await (const chunk of request) {
-          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-        }
-        const bodyText = Buffer.concat(chunks).toString("utf8");
-        const body = bodyText ? JSON.parse(bodyText) as Record<string, unknown> : {};
-        workerRequests.push({
-          url: request.url ?? "",
-          body
-        });
-
-        const current = sessionsRef?.getBackgroundJob("job-1");
-        const completedAt = "2026-03-19T00:00:05.000Z";
-        if (current) {
-          await sessionsRef?.upsertBackgroundJob({
-            ...current,
-            status: "cancelled",
-            cancelledAt: completedAt,
-            completedAt,
-            updatedAt: completedAt
-          });
-        }
-
-        response.writeHead(200, { "content-type": "application/json" });
-        response.end(JSON.stringify({
-          ok: true,
-          job: sessionsRef?.getBackgroundJob("job-1") ?? {
-            id: "job-1",
-            sessionKey: "C123:111.222",
-            status: "cancelled"
-          }
-        }));
-      })().catch((error) => {
-        response.writeHead(500, { "content-type": "application/json" });
-        response.end(JSON.stringify({ ok: false, error: error instanceof Error ? error.message : String(error) }));
-      });
-    });
-    await new Promise<void>((resolve) => worker.listen(0, "127.0.0.1", resolve));
-    cleanups.push(async () => {
-      await new Promise<void>((resolve, reject) => {
-        worker.close((error) => {
-          if (error) reject(error);
-          else resolve();
-        });
-      });
-    });
-    const address = worker.address();
-    if (!address || typeof address === "string") {
-      throw new Error("failed to start worker fixture");
-    }
-
-    const { baseUrl, sessions } = await startAdminFixture({
-      workerBaseUrl: `http://127.0.0.1:${address.port}`
-    });
-    sessionsRef = sessions;
-    const session = await sessions.ensureSession("C123", "111.222");
-    await sessions.upsertBackgroundJob(backgroundJob({
-      sessionKey: session.key,
-      status: "running",
-      updatedAt: "2026-03-19T00:00:02.000Z",
-      startedAt: "2026-03-19T00:00:02.000Z"
-    }));
-
-    const result = await postJson(
-      `${baseUrl}/admin/api/sessions/${encodeURIComponent(session.key)}/jobs/job-1/cancel`,
-      {}
-    );
-
-    expect(result).toMatchObject({
-      ok: true,
-      operation: {
-        kind: "session_job_cancel",
-        status: "succeeded",
-        request: {
-          sessionKey: session.key,
-          jobId: "job-1"
-        }
-      },
-      job: {
-        id: "job-1",
-        sessionKey: session.key,
-        status: "cancelled"
-      },
-      session: {
-        key: session.key,
-        runningBackgroundJobCount: 0,
-        backgroundJobs: [
-          expect.objectContaining({
-            id: "job-1",
-            status: "cancelled"
-          })
-        ]
-      }
-    });
-    expect(workerRequests).toEqual([
-      {
-        url: `/jobs/job-1/admin-cancel`,
-        body: {
-          session_key: session.key
-        }
-      }
-    ]);
-  });
-
-  it("records deploy requests as durable admin operations with audit events", async () => {
-    const { baseUrl, deploymentCalls } = await startAdminFixture();
-
-    const deploy = await postJson(`${baseUrl}/admin/api/deploy`, {
-      target: "worker",
-      version: "0.2.0",
-      allow_active: false
-    });
-    expect(deploy).toMatchObject({
-      ok: true,
-      operation: {
-        kind: "deploy",
-        status: "succeeded",
-        request: {
-          target: "worker",
-          version: "0.2.0"
-        }
-      }
-    });
-    expect(deploymentCalls).toEqual([{ kind: "deploy", target: "worker", version: "0.2.0" }]);
-
-    const operations = await readJson(`${baseUrl}/admin/api/operations`);
-    expect(operations).toMatchObject({
-      ok: true,
-      operations: [
-        {
-          id: deploy.operation.id,
-          kind: "deploy",
-          status: "succeeded",
-          request: {
-            target: "worker",
-            version: "0.2.0"
-          }
-        }
-      ]
-    });
-
-    const audit = await readJson(`${baseUrl}/admin/api/audit`);
-    expect(audit).toMatchObject({
-      ok: true,
-      events: [
-        {
-          operationId: deploy.operation.id,
-          action: "deploy",
-          status: "succeeded"
-        },
-        {
-          operationId: deploy.operation.id,
-          action: "deploy",
-          status: "started"
-        }
-      ]
-    });
-  });
-
-  it("records refused deploy preflight checks as failed admin operations", async () => {
-    const { baseUrl, deploymentCalls, sessions } = await startAdminFixture();
-    await seedActiveSession(sessions);
-
-    const response = await fetch(`${baseUrl}/admin/api/deploy`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json"
-      },
-      body: JSON.stringify({
-        target: "worker",
-        version: "0.2.0",
-        allow_active: false
-      })
-    });
-    const payload = await response.json() as Record<string, unknown>;
-    expect(response.status).toBe(500);
-    expect(payload).toMatchObject({
-      ok: false
-    });
-    expect(String(payload.error)).toContain("Refusing deploy");
-    expect(deploymentCalls).toEqual([]);
-
-    const operations = await readJson(`${baseUrl}/admin/api/operations`);
-    expect(operations).toMatchObject({
-      ok: true,
-      operations: [
-        {
-          kind: "deploy",
-          status: "failed",
-          request: {
-            target: "worker",
-            version: "0.2.0"
-          }
-        }
-      ]
-    });
-    const operation = (operations.operations as Array<{ id: string }>)[0];
-    expect(operation?.id).toBeTruthy();
-
-    const audit = await readJson(`${baseUrl}/admin/api/audit`);
-    expect(audit).toMatchObject({
-      ok: true,
-      events: [
-        {
-          operationId: operation?.id,
-          action: "deploy",
-          status: "failed"
-        },
-        {
-          operationId: operation?.id,
-          action: "deploy",
-          status: "started"
-        }
-      ]
-    });
-  });
-
-  async function startAdminFixture(options?: {
-    readonly authProfilesStatus?: AuthProfilesStatus | undefined;
-    readonly workerBaseUrl?: string | undefined;
-  }): Promise<{
-    readonly baseUrl: string;
-    readonly config: AppConfig;
-    readonly sessions: SessionManager;
-    readonly deploymentCalls: Array<Record<string, unknown>>;
-  }> {
-    const dataRoot = await fs.mkdtemp(path.join(os.tmpdir(), "admin-control-plane-"));
-    cleanups.push(async () => {
-      await fs.rm(dataRoot, { force: true, recursive: true });
-    });
-
-    const config = loadConfig({
-      SLACK_APP_TOKEN: "xapp-test",
-      SLACK_BOT_TOKEN: "xoxb-test",
-      DATA_ROOT: dataRoot,
-      SERVICE_ROOT: dataRoot,
-      ADMIN_LAUNCHD_LABEL: "admin.test",
-      WORKER_LAUNCHD_LABEL: "worker.test",
-      ADMIN_PLIST_PATH: path.join(dataRoot, "admin.plist"),
-      WORKER_PLIST_PATH: path.join(dataRoot, "worker.plist"),
-      ...(options?.workerBaseUrl ? { WORKER_BASE_URL: options.workerBaseUrl } : {})
-    } as NodeJS.ProcessEnv);
-    await fs.mkdir(config.codexHome, { recursive: true });
-    await fs.mkdir(config.logDir, { recursive: true });
-
-    const stateStore = new StateStore(config.stateDir, config.sessionsRoot);
-    const sessions = new SessionManager({
-      stateStore,
-      sessionsRoot: config.sessionsRoot
-    });
-    await sessions.load();
-    cleanups.push(async () => {
-      stateStore.close();
-    });
-
-    const deploymentCalls: Array<Record<string, unknown>> = [];
-    const adminService = new AdminService({
-      config,
-      sessions,
-      startedAt: new Date("2026-03-19T00:00:00.000Z"),
-      authProfiles: {
-        listProfilesStatus: async () => options?.authProfilesStatus ?? ({
-          managedRoot: path.join(dataRoot, "auth-profiles"),
-          profilesRoot: path.join(dataRoot, "auth-profiles", "docker", "profiles"),
-          profiles: []
-        }),
-        addProfile: async () => ({ name: "profile" }),
-        deleteProfile: async () => {}
-      } as never,
-      githubAuthorMappings: {
-        load: async () => {},
-        listMappings: () => [],
-        upsertManualMapping: async () => ({}),
-        deleteMapping: async () => {}
-      } as never,
-      runtime: {
-        restartRuntime: async () => {},
-        readAccountSummary: async () => ({
-          account: {
-            email: "admin@example.com",
-            type: "chatgpt",
-            planType: "team"
-          },
-          requiresOpenaiAuth: false
-        }),
-        readAccountRateLimits: async () => ({
-          rateLimits: null,
-          rateLimitsByLimitId: {}
-        })
-      } as never,
-      deployment: {
-        getStatus: async () => deploymentStatus(config),
-        deploy: async ({ target, version }: { readonly target: "admin" | "worker"; readonly version: string }) => {
-          deploymentCalls.push({ kind: "deploy", target, version });
-          return deploymentStatus(config);
-        },
-        rollback: async ({ target, version }: { readonly target: "admin" | "worker"; readonly version?: string | undefined }) => {
-          deploymentCalls.push({ kind: "rollback", target, version: version ?? null });
-          return deploymentStatus(config);
-        },
-        restartWorker: async () => {}
-      } as never
-    });
-
-    const server = http.createServer(
-      createHttpHandler({
-        adminService,
-        config
-      })
-    );
-    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-    cleanups.push(async () => {
-      await new Promise<void>((resolve, reject) => {
-        server.close((error) => {
-          if (error) {
-            reject(error);
-            return;
-          }
-          resolve();
-        });
-      });
-    });
-
-    const address = server.address();
-    if (!address || typeof address === "string") {
-      throw new Error("failed to start admin fixture");
-    }
-
-    return {
-      baseUrl: `http://127.0.0.1:${address.port}`,
-      config,
-      sessions,
-      deploymentCalls
-    };
-  }
 });
-
-async function seedAgentTraceFixture(sessions: SessionManager, sessionKey: string): Promise<void> {
-  const baseInstructions = [
-    "System core instruction",
-    "",
-    "Personal long-lived memory from ~/.codex/AGENT.md:",
-    "- prefer Chinese admin pages",
-    "- preserve Slack context",
-    "",
-    "Slack thread message model:",
-    "The following messages are the live Slack thread."
-  ].join("\n");
-  const records: Array<Omit<PersistedAgentTraceEvent, "sessionKey" | "createdAt" | "updatedAt">> = [
-    {
-      id: `${sessionKey}:broker:system_prompt`,
-      source: "broker",
-      type: "agent_system_prompt",
-      at: "2026-03-19T00:00:00.000Z",
-      sequence: 0,
-      title: "系统 Prompt",
-      summary: "Codex 线程启动指令",
-      detail: baseInstructions,
-      status: "loaded",
-      role: "system"
-    },
-    {
-      id: `${sessionKey}:broker:memory`,
-      source: "broker",
-      type: "agent_memory",
-      at: "2026-03-19T00:00:00.000Z",
-      sequence: 1,
-      title: "记忆",
-      summary: "- prefer Chinese admin pages - preserve Slack context",
-      detail: "- prefer Chinese admin pages\n- preserve Slack context",
-      status: "loaded",
-      role: "system"
-    },
-    {
-      id: `${sessionKey}:broker:user`,
-      source: "broker",
-      type: "agent_user_message",
-      at: "2026-03-19T00:00:01.000Z",
-      sequence: 1000,
-      title: "用户消息",
-      summary: "请检查发布状态",
-      detail: "请检查发布状态",
-      status: "received",
-      role: "user",
-      turnId: "turn-1"
-    },
-    {
-      id: `${sessionKey}:broker:runtime-reminder`,
-      source: "broker",
-      type: "agent_runtime_reminder",
-      at: "2026-03-19T00:00:02.000Z",
-      sequence: 2000,
-      title: "Runtime 提醒",
-      summary: "Runtime reminder: 你已经工作了一段时间，请发进展。",
-      detail: "Runtime reminder: 你已经工作了一段时间，请发进展。",
-      status: "sent",
-      role: "system",
-      turnId: "turn-1"
-    },
-    {
-      id: `${sessionKey}:runtime:input-delivered`,
-      source: "agent_runtime",
-      type: "agent_input_delivered",
-      at: "2026-03-19T00:00:02.100Z",
-      sequence: 2100,
-      title: "输入已送达",
-      summary: "启动新回合",
-      status: "started_turn",
-      turnId: "turn-1"
-    },
-    {
-      id: `${sessionKey}:runtime:turn-started`,
-      source: "agent_runtime",
-      type: "agent_turn_started",
-      at: "2026-03-19T00:00:02.200Z",
-      sequence: 2200,
-      title: "回合开始",
-      summary: "开始处理输入",
-      status: "running",
-      turnId: "turn-1"
-    },
-    {
-      id: `${sessionKey}:runtime:assistant`,
-      source: "agent_runtime",
-      type: "agent_assistant_message",
-      at: "2026-03-19T00:00:03.000Z",
-      sequence: 3000,
-      title: "Assistant 消息",
-      summary: "我会先检查状态。",
-      detail: "我会先检查状态。",
-      status: "completed",
-      role: "assistant",
-      turnId: "turn-1"
-    },
-    {
-      id: `${sessionKey}:runtime:tool-call`,
-      source: "agent_runtime",
-      type: "agent_tool_call",
-      at: "2026-03-19T00:00:04.000Z",
-      sequence: 4000,
-      title: "工具调用",
-      summary: "exec_command",
-      detail: "{\"cmd\":\"pnpm test\"}",
-      status: "running",
-      role: "assistant",
-      toolName: "exec_command",
-      callId: "call-1",
-      turnId: "turn-1"
-    },
-    {
-      id: `${sessionKey}:runtime:running-tool-call`,
-      source: "agent_runtime",
-      type: "agent_tool_call",
-      at: "2026-03-19T00:00:04.100Z",
-      sequence: 4100,
-      title: "工具调用",
-      summary: "exec_command",
-      detail: "{\"cmd\":\"pnpm lint\"}",
-      status: "running",
-      role: "assistant",
-      toolName: "exec_command",
-      callId: "call-2",
-      turnId: "turn-1"
-    },
-    {
-      id: `${sessionKey}:runtime:token-count`,
-      source: "agent_runtime",
-      type: "agent_token_count",
-      at: "2026-03-19T00:00:04.500Z",
-      sequence: 4500,
-      title: "Token 用量",
-      summary: "180704 tokens",
-      detail: JSON.stringify({
-        tokenUsage: {
-          last: {
-            totalTokens: 180704,
-            inputTokens: 180698,
-            cachedInputTokens: 180096,
-            outputTokens: 6
-          },
-          total: {
-            totalTokens: 16720576
-          }
-        }
-      }),
-      status: "completed",
-      turnId: "turn-1",
-      metadata: {
-        totalTokens: 180704,
-        inputTokens: 180698,
-        outputTokens: 6,
-        reasoningTokens: 0,
-        source: "exact"
-      }
-    },
-    {
-      id: `${sessionKey}:runtime:turn-completed`,
-      source: "agent_runtime",
-      type: "agent_turn_completed",
-      at: "2026-03-19T00:00:04.600Z",
-      sequence: 4600,
-      title: "回合结束",
-      summary: "回合已完成",
-      detail: "我会先检查状态。",
-      status: "completed",
-      turnId: "turn-1"
-    },
-    {
-      id: `${sessionKey}:runtime:tool-result`,
-      source: "agent_runtime",
-      type: "agent_tool_result",
-      at: "2026-03-19T00:00:05.000Z",
-      sequence: 5000,
-      title: "工具结果",
-      summary: "PASS admin-control-plane",
-      detail: "PASS admin-control-plane",
-      status: "completed",
-      role: "tool",
-      callId: "call-1",
-      turnId: "turn-1"
-    }
-  ];
-  const now = "2026-03-19T00:00:06.000Z";
-  for (const record of records) {
-    await sessions.upsertAgentTraceEvent({
-      ...record,
-      sessionKey,
-      createdAt: now,
-      updatedAt: now
-    });
-  }
-}
-
-async function seedActiveSession(sessions: SessionManager): Promise<void> {
-  const session = await sessions.ensureSession("C123", "111.222");
-  await sessions.setActiveTurnId("C123", "111.222", "turn-1");
-  await sessions.recordTurnSignal("C123", "111.222", {
-    turnId: "turn-1",
-    kind: "wait",
-    reason: "waiting on CI",
-    occurredAt: "2026-03-19T00:00:04.000Z"
-  });
-  await sessions.upsertInboundMessage(inboundMessage({
-    sessionKey: session.key,
-    key: "C123:111.222:111.222",
-    messageTs: "111.222",
-    status: "done",
-    text: "initial request",
-    createdAt: "2026-03-19T00:00:00.000Z",
-    updatedAt: "2026-03-19T00:00:00.000Z"
-  }));
-  await sessions.upsertInboundMessage(inboundMessage({
-    sessionKey: session.key,
-    key: "C123:111.222:111.223",
-    messageTs: "111.223",
-    status: "pending",
-    text: "follow up",
-    updatedAt: "2026-03-19T00:00:01.000Z"
-  }));
-  await sessions.upsertBackgroundJob(backgroundJob({
-    sessionKey: session.key,
-    status: "running",
-    updatedAt: "2026-03-19T00:00:02.000Z",
-    startedAt: "2026-03-19T00:00:02.000Z",
-    heartbeatAt: "2026-03-19T00:00:03.000Z"
-  }));
-  await sessions.upsertBackgroundJob(backgroundJob({
-    sessionKey: session.key,
-    id: "completed-job",
-    token: "completed-token",
-    status: "completed",
-    updatedAt: "2026-03-19T00:00:02.500Z",
-    startedAt: "2026-03-19T00:00:02.000Z",
-    completedAt: "2026-03-19T00:00:02.500Z"
-  }));
-  await sessions.upsertBackgroundJob(backgroundJob({
-    sessionKey: session.key,
-    id: "failed-job",
-    token: "failed-token",
-    status: "failed",
-    error: "PR #349 failed: CI Check failed",
-    updatedAt: "2026-03-19T00:00:02.750Z",
-    startedAt: "2026-03-19T00:00:02.000Z",
-    completedAt: "2026-03-19T00:00:02.750Z"
-  }));
-  await sessions.recordTurnSignal("C123", "111.222", {
-    turnId: "turn-1",
-    kind: "final",
-    reason: "final",
-    occurredAt: "2026-03-19T00:00:05.000Z"
-  });
-  await sessions.recordTurnSignal("C123", "111.222", {
-    turnId: "turn-1",
-    kind: "wait",
-    reason: "waiting on CI",
-    occurredAt: "2026-03-19T00:00:06.000Z"
-  });
-}
-
-function inboundMessage(patch: Partial<PersistedInboundMessage>): PersistedInboundMessage {
-  return {
-    key: "C123:111.222:111.223",
-    sessionKey: "C123:111.222",
-    channelId: "C123",
-    rootThreadTs: "111.222",
-    messageTs: "111.223",
-    source: "thread_reply",
-    userId: "U123",
-    text: "hello",
-    status: "done",
-    createdAt: "2026-03-19T00:00:01.000Z",
-    updatedAt: "2026-03-19T00:00:01.000Z",
-    ...patch
-  };
-}
-
-function backgroundJob(patch: Partial<PersistedBackgroundJob>): PersistedBackgroundJob {
-  return {
-    id: "job-1",
-    token: "job-token",
-    sessionKey: "C123:111.222",
-    channelId: "C123",
-    rootThreadTs: "111.222",
-    kind: "watch_ci",
-    shell: "/bin/sh",
-    cwd: "/tmp/workspace",
-    scriptPath: "/tmp/job.sh",
-    restartOnBoot: true,
-    status: "registered",
-    createdAt: "2026-03-19T00:00:02.000Z",
-    updatedAt: "2026-03-19T00:00:02.000Z",
-    ...patch
-  };
-}
-
-function deploymentStatus(config: AppConfig): Record<string, unknown> {
-  const adminPackageName = "@agent-session-broker/admin";
-  const workerPackageName = "@agent-session-broker/worker";
-  return {
-    serviceRoot: config.serviceRoot ?? "",
-    npmRegistryUrl: null,
-    targets: {
-      admin: {
-        target: "admin",
-        packageName: adminPackageName,
-        currentRelease: {
-          linkPath: config.currentAdminReleasePath ?? "",
-          targetPath: null,
-          exists: false,
-          metadata: null
-        },
-        previousRelease: {
-          linkPath: config.previousAdminReleasePath ?? "",
-          targetPath: null,
-          exists: false,
-          metadata: null
-        },
-        failedRelease: {
-          linkPath: config.failedAdminReleasePath ?? "",
-          targetPath: null,
-          exists: false,
-          metadata: null
-        },
-        recentReleases: [],
-        recentPackageVersions: [
-          {
-            version: "0.2.0",
-            packageSpec: `${adminPackageName}@0.2.0`
-          }
-        ]
-      },
-      worker: {
-        target: "worker",
-        packageName: workerPackageName,
-        currentRelease: {
-          linkPath: config.currentWorkerReleasePath ?? "",
-          targetPath: path.join(config.serviceRoot ?? "", "releases", "worker", "npm-0.2.0", "node_modules", "@agent-session-broker", "worker"),
-          exists: true,
-          metadata: {
-            revision: null,
-            shortRevision: null,
-            branch: null,
-            target: "worker",
-            packageName: workerPackageName,
-            packageVersion: "0.2.0",
-            packageSpec: `${workerPackageName}@0.2.0`,
-            installedAt: "2026-03-19T00:00:00.000Z",
-            installedBy: "test",
-            installedFromHost: "test-host",
-            requestedVersion: "0.2.0",
-            stateSchemaVersion: 3
-          }
-        },
-        previousRelease: {
-          linkPath: config.previousWorkerReleasePath ?? "",
-          targetPath: null,
-          exists: false,
-          metadata: null
-        },
-        failedRelease: {
-          linkPath: config.failedWorkerReleasePath ?? "",
-          targetPath: null,
-          exists: false,
-          metadata: null
-        },
-        recentReleases: [],
-        recentPackageVersions: [
-          {
-            version: "0.2.0",
-            packageSpec: `${workerPackageName}@0.2.0`
-          }
-        ]
-      }
-    },
-    admin: {
-      launchdLoaded: true,
-      healthOk: true,
-      healthBody: "{\"ok\":true}"
-    },
-    worker: {
-      launchdLoaded: true,
-      healthOk: true,
-      readyOk: true,
-      healthBody: "{\"ok\":true}",
-      readyError: null
-    }
-  };
-}
-
-function authProfilesStatusFixture(): AuthProfilesStatus {
-  return {
-    managedRoot: "/tmp/auth-profiles",
-    profilesRoot: "/tmp/auth-profiles/docker/profiles",
-    profiles: [
-      authProfileFixture("empty-profile", 100, 20),
-      authProfileFixture("usable-profile", 10, 15)
-    ]
-  };
-}
-
-function authProfileFixture(name: string, primaryUsed: number, secondaryUsed: number): AuthProfilesStatus["profiles"][number] {
-  return {
-    name,
-    path: `/tmp/auth-profiles/docker/profiles/${name}.json`,
-    source: "probe",
-    checkedAt: "2026-05-09T00:00:00.000Z",
-    account: {
-      ok: true,
-      account: {
-        email: `${name}@example.com`,
-        type: "chatgpt",
-        planType: "pro"
-      },
-      requiresOpenaiAuth: false
-    },
-    rateLimits: {
-      ok: true,
-      rateLimits: {
-        limitId: "codex",
-        limitName: "Codex",
-        primary: {
-          usedPercent: primaryUsed,
-          windowDurationMins: 300,
-          resetsAt: 1_779_000_000
-        },
-        secondary: {
-          usedPercent: secondaryUsed,
-          windowDurationMins: 10_080,
-          resetsAt: 1_780_000_000
-        },
-        credits: null,
-        planType: "pro"
-      },
-      rateLimitsByLimitId: {}
-    }
-  };
-}
-
-async function readJson(url: string): Promise<Record<string, unknown>> {
-  const response = await fetch(url);
-  const payload = await response.json() as Record<string, unknown>;
-  expect(response.status).toBe(200);
-  return payload;
-}
-
-async function postJson(url: string, body: Record<string, unknown>): Promise<Record<string, any>> {
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json"
-    },
-    body: JSON.stringify(body)
-  });
-  const payload = await response.json() as Record<string, any>;
-  expect(response.status).toBe(200);
-  return payload;
-}

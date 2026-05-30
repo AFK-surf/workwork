@@ -14,10 +14,14 @@ describe("SlackCoauthorService", () => {
 
   afterEach(async () => {
     vi.restoreAllMocks();
-    await Promise.all(tempDirs.splice(0).map((directory) => fs.rm(directory, {
-      recursive: true,
-      force: true
-    })));
+    await Promise.all(
+      tempDirs.splice(0).map((directory) =>
+        fs.rm(directory, {
+          recursive: true,
+          force: true,
+        }),
+      ),
+    );
   });
 
   it("prompts once per candidate revision when selected co-authors are missing GitHub OAuth bindings", async () => {
@@ -31,11 +35,11 @@ describe("SlackCoauthorService", () => {
         getUserIdentity: vi.fn(async () => ({
           userId: "U123",
           mention: "<@U123>",
-          realName: "Alice Example"
+          realName: "Alice Example",
         })),
         postEphemeral,
-        openView: vi.fn()
-      } as never
+        openView: vi.fn(),
+      } as never,
     });
 
     await service.noteIncomingSlackInput(session, {
@@ -45,12 +49,12 @@ describe("SlackCoauthorService", () => {
       messageTs: "111.223",
       userId: "U123",
       senderKind: "user",
-      text: "please commit this"
+      text: "please commit this",
     });
 
     const first = await service.resolveCommitCoauthors({
       cwd: session.workspacePath,
-      commitMessage: "feat(test): demo"
+      commitMessage: "feat(test): demo",
     });
     expect(first.status).toBe("noop");
     expect(first.message).toContain("missing GitHub OAuth binding");
@@ -58,7 +62,7 @@ describe("SlackCoauthorService", () => {
 
     const second = await service.resolveCommitCoauthors({
       cwd: session.workspacePath,
-      commitMessage: "feat(test): demo"
+      commitMessage: "feat(test): demo",
     });
     expect(second.status).toBe("noop");
     expect(second.message).toContain("missing GitHub OAuth binding");
@@ -76,7 +80,7 @@ describe("SlackCoauthorService", () => {
       githubEmail: "alice@github.example",
       githubName: "Alice GitHub",
       token: "alice-token",
-      scopes: ["repo", "read:user", "user:email"]
+      scopes: ["repo", "read:user", "user:email"],
     });
     await githubPrIdentity.upsertBinding({
       slackUserId: "U2",
@@ -85,22 +89,28 @@ describe("SlackCoauthorService", () => {
       githubEmail: "bob@github.example",
       githubName: "Bob GitHub",
       token: "bob-token",
-      scopes: ["repo", "read:user", "user:email"]
+      scopes: ["repo", "read:user", "user:email"],
     });
 
     const identities = new Map([
-      ["U1", {
-        userId: "U1",
-        mention: "<@U1>",
-        realName: "Alice Example",
-        email: "alice@slack.example"
-      }],
-      ["U2", {
-        userId: "U2",
-        mention: "<@U2>",
-        displayName: "Bob Example",
-        email: "bob@slack.example"
-      }]
+      [
+        "U1",
+        {
+          userId: "U1",
+          mention: "<@U1>",
+          realName: "Alice Example",
+          email: "alice@slack.example",
+        },
+      ],
+      [
+        "U2",
+        {
+          userId: "U2",
+          mention: "<@U2>",
+          displayName: "Bob Example",
+          email: "bob@slack.example",
+        },
+      ],
     ]);
     const openView = vi.fn(async () => {});
     const service = new SlackCoauthorService({
@@ -109,8 +119,8 @@ describe("SlackCoauthorService", () => {
       slackApi: {
         getUserIdentity: vi.fn(async (userId: string) => identities.get(userId) ?? null),
         postEphemeral: vi.fn(async () => "111.444"),
-        openView
-      } as never
+        openView,
+      } as never,
     });
 
     let latestSession = await service.noteIncomingSlackInput(session, {
@@ -120,7 +130,7 @@ describe("SlackCoauthorService", () => {
       messageTs: "222.334",
       userId: "U1",
       senderKind: "user",
-      text: "first request"
+      text: "first request",
     });
     latestSession = await service.noteIncomingSlackInput(latestSession, {
       source: "thread_reply",
@@ -129,7 +139,7 @@ describe("SlackCoauthorService", () => {
       messageTs: "222.335",
       userId: "U2",
       senderKind: "user",
-      text: "second request"
+      text: "second request",
     });
 
     await service.handleInteractivePayload({
@@ -140,16 +150,16 @@ describe("SlackCoauthorService", () => {
           action_id: "coauthor_configure",
           value: JSON.stringify({
             session_key: latestSession.key,
-            candidate_revision: latestSession.coAuthorCandidateRevision
-          })
-        }
-      ]
+            candidate_revision: latestSession.coAuthorCandidateRevision,
+          }),
+        },
+      ],
     });
 
     expect(openView).toHaveBeenCalledTimes(1);
     const modalView = (openView.mock.calls[0] as unknown as [Record<string, unknown>])?.[0]?.view as Record<string, unknown>;
     expect(modalView).toMatchObject({
-      callback_id: "coauthor_confirm"
+      callback_id: "coauthor_confirm",
     });
     expect((modalView.blocks as Array<Record<string, unknown>>).filter((block) => String(block.block_id || "").startsWith("author__"))).toEqual([]);
 
@@ -159,27 +169,24 @@ describe("SlackCoauthorService", () => {
       view: {
         private_metadata: JSON.stringify({
           session_key: latestSession.key,
-          candidate_revision: latestSession.coAuthorCandidateRevision
+          candidate_revision: latestSession.coAuthorCandidateRevision,
         }),
         state: {
           values: {
             contributors: {
               selected: {
-                selected_options: [
-                  { value: "U1" },
-                  { value: "U2" }
-                ]
-              }
-            }
-          }
-        }
-      }
+                selected_options: [{ value: "U1" }, { value: "U2" }],
+              },
+            },
+          },
+        },
+      },
     });
 
     const resolved = await service.resolveCommitCoauthors({
       cwd: latestSession.workspacePath,
       commitMessage: "feat(slack): add coauthors",
-      primaryAuthorEmail: "broker@example.com"
+      primaryAuthorEmail: "broker@example.com",
     });
     expect(resolved.status).toBe("resolved");
     expect(resolved.commitMessage).toContain("Co-authored-by: Alice GitHub <alice@github.example>");
@@ -200,12 +207,12 @@ describe("SlackCoauthorService", () => {
           return {
             userId: "U1",
             mention: "<@U1>",
-            realName: "Kewei Hua"
+            realName: "Kewei Hua",
           };
         }),
         postEphemeral,
-        openView
-      } as never
+        openView,
+      } as never,
     });
 
     const latestSession = await service.noteIncomingSlackInput(session, {
@@ -215,7 +222,7 @@ describe("SlackCoauthorService", () => {
       messageTs: "333.445",
       userId: "U1",
       senderKind: "user",
-      text: "please commit this"
+      text: "please commit this",
     });
 
     await service.handleInteractivePayload({
@@ -226,10 +233,10 @@ describe("SlackCoauthorService", () => {
           action_id: "coauthor_configure",
           value: JSON.stringify({
             session_key: latestSession.key,
-            candidate_revision: latestSession.coAuthorCandidateRevision
-          })
-        }
-      ]
+            candidate_revision: latestSession.coAuthorCandidateRevision,
+          }),
+        },
+      ],
     });
 
     const modalView = (openView.mock.calls[0] as unknown as [Record<string, unknown>])?.[0]?.view as Record<string, unknown>;
@@ -237,14 +244,14 @@ describe("SlackCoauthorService", () => {
 
     const status = await service.configureSessionCoauthors({
       cwd: latestSession.workspacePath,
-      userIds: ["U1"]
+      userIds: ["U1"],
     });
     expect(status?.missingSelectedUserIds).toEqual(["U1"]);
     expect(status?.needsUserInput).toBe(true);
 
     const resolved = await service.resolveCommitCoauthors({
       cwd: latestSession.workspacePath,
-      commitMessage: "feat(slack): unresolved"
+      commitMessage: "feat(slack): unresolved",
     });
     expect(resolved.message).toContain("missing GitHub OAuth binding");
     expect(postEphemeral).toHaveBeenCalled();
@@ -260,11 +267,11 @@ describe("SlackCoauthorService", () => {
         getUserIdentity: vi.fn(async () => ({
           userId: "U1",
           mention: "<@U1>",
-          realName: "Alice Example"
+          realName: "Alice Example",
         })),
         postEphemeral: vi.fn(async () => "111.666"),
-        openView: vi.fn(async () => {})
-      } as never
+        openView: vi.fn(async () => {}),
+      } as never,
     });
 
     const latestSession = await service.noteIncomingSlackInput(session, {
@@ -274,7 +281,7 @@ describe("SlackCoauthorService", () => {
       messageTs: "444.556",
       userId: "U1",
       senderKind: "user",
-      text: "please commit this"
+      text: "please commit this",
     });
 
     await service.handleInteractivePayload({
@@ -283,32 +290,28 @@ describe("SlackCoauthorService", () => {
       view: {
         private_metadata: JSON.stringify({
           session_key: latestSession.key,
-          candidate_revision: latestSession.coAuthorCandidateRevision
+          candidate_revision: latestSession.coAuthorCandidateRevision,
         }),
         state: {
           values: {
             contributors: {
               selected: {
-                selected_options: [
-                  { value: "U1" }
-                ]
-              }
+                selected_options: [{ value: "U1" }],
+              },
             },
             commit_behavior: {
               selected: {
-                selected_options: [
-                  { value: "ignore_missing" }
-                ]
-              }
-            }
-          }
-        }
-      }
+                selected_options: [{ value: "ignore_missing" }],
+              },
+            },
+          },
+        },
+      },
     });
 
     const resolved = await service.resolveCommitCoauthors({
       cwd: latestSession.workspacePath,
-      commitMessage: "feat(slack): ignore unresolved"
+      commitMessage: "feat(slack): ignore unresolved",
     });
     expect(resolved.status).toBe("noop");
     expect(resolved.message).toContain("skipped for this commit");
@@ -324,11 +327,11 @@ describe("SlackCoauthorService", () => {
         getUserIdentity: vi.fn(async (userId: string) => ({
           userId,
           mention: `<@${userId}>`,
-          realName: userId === "U1" ? "Alice Example" : "Bob Example"
+          realName: userId === "U1" ? "Alice Example" : "Bob Example",
         })),
         postEphemeral: vi.fn(),
-        openView: vi.fn()
-      } as never
+        openView: vi.fn(),
+      } as never,
     });
 
     await service.noteIncomingSlackInput(session, {
@@ -338,18 +341,20 @@ describe("SlackCoauthorService", () => {
       messageTs: "222.334",
       userId: "U1",
       senderKind: "user",
-      text: "first contributor"
+      text: "first contributor",
     });
 
-    await expect(service.configureSessionCoauthors({
-      cwd: session.workspacePath,
-      mappings: [
-        {
-          slackUser: "Alice Example",
-          githubAuthor: "Alice Example <alice@example.com>"
-        }
-      ]
-    })).rejects.toThrow("Manual co-author mappings are no longer supported. Bind GitHub OAuth for Slack users instead.");
+    await expect(
+      service.configureSessionCoauthors({
+        cwd: session.workspacePath,
+        mappings: [
+          {
+            slackUser: "Alice Example",
+            githubAuthor: "Alice Example <alice@example.com>",
+          },
+        ],
+      }),
+    ).rejects.toThrow("Manual co-author mappings are no longer supported. Bind GitHub OAuth for Slack users instead.");
 
     await expect(fs.readdir(path.join(stateDir, "github-author-mappings"))).rejects.toThrow();
   });
@@ -364,7 +369,7 @@ describe("SlackCoauthorService", () => {
     tempDirs.push(stateDir, sessionsRoot);
     const sessions = new SessionManager({
       stateStore: new StateStore(stateDir, sessionsRoot),
-      sessionsRoot
+      sessionsRoot,
     });
     await sessions.load();
     const githubPrIdentity = new GitHubPrIdentityService({ stateDir });
@@ -372,7 +377,7 @@ describe("SlackCoauthorService", () => {
     return {
       stateDir,
       sessions,
-      githubPrIdentity
+      githubPrIdentity,
     };
   }
 });

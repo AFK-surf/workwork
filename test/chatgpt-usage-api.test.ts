@@ -15,9 +15,9 @@ describe("readChatGptUsageSnapshot", () => {
       tempDirs.splice(0).map((directory) =>
         fs.rm(directory, {
           recursive: true,
-          force: true
-        })
-      )
+          force: true,
+        }),
+      ),
     );
   });
 
@@ -26,8 +26,8 @@ describe("readChatGptUsageSnapshot", () => {
       tokens: {
         access_token: jwtWithExpiration(Math.floor(Date.now() / 1000) - 60),
         refresh_token: "old-refresh",
-        account_id: "account-1"
-      }
+        account_id: "account-1",
+      },
     });
     const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = input.toString();
@@ -35,12 +35,12 @@ describe("readChatGptUsageSnapshot", () => {
         expect(JSON.parse(String(init?.body))).toMatchObject({
           client_id: "app_EMoamEEZ73f0CkXaXp7hrann",
           grant_type: "refresh_token",
-          refresh_token: "old-refresh"
+          refresh_token: "old-refresh",
         });
         return jsonResponse({
           access_token: "new-access",
           refresh_token: "new-refresh",
-          id_token: "new-id"
+          id_token: "new-id",
         });
       }
 
@@ -62,7 +62,7 @@ describe("readChatGptUsageSnapshot", () => {
       access_token: "new-access",
       refresh_token: "new-refresh",
       id_token: "new-id",
-      account_id: "account-1"
+      account_id: "account-1",
     });
     expect(written.last_refresh).toEqual(expect.any(String));
   });
@@ -72,8 +72,8 @@ describe("readChatGptUsageSnapshot", () => {
       tokens: {
         access_token: "old-access",
         refresh_token: "old-refresh",
-        account_id: "account-1"
-      }
+        account_id: "account-1",
+      },
     });
     let usageCalls = 0;
     const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
@@ -81,7 +81,7 @@ describe("readChatGptUsageSnapshot", () => {
       if (url === "https://auth.openai.com/oauth/token") {
         return jsonResponse({
           access_token: "new-access",
-          refresh_token: "new-refresh"
+          refresh_token: "new-refresh",
         });
       }
 
@@ -116,10 +116,10 @@ describe("readChatGptUsageSnapshot", () => {
         tokens: {
           access_token: jwtWithExpiration(Math.floor(Date.now() / 1000) - 60),
           refresh_token: "old-refresh",
-          account_id: "account-1"
-        }
+          account_id: "account-1",
+        },
       }),
-      "utf8"
+      "utf8",
     );
     await fs.symlink(path.basename(profilePath), linkPath);
     vi.stubGlobal(
@@ -129,12 +129,12 @@ describe("readChatGptUsageSnapshot", () => {
         if (url === "https://auth.openai.com/oauth/token") {
           return jsonResponse({
             access_token: "new-access",
-            refresh_token: "new-refresh"
+            refresh_token: "new-refresh",
           });
         }
 
         return jsonResponse(usagePayload());
-      })
+      }),
     );
 
     await readChatGptUsageSnapshot(linkPath);
@@ -158,8 +158,8 @@ describe("readChatGptUsageSnapshot", () => {
 function jsonResponse(payload: unknown): Response {
   return new Response(JSON.stringify(payload), {
     headers: {
-      "Content-Type": "application/json"
-    }
+      "Content-Type": "application/json",
+    },
   });
 }
 
@@ -171,17 +171,13 @@ function usagePayload() {
       primary_window: {
         used_percent: 10,
         limit_window_seconds: 18_000,
-        reset_at: 1_777_777_777
-      }
+        reset_at: 1_777_777_777,
+      },
     },
-    additional_rate_limits: []
+    additional_rate_limits: [],
   };
 }
 
 function jwtWithExpiration(exp: number): string {
-  return [
-    Buffer.from(JSON.stringify({ alg: "none" })).toString("base64url"),
-    Buffer.from(JSON.stringify({ exp })).toString("base64url"),
-    "signature"
-  ].join(".");
+  return [Buffer.from(JSON.stringify({ alg: "none" })).toString("base64url"), Buffer.from(JSON.stringify({ exp })).toString("base64url"), "signature"].join(".");
 }

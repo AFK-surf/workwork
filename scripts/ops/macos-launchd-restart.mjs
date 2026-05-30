@@ -11,7 +11,7 @@ function parseArgs(argv) {
     label: undefined,
     logFile: undefined,
     plist: undefined,
-    reason: "launchd restart"
+    reason: "launchd restart",
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -86,7 +86,7 @@ async function appendLog(logFile, message) {
 async function runCommand(command, args) {
   return await new Promise((resolve) => {
     const child = spawn(command, args, {
-      stdio: ["ignore", "pipe", "pipe"]
+      stdio: ["ignore", "pipe", "pipe"],
     });
 
     let stdout = "";
@@ -101,14 +101,14 @@ async function runCommand(command, args) {
       resolve({
         code: -1,
         stdout,
-        stderr: error instanceof Error ? error.message : String(error)
+        stderr: error instanceof Error ? error.message : String(error),
       });
     });
     child.on("close", (code) => {
       resolve({
         code: code ?? -1,
         stdout,
-        stderr
+        stderr,
       });
     });
   });
@@ -119,10 +119,7 @@ function summarize(result) {
 }
 
 function shouldUseSudo(domain, plist) {
-  return domain === "system" &&
-    plist?.startsWith("/Library/LaunchDaemons/") &&
-    typeof process.getuid === "function" &&
-    process.getuid() !== 0;
+  return domain === "system" && plist?.startsWith("/Library/LaunchDaemons/") && typeof process.getuid === "function" && process.getuid() !== 0;
 }
 
 async function runLaunchctl(args, options) {

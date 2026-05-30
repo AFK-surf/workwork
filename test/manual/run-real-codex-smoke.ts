@@ -10,13 +10,13 @@ async function main(): Promise<void> {
     brokerHttpBaseUrl: "http://127.0.0.1:3300",
     codexHome,
     port: 4599,
-    authJsonPath: path.join(os.homedir(), ".codex", "auth.json")
+    authJsonPath: path.join(os.homedir(), ".codex", "auth.json"),
   });
   const client = new AppServerClient({
     url: processManager.url,
     serviceName: "codex-smoke",
     brokerHttpBaseUrl: "http://127.0.0.1:3300",
-    reposRoot: path.join(codexHome, "repos")
+    reposRoot: path.join(codexHome, "repos"),
   });
 
   await processManager.start();
@@ -28,15 +28,15 @@ async function main(): Promise<void> {
     const threadId = await client.ensureThread({
       channelId: "C-SMOKE",
       rootThreadTs: "thread-smoke",
-      workspacePath: process.cwd()
+      workspacePath: process.cwd(),
     });
 
     const started = await client.startTurn(threadId, process.cwd(), [
       {
         type: "text",
         text: "Reply with REAL_SMOKE_OK only.",
-        text_elements: []
-      }
+        text_elements: [],
+      },
     ]);
     const result = await started.completion;
     console.log(JSON.stringify(result, null, 2));

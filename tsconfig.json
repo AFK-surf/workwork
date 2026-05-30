@@ -13,16 +13,8 @@
     "resolveJsonModule": true,
     "rootDir": ".",
     "outDir": "dist",
-    "types": [
-      "node"
-    ],
-    "lib": [
-      "ES2023",
-      "DOM"
-    ]
+    "types": ["node"],
+    "lib": ["ES2023", "DOM"]
   },
-  "include": [
-    "src/**/*.ts",
-    "test/**/*.ts"
-  ]
+  "include": ["src/**/*.ts", "test/**/*.ts"]
 }

@@ -24,7 +24,7 @@ describe("GitHubPrIdentityService", () => {
     const service = new GitHubPrIdentityService({
       stateDir,
       defaultGitHubLogin: "default-bot",
-      defaultGitHubToken: "default-token"
+      defaultGitHubToken: "default-token",
     });
     await service.load();
 
@@ -33,29 +33,33 @@ describe("GitHubPrIdentityService", () => {
       githubLogin: "alice",
       githubUserId: 101,
       token: "alice-token",
-      scopes: ["repo"]
+      scopes: ["repo"],
     });
 
-    await expect(service.resolveTokenForSession({
-      session: session({ initiatorUserId: "U_STARTER" }),
-      command: ["pr", "create"]
-    })).resolves.toMatchObject({
+    await expect(
+      service.resolveTokenForSession({
+        session: session({ initiatorUserId: "U_STARTER" }),
+        command: ["pr", "create"],
+      }),
+    ).resolves.toMatchObject({
       ok: true,
       mode: "initiator",
       slackUserId: "U_STARTER",
       githubLogin: "alice",
-      token: "alice-token"
+      token: "alice-token",
     });
 
-    await expect(service.resolveTokenForSession({
-      session: session({ initiatorUserId: "U_UNBOUND" }),
-      command: ["pr", "create"]
-    })).resolves.toMatchObject({
+    await expect(
+      service.resolveTokenForSession({
+        session: session({ initiatorUserId: "U_UNBOUND" }),
+        command: ["pr", "create"],
+      }),
+    ).resolves.toMatchObject({
       ok: true,
       mode: "default",
       githubLogin: "default-bot",
       token: "default-token",
-      reason: "initiator_unbound"
+      reason: "initiator_unbound",
     });
   });
 
@@ -65,7 +69,7 @@ describe("GitHubPrIdentityService", () => {
     const service = new GitHubPrIdentityService({
       stateDir,
       defaultGitHubLogin: "legacy-bot",
-      defaultGitHubToken: "legacy-token"
+      defaultGitHubToken: "legacy-token",
     });
     await service.load();
 
@@ -74,39 +78,41 @@ describe("GitHubPrIdentityService", () => {
       githubLogin: "default-user",
       githubUserId: 202,
       token: "default-user-token",
-      scopes: ["repo"]
+      scopes: ["repo"],
     });
     await expect(service.setDefaultBinding("U_DEFAULT")).resolves.toMatchObject({
       available: true,
       source: "bound",
       slackUserId: "U_DEFAULT",
-      githubLogin: "default-user"
+      githubLogin: "default-user",
     });
 
-    await expect(service.resolveTokenForSession({
-      session: session({ initiatorUserId: "U_UNBOUND" }),
-      command: ["pr", "create"]
-    })).resolves.toMatchObject({
+    await expect(
+      service.resolveTokenForSession({
+        session: session({ initiatorUserId: "U_UNBOUND" }),
+        command: ["pr", "create"],
+      }),
+    ).resolves.toMatchObject({
       ok: true,
       mode: "default",
       defaultSource: "bound",
       slackUserId: "U_DEFAULT",
       githubLogin: "default-user",
       token: "default-user-token",
-      reason: "initiator_unbound"
+      reason: "initiator_unbound",
     });
 
     const reloaded = new GitHubPrIdentityService({
       stateDir,
       defaultGitHubLogin: "legacy-bot",
-      defaultGitHubToken: "legacy-token"
+      defaultGitHubToken: "legacy-token",
     });
     await reloaded.load();
     expect(reloaded.getSessionIdentityStatus(session({ initiatorUserId: "U_UNBOUND" })).defaultAccount).toMatchObject({
       available: true,
       source: "bound",
       slackUserId: "U_DEFAULT",
-      githubLogin: "default-user"
+      githubLogin: "default-user",
     });
   });
 
@@ -124,7 +130,7 @@ describe("GitHubPrIdentityService", () => {
       githubUserId: 303,
       token: "revoked-token",
       scopes: ["repo"],
-      revokedAt: "2026-05-13T00:00:00.000Z"
+      revokedAt: "2026-05-13T00:00:00.000Z",
     });
 
     await expect(service.setDefaultBinding("U_REVOKED")).rejects.toThrow("Cannot set default GitHub PR account to a revoked binding.");
@@ -136,7 +142,7 @@ describe("GitHubPrIdentityService", () => {
     const service = new GitHubPrIdentityService({
       stateDir,
       defaultGitHubLogin: "legacy-bot",
-      defaultGitHubToken: "legacy-token"
+      defaultGitHubToken: "legacy-token",
     });
     await service.load();
 
@@ -145,7 +151,7 @@ describe("GitHubPrIdentityService", () => {
       githubLogin: "default-user",
       githubUserId: 202,
       token: "default-user-token",
-      scopes: ["repo"]
+      scopes: ["repo"],
     });
     await service.setDefaultBinding("U_DEFAULT");
     await service.upsertBinding({
@@ -154,18 +160,20 @@ describe("GitHubPrIdentityService", () => {
       githubUserId: 202,
       token: "default-user-token",
       scopes: ["repo"],
-      revokedAt: "2026-05-13T00:00:00.000Z"
+      revokedAt: "2026-05-13T00:00:00.000Z",
     });
 
-    await expect(service.resolveTokenForSession({
-      session: session({ initiatorUserId: "U_UNBOUND" }),
-      command: ["pr", "create"]
-    })).resolves.toMatchObject({
+    await expect(
+      service.resolveTokenForSession({
+        session: session({ initiatorUserId: "U_UNBOUND" }),
+        command: ["pr", "create"],
+      }),
+    ).resolves.toMatchObject({
       ok: false,
       mode: "blocked",
       reason: "default_account_unavailable",
       slackUserId: "U_DEFAULT",
-      githubLogin: "default-user"
+      githubLogin: "default-user",
     });
   });
 
@@ -175,7 +183,7 @@ describe("GitHubPrIdentityService", () => {
     const service = new GitHubPrIdentityService({
       stateDir,
       defaultGitHubLogin: "default-bot",
-      defaultGitHubToken: "default-token"
+      defaultGitHubToken: "default-token",
     });
     await service.load();
 
@@ -185,43 +193,47 @@ describe("GitHubPrIdentityService", () => {
       githubUserId: 101,
       token: "alice-token",
       scopes: ["repo"],
-      revokedAt: "2026-05-13T00:00:00.000Z"
+      revokedAt: "2026-05-13T00:00:00.000Z",
     });
 
-    await expect(service.resolveTokenForSession({
-      session: session({ initiatorUserId: "U_STARTER" }),
-      command: ["pr", "create"]
-    })).resolves.toMatchObject({
+    await expect(
+      service.resolveTokenForSession({
+        session: session({ initiatorUserId: "U_STARTER" }),
+        command: ["pr", "create"],
+      }),
+    ).resolves.toMatchObject({
       ok: false,
       mode: "blocked",
       reason: "initiator_token_invalid",
-      githubLogin: "alice"
+      githubLogin: "alice",
     });
   });
 
-	  it("binds a Slack user through isolated GitHub CLI device login", async () => {
-	    const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "github-pr-identity-"));
-	    cleanups.push(async () => fs.rm(stateDir, { recursive: true, force: true }));
-	    const ghConfigPathFile = path.join(stateDir, "fake-gh-config-path");
-	    const ghLoginEnvFile = path.join(stateDir, "fake-gh-login-env.json");
-	    const fakeGhPath = path.join(stateDir, "fake-gh.sh");
-	    const previousGhToken = process.env.GH_TOKEN;
-	    const previousGitHubToken = process.env.GITHUB_TOKEN;
-	    process.env.GH_TOKEN = "global-gh-token";
-	    process.env.GITHUB_TOKEN = "global-github-token";
-	    cleanups.push(async () => {
-	      if (previousGhToken === undefined) {
-	        delete process.env.GH_TOKEN;
-	      } else {
-	        process.env.GH_TOKEN = previousGhToken;
-	      }
-	      if (previousGitHubToken === undefined) {
-	        delete process.env.GITHUB_TOKEN;
-	      } else {
-	        process.env.GITHUB_TOKEN = previousGitHubToken;
-	      }
-	    });
-	    await fs.writeFile(fakeGhPath, `#!/bin/sh
+  it("binds a Slack user through isolated GitHub CLI device login", async () => {
+    const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "github-pr-identity-"));
+    cleanups.push(async () => fs.rm(stateDir, { recursive: true, force: true }));
+    const ghConfigPathFile = path.join(stateDir, "fake-gh-config-path");
+    const ghLoginEnvFile = path.join(stateDir, "fake-gh-login-env.json");
+    const fakeGhPath = path.join(stateDir, "fake-gh.sh");
+    const previousGhToken = process.env.GH_TOKEN;
+    const previousGitHubToken = process.env.GITHUB_TOKEN;
+    process.env.GH_TOKEN = "global-gh-token";
+    process.env.GITHUB_TOKEN = "global-github-token";
+    cleanups.push(async () => {
+      if (previousGhToken === undefined) {
+        delete process.env.GH_TOKEN;
+      } else {
+        process.env.GH_TOKEN = previousGhToken;
+      }
+      if (previousGitHubToken === undefined) {
+        delete process.env.GITHUB_TOKEN;
+      } else {
+        process.env.GITHUB_TOKEN = previousGitHubToken;
+      }
+    });
+    await fs.writeFile(
+      fakeGhPath,
+      `#!/bin/sh
 	set -eu
 	if [ "$1 $2" = "auth login" ]; then
 	  printf "%s" "$GH_CONFIG_DIR" > ${JSON.stringify(ghConfigPathFile)}
@@ -241,7 +253,8 @@ if [ "$1 $2" = "auth token" ]; then
 fi
 echo "unexpected gh args: $*" >&2
 exit 2
-`);
+`,
+    );
     await fs.chmod(fakeGhPath, 0o755);
     const server = http.createServer((request, response) => {
       const url = new URL(request.url ?? "/", "http://127.0.0.1");
@@ -254,10 +267,12 @@ exit 2
       if (request.method === "GET" && url.pathname === "/user/emails") {
         expect(request.headers.authorization).toBe("Bearer user-token");
         response.writeHead(200, { "content-type": "application/json" });
-        response.end(JSON.stringify([
-          { email: "secondary@example.com", primary: false, verified: true },
-          { email: "alice@example.com", primary: true, verified: true }
-        ]));
+        response.end(
+          JSON.stringify([
+            { email: "secondary@example.com", primary: false, verified: true },
+            { email: "alice@example.com", primary: true, verified: true },
+          ]),
+        );
         return;
       }
       response.writeHead(404);
@@ -270,29 +285,29 @@ exit 2
     const service = new GitHubPrIdentityService({
       stateDir,
       githubApiBaseUrl: baseUrl,
-      ghPath: fakeGhPath
+      ghPath: fakeGhPath,
     });
     await service.load();
 
     const started = await service.startDeviceAuthorization({
-      slackUserId: "U_STARTER"
+      slackUserId: "U_STARTER",
     });
     expect(started).toMatchObject({
       userCode: "ABCD-EFGH",
-      verificationUri: "https://github.com/login/device"
+      verificationUri: "https://github.com/login/device",
     });
 
     await expect(service.pollDeviceAuthorization(started.id)).resolves.toMatchObject({
-      status: "pending"
+      status: "pending",
     });
 
-	    const ghConfigDir = await fs.readFile(ghConfigPathFile, "utf8");
-	    await expect(fs.readFile(ghLoginEnvFile, "utf8").then(JSON.parse)).resolves.toMatchObject({
-	      ghToken: "",
-	      githubToken: "",
-	      ghConfigDir
-	    });
-	    await fs.writeFile(path.join(ghConfigDir, "complete"), "ok");
+    const ghConfigDir = await fs.readFile(ghConfigPathFile, "utf8");
+    await expect(fs.readFile(ghLoginEnvFile, "utf8").then(JSON.parse)).resolves.toMatchObject({
+      ghToken: "",
+      githubToken: "",
+      ghConfigDir,
+    });
+    await fs.writeFile(path.join(ghConfigDir, "complete"), "ok");
     let completed: unknown;
     for (let index = 0; index < 20; index += 1) {
       const result = await service.pollDeviceAuthorization(started.id);
@@ -309,13 +324,13 @@ exit 2
         githubLogin: "alice",
         githubUserId: 42,
         githubEmail: "alice@example.com",
-        githubName: "Alice Example"
-      }
+        githubName: "Alice Example",
+      },
     });
     await expect(service.getBinding("U_STARTER")).resolves.toMatchObject({
       token: "user-token",
       scopes: ["repo", "read:user", "user:email"],
-      githubEmail: "alice@example.com"
+      githubEmail: "alice@example.com",
     });
   });
 });
@@ -328,6 +343,6 @@ function session(patch: Partial<SlackSessionRecord>): SlackSessionRecord {
     workspacePath: "/tmp/session",
     createdAt: "2026-05-13T00:00:00.000Z",
     updatedAt: "2026-05-13T00:00:00.000Z",
-    ...patch
+    ...patch,
   };
 }

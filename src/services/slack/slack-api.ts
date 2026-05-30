@@ -1,11 +1,6 @@
 import { logger } from "../../logger.js";
-import type {
-  JsonLike,
-  SlackImageAttachment,
-  SlackSenderKind,
-  SlackThreadMessage,
-  SlackUserIdentity
-} from "../../types.js";
+import type { JsonLike, SlackImageAttachment, SlackSenderKind, SlackThreadMessage, SlackUserIdentity } from "../../types.js";
+import { parseRetryAfterMs, normalizeSlackFileAttachments, normalizeSlackImageAttachments, normalizeSlackJson, resolveSlackMessageAuthor, isSupportedSlackMessageSubtype, pickSlackFileUrl, normalizeSlackField, conversationType, normalizeSlackNumber } from "./slack-api-helpers.js";
 
 interface SlackApiResponse<T> {
   readonly ok: boolean;
@@ -46,12 +41,7 @@ export class SlackApiError extends Error {
   readonly statusText: string;
   readonly retryAfterMs?: number | undefined;
 
-  constructor(options: {
-    readonly path: string;
-    readonly status: number;
-    readonly statusText: string;
-    readonly retryAfterMs?: number | undefined;
-  }) {
+  constructor(options: { readonly path: string; readonly status: number; readonly statusText: string; readonly retryAfterMs?: number | undefined }) {
     super(`Slack API request failed (${options.status} ${options.statusText}) for ${options.path}`);
     this.name = "SlackApiError";
     this.path = options.path;
@@ -72,11 +62,7 @@ export class SlackApi {
   readonly #userIdentityCache = new Map<string, Promise<SlackUserIdentity | null>>();
   readonly #conversationInfoCache = new Map<string, Promise<SlackConversationInfo | null>>();
 
-  constructor(options: {
-    readonly baseUrl: string;
-    readonly appToken: string;
-    readonly botToken: string;
-  }) {
+  constructor(options: { readonly baseUrl: string; readonly appToken: string; readonly botToken: string }) {
     this.#baseUrl = options.baseUrl.replace(/\/$/, "");
     this.#appToken = options.appToken;
     this.#botToken = options.botToken;
@@ -110,7 +96,7 @@ export class SlackApi {
     return {
       userId: response.user_id,
       botId: normalizeSlackField(response.bot_id),
-      appId: normalizeSlackField(response.app_id)
+      appId: normalizeSlackField(response.app_id),
     };
   }
 
@@ -120,27 +106,21 @@ export class SlackApi {
       {
         channel,
         thread_ts: threadTs,
-        text
+        text,
       },
-      this.#botToken
+      this.#botToken,
     );
 
     logger.debug("Posted Slack thread message", {
       channel,
       threadTs,
-      ts: response.ts
+      ts: response.ts,
     });
 
     return response.ts;
   }
 
-  async postEphemeral(options: {
-    readonly channelId: string;
-    readonly threadTs?: string | undefined;
-    readonly userId: string;
-    readonly text: string;
-    readonly blocks?: readonly Record<string, unknown>[] | undefined;
-  }): Promise<string | undefined> {
+  async postEphemeral(options: { readonly channelId: string; readonly threadTs?: string | undefined; readonly userId: string; readonly text: string; readonly blocks?: readonly Record<string, unknown>[] | undefined }): Promise<string | undefined> {
     const response = await this.#post<{ message_ts?: string; ts?: string }>(
       "chat.postEphemeral",
       {
@@ -148,74 +128,59 @@ export class SlackApi {
         user: options.userId,
         thread_ts: options.threadTs,
         text: options.text,
-        blocks: options.blocks ? JSON.stringify(options.blocks) : undefined
+        blocks: options.blocks ? JSON.stringify(options.blocks) : undefined,
       },
-      this.#botToken
+      this.#botToken,
     );
 
     return response.message_ts ?? response.ts;
   }
 
-  async openView(options: {
-    readonly triggerId: string;
-    readonly view: Record<string, unknown>;
-  }): Promise<void> {
+  async openView(options: { readonly triggerId: string; readonly view: Record<string, unknown> }): Promise<void> {
     await this.#post(
       "views.open",
       {
         trigger_id: options.triggerId,
-        view: JSON.stringify(options.view)
+        view: JSON.stringify(options.view),
       },
-      this.#botToken
+      this.#botToken,
     );
   }
 
-  async setAssistantThreadStatus(options: {
-    readonly channelId: string;
-    readonly threadTs: string;
-    readonly status: string;
-  }): Promise<void> {
+  async setAssistantThreadStatus(options: { readonly channelId: string; readonly threadTs: string; readonly status: string }): Promise<void> {
     await this.#post(
       "assistant.threads.setStatus",
       {
         channel_id: options.channelId,
         thread_ts: options.threadTs,
         status: options.status,
-        loading_messages: options.status.trim() ? options.status : undefined
+        loading_messages: options.status.trim() ? options.status : undefined,
       },
-      this.#botToken
+      this.#botToken,
     );
   }
 
-  async addReaction(options: {
-    readonly channelId: string;
-    readonly timestamp: string;
-    readonly name: string;
-  }): Promise<void> {
+  async addReaction(options: { readonly channelId: string; readonly timestamp: string; readonly name: string }): Promise<void> {
     await this.#post(
       "reactions.add",
       {
         channel: options.channelId,
         timestamp: options.timestamp,
-        name: options.name
+        name: options.name,
       },
-      this.#botToken
+      this.#botToken,
     );
   }
 
-  async removeReaction(options: {
-    readonly channelId: string;
-    readonly timestamp: string;
-    readonly name: string;
-  }): Promise<void> {
+  async removeReaction(options: { readonly channelId: string; readonly timestamp: string; readonly name: string }): Promise<void> {
     await this.#post(
       "reactions.remove",
       {
         channel: options.channelId,
         timestamp: options.timestamp,
-        name: options.name
+        name: options.name,
       },
-      this.#botToken
+      this.#botToken,
     );
   }
 
@@ -239,9 +204,9 @@ export class SlackApi {
         filename: options.filename,
         length: options.bytes.byteLength,
         alt_txt: options.altText,
-        snippet_type: options.snippetType
+        snippet_type: options.snippetType,
       },
-      this.#botToken
+      this.#botToken,
     );
 
     if (!uploadStart.upload_url || !uploadStart.file_id) {
@@ -250,11 +215,7 @@ export class SlackApi {
 
     await this.#uploadExternalFile(uploadStart.upload_url, options.bytes, options.contentType);
 
-    const filesArgument = JSON.stringify([
-      options.title
-        ? { id: uploadStart.file_id, title: options.title }
-        : { id: uploadStart.file_id }
-    ]);
+    const filesArgument = JSON.stringify([options.title ? { id: uploadStart.file_id, title: options.title } : { id: uploadStart.file_id }]);
     const complete = await this.#post<{
       files?: Array<{
         id?: string;
@@ -272,9 +233,9 @@ export class SlackApi {
         files: filesArgument,
         channel_id: options.channelId,
         thread_ts: options.threadTs,
-        initial_comment: options.initialComment
+        initial_comment: options.initialComment,
       },
-      this.#botToken
+      this.#botToken,
     );
 
     const file = complete.files?.[0];
@@ -287,7 +248,7 @@ export class SlackApi {
       channel: options.channelId,
       threadTs: options.threadTs,
       fileId: file.id,
-      filename: options.filename
+      filename: options.filename,
     });
 
     return {
@@ -298,7 +259,7 @@ export class SlackApi {
       permalink: normalizeSlackField(file.permalink),
       privateUrl: normalizeSlackField(file.url_private),
       downloadUrl: normalizeSlackField(file.url_private_download),
-      size: normalizeSlackNumber(file.size)
+      size: normalizeSlackNumber(file.size),
     };
   }
 
@@ -318,7 +279,7 @@ export class SlackApi {
       this.#userIdentityCache.delete(userId);
       logger.warn("Failed to fetch Slack user identity", {
         userId,
-        error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
       });
       return null;
     }
@@ -338,26 +299,23 @@ export class SlackApi {
     } catch (error) {
       logger.warn("Failed to fetch Slack conversation info", {
         channelId,
-        error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
       });
       this.#conversationInfoCache.set(channelId, Promise.resolve(null));
       return null;
     }
   }
 
-  async getPermalink(options: {
-    readonly channelId: string;
-    readonly messageTs: string;
-  }): Promise<string> {
+  async getPermalink(options: { readonly channelId: string; readonly messageTs: string }): Promise<string> {
     const response = await this.#post<{
       permalink?: string;
     }>(
       "chat.getPermalink",
       {
         channel: options.channelId,
-        message_ts: options.messageTs
+        message_ts: options.messageTs,
       },
-      this.#botToken
+      this.#botToken,
     );
 
     if (!response.permalink) {
@@ -367,11 +325,7 @@ export class SlackApi {
     return response.permalink;
   }
 
-  async listThreadMessages(options: {
-    readonly channelId: string;
-    readonly rootThreadTs: string;
-    readonly channelType?: string | undefined;
-  }): Promise<SlackThreadMessage[]> {
+  async listThreadMessages(options: { readonly channelId: string; readonly rootThreadTs: string; readonly channelType?: string | undefined }): Promise<SlackThreadMessage[]> {
     const response = await this.#post<{
       messages?: Array<Record<string, unknown>>;
     }>(
@@ -379,9 +333,9 @@ export class SlackApi {
       {
         channel: options.channelId,
         ts: options.rootThreadTs,
-        limit: 200
+        limit: 200,
       },
-      this.#botToken
+      this.#botToken,
     );
 
     return (response.messages ?? []).flatMap((message) => {
@@ -409,8 +363,8 @@ export class SlackApi {
           appId: author.appId,
           senderUsername: author.senderUsername,
           images,
-          slackMessage
-        }
+          slackMessage,
+        },
       ];
     });
   }
@@ -419,47 +373,36 @@ export class SlackApi {
     const response = await fetch(file.url, {
       method: "GET",
       headers: {
-        authorization: `Bearer ${this.#botToken}`
-      }
+        authorization: `Bearer ${this.#botToken}`,
+      },
     });
 
     if (!response.ok) {
-      throw new Error(
-        `Slack file download failed (${response.status} ${response.statusText}) for ${file.fileId}`
-      );
+      throw new Error(`Slack file download failed (${response.status} ${response.statusText}) for ${file.fileId}`);
     }
 
     const rawContentType = response.headers.get("content-type");
-    const contentType =
-      rawContentType?.split(";")[0]?.trim() ||
-      file.mimetype ||
-      "application/octet-stream";
+    const contentType = rawContentType?.split(";")[0]?.trim() || file.mimetype || "application/octet-stream";
     const bytes = Buffer.from(await response.arrayBuffer());
 
     return {
       bytes,
-      contentType
+      contentType,
     };
   }
 
-  async #uploadExternalFile(
-    uploadUrl: string,
-    bytes: Uint8Array,
-    contentType?: string | undefined
-  ): Promise<void> {
+  async #uploadExternalFile(uploadUrl: string, bytes: Uint8Array, contentType?: string | undefined): Promise<void> {
     const response = await fetch(uploadUrl, {
       method: "POST",
       headers: {
-        "content-type": contentType ?? "application/octet-stream"
+        "content-type": contentType ?? "application/octet-stream",
       },
-      body: Buffer.from(bytes)
+      body: Buffer.from(bytes),
     });
 
     if (!response.ok) {
       const detail = await response.text().catch(() => "");
-      throw new Error(
-        `Slack file upload failed (${response.status} ${response.statusText})${detail ? `: ${detail}` : ""}`
-      );
+      throw new Error(`Slack file upload failed (${response.status} ${response.statusText})${detail ? `: ${detail}` : ""}`);
     }
   }
 
@@ -480,24 +423,17 @@ export class SlackApi {
     }>(
       "users.info",
       {
-        user: userId
+        user: userId,
       },
-      this.#botToken
+      this.#botToken,
     );
 
     if (!response.user?.id) {
       return null;
     }
 
-    const displayName = normalizeSlackField(
-      response.user.profile?.display_name ??
-        response.user.profile?.display_name_normalized
-    );
-    const realName = normalizeSlackField(
-      response.user.real_name ??
-        response.user.profile?.real_name ??
-        response.user.profile?.real_name_normalized
-    );
+    const displayName = normalizeSlackField(response.user.profile?.display_name ?? response.user.profile?.display_name_normalized);
+    const realName = normalizeSlackField(response.user.real_name ?? response.user.profile?.real_name ?? response.user.profile?.real_name_normalized);
     const username = normalizeSlackField(response.user.name);
 
     return {
@@ -506,7 +442,7 @@ export class SlackApi {
       username,
       displayName,
       realName,
-      email: normalizeSlackField(response.user.profile?.email)?.toLowerCase()
+      email: normalizeSlackField(response.user.profile?.email)?.toLowerCase(),
     };
   }
 
@@ -524,9 +460,9 @@ export class SlackApi {
     }>(
       "conversations.info",
       {
-        channel: channelId
+        channel: channelId,
       },
-      this.#botToken
+      this.#botToken,
     );
 
     if (!response.channel?.id) {
@@ -536,15 +472,11 @@ export class SlackApi {
     return {
       channelId: response.channel.id,
       name: normalizeSlackField(response.channel.name) ?? normalizeSlackField(response.channel.name_normalized),
-      channelType: conversationType(response.channel)
+      channelType: conversationType(response.channel),
     };
   }
 
-  async #post<T extends Record<string, unknown>>(
-    path: string,
-    body: Record<string, unknown>,
-    token: string
-  ): Promise<SlackApiResponse<T> & T> {
+  async #post<T extends Record<string, unknown>>(path: string, body: Record<string, unknown>, token: string): Promise<SlackApiResponse<T> & T> {
     const encodedBody = new URLSearchParams();
 
     for (const [key, value] of Object.entries(body)) {
@@ -559,9 +491,9 @@ export class SlackApi {
       method: "POST",
       headers: {
         authorization: `Bearer ${token}`,
-        "content-type": "application/x-www-form-urlencoded; charset=utf-8"
+        "content-type": "application/x-www-form-urlencoded; charset=utf-8",
       },
-      body: encodedBody.toString()
+      body: encodedBody.toString(),
     });
 
     if (!response.ok) {
@@ -569,11 +501,11 @@ export class SlackApi {
         path,
         status: response.status,
         statusText: response.statusText,
-        retryAfterMs: parseRetryAfterMs(response.headers.get("retry-after"))
+        retryAfterMs: parseRetryAfterMs(response.headers.get("retry-after")),
       });
     }
 
-    const payload = await response.json() as SlackApiResponse<T> & T;
+    const payload = (await response.json()) as SlackApiResponse<T> & T;
 
     if (!payload.ok) {
       throw new Error(`Slack API error for ${path}: ${payload.error ?? "unknown_error"}`);
@@ -582,236 +514,4 @@ export class SlackApi {
     return payload;
   }
 }
-
-function parseRetryAfterMs(header: string | null): number | undefined {
-  if (!header) {
-    return undefined;
-  }
-  const seconds = Number(header);
-  if (!Number.isFinite(seconds) || seconds <= 0) {
-    return undefined;
-  }
-  return Math.ceil(seconds * 1_000);
-}
-
-export function normalizeSlackFileAttachments(files: unknown): SlackImageAttachment[] {
-  if (!Array.isArray(files)) {
-    return [];
-  }
-
-  return files.flatMap((entry) => {
-    if (!entry || typeof entry !== "object") {
-      return [];
-    }
-
-    const file = entry as Record<string, unknown>;
-    const fileId = normalizeSlackField(file.id);
-    const mimetype = normalizeSlackField(file.mimetype);
-
-    if (!fileId) {
-      return [];
-    }
-
-    const url = pickSlackFileUrl(file);
-    if (!url) {
-      return [];
-    }
-
-    return [
-      {
-        fileId,
-        name: normalizeSlackField(file.name),
-        title: normalizeSlackField(file.title),
-        mimetype,
-        filetype: normalizeSlackField(file.filetype),
-        size: normalizeSlackNumber(file.size),
-        width: normalizeSlackNumber(
-          file.original_w ??
-            file.thumb_1024_w ??
-            file.thumb_960_w ??
-            file.thumb_720_w ??
-            file.thumb_480_w ??
-            file.thumb_360_w
-        ),
-        height: normalizeSlackNumber(
-          file.original_h ??
-            file.thumb_1024_h ??
-            file.thumb_960_h ??
-            file.thumb_720_h ??
-            file.thumb_480_h ??
-            file.thumb_360_h
-        ),
-        url
-      }
-    ];
-  });
-}
-
-export const normalizeSlackImageAttachments = normalizeSlackFileAttachments;
-
-export function normalizeSlackJson(value: unknown): JsonLike | undefined {
-  if (value === null) {
-    return null;
-  }
-
-  if (
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean"
-  ) {
-    return value;
-  }
-
-  if (Array.isArray(value)) {
-    return value
-      .map((entry) => normalizeSlackJson(entry))
-      .filter((entry): entry is JsonLike => entry !== undefined);
-  }
-
-  if (typeof value !== "object") {
-    return undefined;
-  }
-
-  const normalizedEntries = Object.entries(value)
-    .map(([key, entry]) => [key, normalizeSlackJson(entry)] as const)
-    .filter(([, entry]) => entry !== undefined);
-
-  return Object.fromEntries(normalizedEntries) as { [key: string]: JsonLike };
-}
-
-function resolveSlackMessageAuthor(message: Record<string, unknown>): {
-  readonly userId?: string | undefined;
-  readonly senderKind: SlackSenderKind;
-  readonly botId?: string | undefined;
-  readonly appId?: string | undefined;
-  readonly senderUsername?: string | undefined;
-} {
-  const userId = normalizeSlackField(message.user);
-  if (userId) {
-    return {
-      userId,
-      senderKind: "user"
-    };
-  }
-
-  const botId = normalizeSlackField(message.bot_id);
-  const appId = normalizeSlackField(message.app_id);
-  const senderUsername = normalizeSlackField(message.username);
-
-  if (botId) {
-    return {
-      userId: `bot:${botId}`,
-      senderKind: "bot",
-      botId,
-      appId,
-      senderUsername
-    };
-  }
-
-  if (appId) {
-    return {
-      userId: `app:${appId}`,
-      senderKind: "app",
-      appId,
-      senderUsername
-    };
-  }
-
-  if (senderUsername) {
-    return {
-      userId: `username:${senderUsername}`,
-      senderKind: "unknown",
-      senderUsername
-    };
-  }
-
-  return {
-    senderKind: "unknown"
-  };
-}
-
-function isSupportedSlackMessageSubtype(value: unknown): boolean {
-  const subtype = normalizeSlackField(value);
-  if (!subtype) {
-    return true;
-  }
-
-  return ![
-    "message_changed",
-    "message_deleted",
-    "channel_join",
-    "channel_leave",
-    "channel_topic",
-    "channel_purpose",
-    "channel_name",
-    "channel_archive",
-    "channel_unarchive",
-    "thread_broadcast"
-  ].includes(subtype);
-}
-
-function pickSlackFileUrl(file: Record<string, unknown>): string | undefined {
-  const candidates = [
-    file.thumb_1024,
-    file.thumb_960,
-    file.thumb_720,
-    file.thumb_480,
-    file.thumb_360,
-    file.url_private_download,
-    file.url_private
-  ];
-
-  for (const candidate of candidates) {
-    const normalized = normalizeSlackField(candidate);
-    if (normalized) {
-      return normalized;
-    }
-  }
-
-  return undefined;
-}
-
-function normalizeSlackField(value: unknown): string | undefined {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-
-  const trimmed = value.trim();
-  return trimmed ? trimmed : undefined;
-}
-
-function conversationType(channel: {
-  readonly is_im?: boolean;
-  readonly is_mpim?: boolean;
-  readonly is_group?: boolean;
-  readonly is_channel?: boolean;
-}): string | undefined {
-  if (channel.is_im) {
-    return "im";
-  }
-  if (channel.is_mpim) {
-    return "mpim";
-  }
-  if (channel.is_group) {
-    return "group";
-  }
-  if (channel.is_channel) {
-    return "channel";
-  }
-  return undefined;
-}
-
-function normalizeSlackNumber(value: unknown): number | undefined {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
-  }
-
-  if (typeof value === "string") {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed)) {
-      return parsed;
-    }
-  }
-
-  return undefined;
-}
+export { parseRetryAfterMs, normalizeSlackFileAttachments, normalizeSlackImageAttachments, normalizeSlackJson, resolveSlackMessageAuthor, isSupportedSlackMessageSubtype, pickSlackFileUrl, normalizeSlackField, conversationType, normalizeSlackNumber } from "./slack-api-helpers.js";

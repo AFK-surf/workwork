@@ -91,14 +91,7 @@ The broker consumes only normalized agent runtime events. Slack services must no
 parse Codex app-server private notifications directly.
 
 ```ts
-type AgentRuntimeEvent =
-  | AgentSessionEvent
-  | AgentInputEvent
-  | AgentTurnEvent
-  | AgentMessageEvent
-  | AgentToolEvent
-  | AgentUsageEvent
-  | AgentErrorEvent;
+type AgentRuntimeEvent = AgentSessionEvent | AgentInputEvent | AgentTurnEvent | AgentMessageEvent | AgentToolEvent | AgentUsageEvent | AgentErrorEvent;
 ```
 
 Required event shapes:
@@ -271,4 +264,4 @@ Codex app-server snapshots for timeline rendering.
 8. Admin timeline reads DB data only and does not display JSONL, rollout paths,
    workspace paths, or internal identifiers.
 9. Validation must include `pnpm build`, `pnpm test`, and browser verification of
-    the admin timeline.
+   the admin timeline.

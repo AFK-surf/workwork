@@ -10,22 +10,22 @@ describe("IsolatedMcpService", () => {
       listTools: async () => [
         {
           name: `${server}-search`,
-          description: "Search issues"
-        }
+          description: "Search issues",
+        },
       ],
-      callTool: async () => ({})
+      callTool: async () => ({}),
     }));
     const service = new IsolatedMcpService({
       codexHome: "/tmp/codex-home",
       isolatedMcpServers: ["linear", "notion"],
-      createClient
+      createClient,
     });
 
     await expect(service.listTools("linear")).resolves.toEqual([
       {
         name: "linear-search",
-        description: "Search issues"
-      }
+        description: "Search issues",
+      },
     ]);
     expect(createClient).toHaveBeenCalledWith("linear");
     expect(close).toHaveBeenCalledTimes(1);
@@ -39,15 +39,15 @@ describe("IsolatedMcpService", () => {
       callTool: async (name: string, args: Record<string, unknown>) => ({
         structuredContent: {
           name,
-          query: typeof args.query === "string" ? args.query : ""
+          query: typeof args.query === "string" ? args.query : "",
         },
-        isError: false
-      })
+        isError: false,
+      }),
     }));
     const service = new IsolatedMcpService({
       codexHome: "/tmp/codex-home",
       isolatedMcpServers: ["linear", "notion"],
-      createClient
+      createClient,
     });
 
     await expect(
@@ -55,15 +55,15 @@ describe("IsolatedMcpService", () => {
         server: "notion",
         name: "search",
         arguments: {
-          query: "docs"
-        }
-      })
+          query: "docs",
+        },
+      }),
     ).resolves.toEqual({
       structuredContent: {
         name: "search",
-        query: "docs"
+        query: "docs",
       },
-      isError: false
+      isError: false,
     });
     expect(createClient).toHaveBeenCalledWith("notion");
     expect(close).toHaveBeenCalledTimes(1);
@@ -74,12 +74,10 @@ describe("IsolatedMcpService", () => {
     const service = new IsolatedMcpService({
       codexHome: "/tmp/codex-home",
       isolatedMcpServers: ["linear", "notion"],
-      createClient
+      createClient,
     });
 
-    await expect(service.listTools("github")).rejects.toThrowError(
-      "unsupported_isolated_mcp_server:github"
-    );
+    await expect(service.listTools("github")).rejects.toThrowError("unsupported_isolated_mcp_server:github");
     expect(createClient).not.toHaveBeenCalled();
   });
 });

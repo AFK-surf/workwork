@@ -19,7 +19,7 @@ export function runWithResponseDeferredTasks<T>(response: http.ServerResponse, c
     tasks: [],
     responseDone: false,
     flushScheduled: false,
-    flushing: false
+    flushing: false,
   };
 
   const markResponseDone = () => {
@@ -75,7 +75,7 @@ async function flushTasks(context: DeferredTaskContext): Promise<void> {
         await task();
       } catch (error) {
         logger.error("Deferred response task failed", {
-          error: error instanceof Error ? error.message : String(error)
+          error: error instanceof Error ? error.message : String(error),
         });
       }
     }

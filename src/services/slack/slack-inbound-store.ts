@@ -1,32 +1,14 @@
-import type {
-  PersistedInboundMessage,
-  PersistedInboundSource,
-  ResolvedSlackThreadMessage,
-  SlackBatchInputMessage,
-  SlackInputMessage,
-  SlackSessionRecord,
-  SlackThreadMessage
-} from "../../types.js";
+import type { PersistedInboundMessage, PersistedInboundSource, ResolvedSlackThreadMessage, SlackBatchInputMessage, SlackInputMessage, SlackSessionRecord, SlackThreadMessage } from "../../types.js";
 import { SessionManager } from "../session-manager.js";
 import { SlackApi, normalizeSlackJson } from "./slack-api.js";
-import {
-  isSlackMessageEffectivelyEmpty,
-  parseSlackTextMetadata
-} from "./slack-event-parser.js";
-import {
-  compareSlackTs,
-  createInboundMessageKey,
-  isSlackInboundSource
-} from "./slack-conversation-utils.js";
+import { isSlackMessageEffectivelyEmpty, parseSlackTextMetadata } from "./slack-event-parser.js";
+import { compareSlackTs, createInboundMessageKey, isSlackInboundSource } from "./slack-conversation-utils.js";
 
 export class SlackInboundStore {
   readonly #sessions: SessionManager;
   readonly #slackApi: SlackApi;
 
-  constructor(options: {
-    readonly sessions: SessionManager;
-    readonly slackApi: SlackApi;
-  }) {
+  constructor(options: { readonly sessions: SessionManager; readonly slackApi: SlackApi }) {
     this.#sessions = options.sessions;
     this.#slackApi = options.slackApi;
   }
@@ -36,26 +18,24 @@ export class SlackInboundStore {
       return false;
     }
 
-    return Boolean(
-      this.#sessions.getInboundMessage(session.channelId, session.rootThreadTs, messageTs)
-    );
+    return Boolean(this.#sessions.getInboundMessage(session.channelId, session.rootThreadTs, messageTs));
   }
 
-  listPendingMessages(session: SlackSessionRecord, options?: {
-    readonly source?: PersistedInboundSource | readonly PersistedInboundSource[] | undefined;
-  }): PersistedInboundMessage[] {
+  listPendingMessages(
+    session: SlackSessionRecord,
+    options?: {
+      readonly source?: PersistedInboundSource | readonly PersistedInboundSource[] | undefined;
+    },
+  ): PersistedInboundMessage[] {
     return this.#sessions.listInboundMessages({
       channelId: session.channelId,
       rootThreadTs: session.rootThreadTs,
       status: "pending",
-      source: options?.source
+      source: options?.source,
     });
   }
 
-  async recordInboundMessage(
-    session: SlackSessionRecord,
-    item: SlackInputMessage
-  ): Promise<SlackSessionRecord> {
+  async recordInboundMessage(session: SlackSessionRecord, item: SlackInputMessage): Promise<SlackSessionRecord> {
     if (!item.messageTs) {
       return session;
     }
@@ -91,19 +71,12 @@ export class SlackInboundStore {
         unexpectedTurnStop: enrichedItem.unexpectedTurnStop,
         status: "pending",
         createdAt: now,
-        updatedAt: now
+        updatedAt: now,
       });
     }
 
-    if (
-      isSlackInboundSource(item.source) &&
-      (!session.lastObservedMessageTs || compareSlackTs(item.messageTs, session.lastObservedMessageTs) > 0)
-    ) {
-      return await this.#sessions.setLastObservedMessageTs(
-        session.channelId,
-        session.rootThreadTs,
-        item.messageTs
-      );
+    if (isSlackInboundSource(item.source) && (!session.lastObservedMessageTs || compareSlackTs(item.messageTs, session.lastObservedMessageTs) > 0)) {
+      return await this.#sessions.setLastObservedMessageTs(session.channelId, session.rootThreadTs, item.messageTs);
     }
 
     return session;
@@ -128,7 +101,7 @@ export class SlackInboundStore {
       images: message.images,
       slackMessage: message.slackMessage,
       backgroundJob: message.backgroundJob,
-      unexpectedTurnStop: message.unexpectedTurnStop
+      unexpectedTurnStop: message.unexpectedTurnStop,
     };
   }
 
@@ -137,9 +110,7 @@ export class SlackInboundStore {
       return item;
     }
 
-    const mentionedUsers = (
-      await Promise.all(item.mentionedUserIds.map((userId) => this.#slackApi.getUserIdentity(userId)))
-    ).filter((user): user is NonNullable<typeof user> => user !== null);
+    const mentionedUsers = (await Promise.all(item.mentionedUserIds.map((userId) => this.#slackApi.getUserIdentity(userId)))).filter((user): user is NonNullable<typeof user> => user !== null);
 
     if (mentionedUsers.length === 0) {
       return item;
@@ -147,40 +118,27 @@ export class SlackInboundStore {
 
     return {
       ...item,
-      mentionedUsers
+      mentionedUsers,
     };
   }
 
-  async markMessagesInflight(
-    session: SlackSessionRecord,
-    messages: readonly PersistedInboundMessage[],
-    turnId: string
-  ): Promise<void> {
+  async markMessagesInflight(session: SlackSessionRecord, messages: readonly PersistedInboundMessage[], turnId: string): Promise<void> {
     await this.markMessagesInflightByTs(
       session,
       messages.map((message) => message.messageTs),
-      turnId
+      turnId,
     );
   }
 
-  async markMessagesInflightByTs(
-    session: SlackSessionRecord,
-    messageTsList: readonly string[],
-    turnId: string
-  ): Promise<void> {
+  async markMessagesInflightByTs(session: SlackSessionRecord, messageTsList: readonly string[], turnId: string): Promise<void> {
     if (messageTsList.length === 0) {
       return;
     }
 
-    await this.#sessions.updateInboundMessagesForBatch(
-      session.channelId,
-      session.rootThreadTs,
-      messageTsList,
-      {
-        status: "inflight",
-        batchId: turnId
-      }
-    );
+    await this.#sessions.updateInboundMessagesForBatch(session.channelId, session.rootThreadTs, messageTsList, {
+      status: "inflight",
+      batchId: turnId,
+    });
   }
 
   async markTurnBatchDone(session: SlackSessionRecord, turnId: string): Promise<SlackSessionRecord> {
@@ -188,7 +146,7 @@ export class SlackInboundStore {
       channelId: session.channelId,
       rootThreadTs: session.rootThreadTs,
       status: "inflight",
-      batchId: turnId
+      batchId: turnId,
     });
 
     if (inflightMessages.length === 0) {
@@ -201,8 +159,8 @@ export class SlackInboundStore {
       inflightMessages.map((message) => message.messageTs),
       {
         status: "done",
-        batchId: undefined
-      }
+        batchId: undefined,
+      },
     );
 
     const deliveredSlackMessages = inflightMessages.filter((message) => isSlackInboundSource(message.source));
@@ -211,15 +169,8 @@ export class SlackInboundStore {
       return session;
     }
 
-    if (
-      !session.lastDeliveredMessageTs ||
-      compareSlackTs(lastDeliveredMessageTs, session.lastDeliveredMessageTs) > 0
-    ) {
-      return await this.#sessions.setLastDeliveredMessageTs(
-        session.channelId,
-        session.rootThreadTs,
-        lastDeliveredMessageTs
-      );
+    if (!session.lastDeliveredMessageTs || compareSlackTs(lastDeliveredMessageTs, session.lastDeliveredMessageTs) > 0) {
+      return await this.#sessions.setLastDeliveredMessageTs(session.channelId, session.rootThreadTs, lastDeliveredMessageTs);
     }
 
     return session;
@@ -236,20 +187,20 @@ export class SlackInboundStore {
     if (session.activeTurnId) {
       return {
         markedDoneCount: 0,
-        resetToPendingCount: 0
+        resetToPendingCount: 0,
       };
     }
 
     const inflightMessages = this.#sessions.listInboundMessages({
       channelId: session.channelId,
       rootThreadTs: session.rootThreadTs,
-      status: "inflight"
+      status: "inflight",
     });
 
     if (inflightMessages.length === 0) {
       return {
         markedDoneCount: 0,
-        resetToPendingCount: 0
+        resetToPendingCount: 0,
       };
     }
 
@@ -274,51 +225,33 @@ export class SlackInboundStore {
         .sort(compareSlackTs)
         .at(-1);
 
-      const shouldMarkDone = Boolean(
-        latestSlackMessageTs &&
-        session.lastDeliveredMessageTs &&
-        compareSlackTs(latestSlackMessageTs, session.lastDeliveredMessageTs) <= 0
-      );
+      const shouldMarkDone = Boolean(latestSlackMessageTs && session.lastDeliveredMessageTs && compareSlackTs(latestSlackMessageTs, session.lastDeliveredMessageTs) <= 0);
 
       const target = shouldMarkDone ? markDoneTs : resetToPendingTs;
       target.push(...batchMessages.map((message) => message.messageTs));
     }
 
     if (markDoneTs.length > 0) {
-      await this.#sessions.updateInboundMessagesForBatch(
-        session.channelId,
-        session.rootThreadTs,
-        markDoneTs,
-        {
-          status: "done",
-          batchId: undefined
-        }
-      );
+      await this.#sessions.updateInboundMessagesForBatch(session.channelId, session.rootThreadTs, markDoneTs, {
+        status: "done",
+        batchId: undefined,
+      });
     }
 
     if (resetToPendingTs.length > 0) {
-      await this.#sessions.updateInboundMessagesForBatch(
-        session.channelId,
-        session.rootThreadTs,
-        resetToPendingTs,
-        {
-          status: "pending",
-          batchId: undefined
-        }
-      );
+      await this.#sessions.updateInboundMessagesForBatch(session.channelId, session.rootThreadTs, resetToPendingTs, {
+        status: "pending",
+        batchId: undefined,
+      });
     }
 
     return {
       markedDoneCount: markDoneTs.length,
-      resetToPendingCount: resetToPendingTs.length
+      resetToPendingCount: resetToPendingTs.length,
     };
   }
 
-  async createRecoveredBatchInput(
-    session: SlackSessionRecord,
-    messages: readonly PersistedInboundMessage[] | readonly ResolvedSlackThreadMessage[] | readonly SlackThreadMessage[],
-    recoveryKind: "missed_thread_messages"
-  ): Promise<SlackInputMessage | null> {
+  async createRecoveredBatchInput(session: SlackSessionRecord, messages: readonly PersistedInboundMessage[] | readonly ResolvedSlackThreadMessage[] | readonly SlackThreadMessage[], recoveryKind: "missed_thread_messages"): Promise<SlackInputMessage | null> {
     const recoveredMessages = (
       await Promise.all(
         messages.map(async (message): Promise<SlackBatchInputMessage | null> => {
@@ -341,19 +274,13 @@ export class SlackInboundStore {
             appId: "appId" in message ? message.appId : undefined,
             senderUsername: "senderUsername" in message ? message.senderUsername : undefined,
             mentionedUserIds: metadata.mentionedUserIds,
-            mentionedUsers: (
-              await Promise.all(
-                metadata.mentionedUserIds.map((userId) => this.#slackApi.getUserIdentity(userId))
-              )
-            ).filter((user): user is NonNullable<typeof user> => user !== null),
+            mentionedUsers: (await Promise.all(metadata.mentionedUserIds.map((userId) => this.#slackApi.getUserIdentity(userId)))).filter((user): user is NonNullable<typeof user> => user !== null),
             images,
             slackMessage,
             backgroundJob: "backgroundJob" in message ? message.backgroundJob : undefined,
-            sender: "senderKind" in message && message.senderKind !== "user"
-              ? null
-              : await this.#slackApi.getUserIdentity(message.userId)
+            sender: "senderKind" in message && message.senderKind !== "user" ? null : await this.#slackApi.getUserIdentity(message.userId),
           };
-        })
+        }),
       )
     ).filter((message): message is NonNullable<typeof message> => message !== null);
 
@@ -370,7 +297,7 @@ export class SlackInboundStore {
       userId: recoveredMessages.at(-1)?.userId ?? "",
       text: "",
       recoveryKind,
-      batchMessages: recoveredMessages
+      batchMessages: recoveredMessages,
     };
   }
 }

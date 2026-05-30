@@ -5,27 +5,9 @@ import type { AppConfig } from "../../config.js";
 import type { AuthProfileService, AuthProfileSummary } from "../auth-profile-service.js";
 import { CodexBroker } from "../codex/codex-broker.js";
 import { SessionManager } from "../session-manager.js";
-import {
-  authProfileReasonLabel,
-  evaluateAuthProfile,
-  findAuthProfile,
-  isAuthProfileProbeFailure,
-  isAuthProfileProbeFailureReason,
-  selectBestAuthProfile,
-  type AuthProfileUnavailableReason
-} from "../session-auth-profile-selector.js";
+import { authProfileReasonLabel, evaluateAuthProfile, findAuthProfile, isAuthProfileProbeFailure, isAuthProfileProbeFailureReason, selectBestAuthProfile, type AuthProfileUnavailableReason } from "../session-auth-profile-selector.js";
 import { CodexAppServerRuntime } from "./codex-app-server-runtime.js";
-import type {
-  AgentRuntime,
-  AgentRuntimeCapabilities,
-  AgentRuntimeEvent,
-  AgentSession,
-  AgentSessionSnapshot,
-  AgentSubmitInputResult,
-  AgentTurnSnapshot,
-  ReadAgentTurnOptions,
-  SubmitAgentInput
-} from "./types.js";
+import type { AgentRuntime, AgentRuntimeCapabilities, AgentRuntimeEvent, AgentSession, AgentSessionSnapshot, AgentSubmitInputResult, AgentTurnSnapshot, ReadAgentTurnOptions, SubmitAgentInput } from "./types.js";
 import type { SlackSessionRecord, SlackUserIdentity } from "../../types.js";
 
 interface ProfileRuntimeEntry {
@@ -39,11 +21,7 @@ export class AuthProfileUnavailableError extends Error {
   readonly profileName?: string | undefined;
   readonly reason: AuthProfileUnavailableReason;
 
-  constructor(options: {
-    readonly sessionKey: string;
-    readonly profileName?: string | undefined;
-    readonly reason: AuthProfileUnavailableReason;
-  }) {
+  constructor(options: { readonly sessionKey: string; readonly profileName?: string | undefined; readonly reason: AuthProfileUnavailableReason }) {
     super(`Auth profile unavailable for ${options.sessionKey}: ${options.profileName ?? "none"} (${options.reason})`);
     this.name = "AuthProfileUnavailableError";
     this.sessionKey = options.sessionKey;
@@ -57,20 +35,14 @@ export class AuthProfileUnavailableError extends Error {
 }
 
 export function isAuthProfileUnavailableError(error: unknown): error is AuthProfileUnavailableError {
-  return error instanceof AuthProfileUnavailableError ||
-    Boolean(error && typeof error === "object" && (error as { code?: unknown }).code === "auth_profile_unavailable");
+  return error instanceof AuthProfileUnavailableError || Boolean(error && typeof error === "object" && (error as { code?: unknown }).code === "auth_profile_unavailable");
 }
 
 export class SessionAuthProfileRuntime extends EventEmitter implements AgentRuntime {
   readonly #config: AppConfig;
   readonly #sessions: SessionManager;
   readonly #authProfiles: AuthProfileService;
-  readonly #createProfileRuntime: (options: {
-    readonly profile: AuthProfileSummary;
-    readonly codexHome: string;
-    readonly teamCodexHomePath: string;
-    readonly port: number;
-  }) => AgentRuntime;
+  readonly #createProfileRuntime: (options: { readonly profile: AuthProfileSummary; readonly codexHome: string; readonly teamCodexHomePath: string; readonly port: number }) => AgentRuntime;
   readonly #legacyRuntime?: AgentRuntime | undefined;
   readonly #profileRuntimes = new Map<string, ProfileRuntimeEntry>();
   readonly #profilePorts = new Map<string, number>();
@@ -82,12 +54,7 @@ export class SessionAuthProfileRuntime extends EventEmitter implements AgentRunt
     readonly sessions: SessionManager;
     readonly authProfiles: AuthProfileService;
     readonly legacyRuntime?: AgentRuntime | undefined;
-    readonly createProfileRuntime?: ((options: {
-      readonly profile: AuthProfileSummary;
-      readonly codexHome: string;
-      readonly teamCodexHomePath: string;
-      readonly port: number;
-    }) => AgentRuntime) | undefined;
+    readonly createProfileRuntime?: ((options: { readonly profile: AuthProfileSummary; readonly codexHome: string; readonly teamCodexHomePath: string; readonly port: number }) => AgentRuntime) | undefined;
   }) {
     super();
     this.#config = options.config;
@@ -95,13 +62,14 @@ export class SessionAuthProfileRuntime extends EventEmitter implements AgentRunt
     this.#authProfiles = options.authProfiles;
     this.#legacyRuntime = options.legacyRuntime;
     this.#nextPortOffset = options.legacyRuntime ? 1 : 0;
-    this.#createProfileRuntime = options.createProfileRuntime ?? ((runtimeOptions) =>
-      createDefaultProfileRuntime({
-        config: this.#config,
-        sessions: this.#sessions,
-        ...runtimeOptions
-      })
-    );
+    this.#createProfileRuntime =
+      options.createProfileRuntime ??
+      ((runtimeOptions) =>
+        createDefaultProfileRuntime({
+          config: this.#config,
+          sessions: this.#sessions,
+          ...runtimeOptions,
+        }));
     if (this.#legacyRuntime) {
       this.#legacyRuntime.on("event", (event) => this.emit("event", event));
     }
@@ -116,7 +84,7 @@ export class SessionAuthProfileRuntime extends EventEmitter implements AgentRunt
       rawEvents: true,
       tokenUsage: "exact",
       toolCalls: true,
-      systemPromptEcho: true
+      systemPromptEcho: true,
     };
   }
 
@@ -127,10 +95,12 @@ export class SessionAuthProfileRuntime extends EventEmitter implements AgentRunt
   async stop(): Promise<void> {
     const entries = [...this.#profileRuntimes.values()];
     this.#profileRuntimes.clear();
-    await Promise.all(entries.map(async (entry) => {
-      entry.runtime.off("event", entry.eventHandler);
-      await entry.runtime.stop();
-    }));
+    await Promise.all(
+      entries.map(async (entry) => {
+        entry.runtime.off("event", entry.eventHandler);
+        await entry.runtime.stop();
+      }),
+    );
     await this.#legacyRuntime?.stop();
   }
 
@@ -151,7 +121,7 @@ export class SessionAuthProfileRuntime extends EventEmitter implements AgentRunt
     const resolved = await this.#resolveRuntime(input.session);
     return await resolved.runtime.submitInput({
       ...input,
-      session: resolved.session
+      session: resolved.session,
     });
   }
 
@@ -165,11 +135,7 @@ export class SessionAuthProfileRuntime extends EventEmitter implements AgentRunt
     return await resolved.runtime.readSession(resolved.session);
   }
 
-  async readTurn(
-    session: SlackSessionRecord,
-    turnId: string,
-    options?: ReadAgentTurnOptions
-  ): Promise<AgentTurnSnapshot | null> {
+  async readTurn(session: SlackSessionRecord, turnId: string, options?: ReadAgentTurnOptions): Promise<AgentTurnSnapshot | null> {
     const resolved = await this.#resolveRuntime(session);
     return await resolved.runtime.readTurn(resolved.session, turnId, options);
   }
@@ -182,7 +148,7 @@ export class SessionAuthProfileRuntime extends EventEmitter implements AgentRunt
     if (status.profiles.length === 0 && this.#legacyRuntime) {
       return {
         session,
-        runtime: this.#legacyRuntime
+        runtime: this.#legacyRuntime,
       };
     }
 
@@ -192,53 +158,47 @@ export class SessionAuthProfileRuntime extends EventEmitter implements AgentRunt
         throw new AuthProfileUnavailableError({
           sessionKey: session.key,
           profileName: session.authProfileName,
-          reason: "profile_not_found"
+          reason: "profile_not_found",
         });
       }
 
       const evaluation = evaluateAuthProfile(profile);
       if (!evaluation.usable) {
         if (isAuthProfileProbeFailure(evaluation)) {
-          const resolvedSession = session.authBlockedAt && isAuthProfileProbeFailureReason(session.authBlockReason)
-            ? await this.#sessions.clearSessionAuthBlock(session.key)
-            : session;
+          const resolvedSession = session.authBlockedAt && isAuthProfileProbeFailureReason(session.authBlockReason) ? await this.#sessions.clearSessionAuthBlock(session.key) : session;
           return {
             session: resolvedSession,
-            runtime: this.#runtimeForProfile(profile)
+            runtime: this.#runtimeForProfile(profile),
           };
         }
         throw new AuthProfileUnavailableError({
           sessionKey: session.key,
           profileName: profile.name,
-          reason: evaluation.reason ?? "rate_limits_probe_failed"
+          reason: evaluation.reason ?? "rate_limits_probe_failed",
         });
       }
 
-      const resolvedSession = session.authBlockedAt
-        ? await this.#sessions.clearSessionAuthBlock(session.key)
-        : session;
+      const resolvedSession = session.authBlockedAt ? await this.#sessions.clearSessionAuthBlock(session.key) : session;
 
       return {
         session: resolvedSession,
-        runtime: this.#runtimeForProfile(profile)
+        runtime: this.#runtimeForProfile(profile),
       };
     }
 
     const selected = selectBestAuthProfile(status);
     if (!selected) {
-      const probeFailure = status.profiles
-        .map((profile) => evaluateAuthProfile(profile))
-        .find((evaluation) => isAuthProfileProbeFailure(evaluation));
+      const probeFailure = status.profiles.map((profile) => evaluateAuthProfile(profile)).find((evaluation) => isAuthProfileProbeFailure(evaluation));
       throw new AuthProfileUnavailableError({
         sessionKey: session.key,
-        reason: probeFailure?.reason ?? "no_usable_auth_profiles"
+        reason: probeFailure?.reason ?? "no_usable_auth_profiles",
       });
     }
 
     const boundSession = await this.#sessions.setSessionAuthProfile(session.key, selected.name);
     return {
       session: boundSession,
-      runtime: this.#runtimeForProfile(selected)
+      runtime: this.#runtimeForProfile(selected),
     };
   }
 
@@ -252,14 +212,14 @@ export class SessionAuthProfileRuntime extends EventEmitter implements AgentRunt
       profile,
       codexHome: path.join(this.#profileRuntimeRoot(profile.name), "codex-home"),
       teamCodexHomePath: this.#config.codexTeamHomePath,
-      port: this.#portForProfile(profile.name)
+      port: this.#portForProfile(profile.name),
     });
     runtime.setSlackBotIdentity(this.#slackBotIdentity);
     const eventHandler = (event: AgentRuntimeEvent) => this.emit("event", event);
     runtime.on("event", eventHandler);
     this.#profileRuntimes.set(profile.name, {
       runtime,
-      eventHandler
+      eventHandler,
     });
     return runtime;
   }
@@ -281,14 +241,7 @@ export class SessionAuthProfileRuntime extends EventEmitter implements AgentRunt
   }
 }
 
-function createDefaultProfileRuntime(options: {
-  readonly config: AppConfig;
-  readonly sessions: SessionManager;
-  readonly profile: AuthProfileSummary;
-  readonly codexHome: string;
-  readonly teamCodexHomePath: string;
-  readonly port: number;
-}): AgentRuntime {
+function createDefaultProfileRuntime(options: { readonly config: AppConfig; readonly sessions: SessionManager; readonly profile: AuthProfileSummary; readonly codexHome: string; readonly teamCodexHomePath: string; readonly port: number }): AgentRuntime {
   const codex = new CodexBroker({
     serviceName: `${options.config.serviceName}:${options.profile.name}`,
     brokerHttpBaseUrl: options.config.brokerHttpBaseUrl,
@@ -304,11 +257,11 @@ function createDefaultProfileRuntime(options: {
     geminiHttpProxy: options.config.geminiHttpProxy,
     geminiHttpsProxy: options.config.geminiHttpsProxy,
     geminiAllProxy: options.config.geminiAllProxy,
-    openAiApiKey: options.config.codexOpenAiApiKey
+    openAiApiKey: options.config.codexOpenAiApiKey,
   });
   return new CodexAppServerRuntime({
     codex,
-    sessions: options.sessions
+    sessions: options.sessions,
   });
 }
 

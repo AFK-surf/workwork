@@ -13,7 +13,7 @@ describe("SlackTurnReconciler", () => {
       agentSessionId: "thread-1",
       activeTurnId: "turn-1",
       createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
     };
 
     const setActiveTurnId = vi.fn();
@@ -23,22 +23,22 @@ describe("SlackTurnReconciler", () => {
 
     const reconciler = new SlackTurnReconciler({
       sessions: {
-        setActiveTurnId
+        setActiveTurnId,
       } as never,
       inboundStore: {
-        resetTurnBatchToPending
+        resetTurnBatchToPending,
       } as never,
       turnRunner: {
         ensureAgentSession,
-        readTurnSnapshot
-      } as never
+        readTurnSnapshot,
+      } as never,
     });
 
     await expect(reconciler.reconcileSingleActiveTurn(session)).resolves.toBe("retained");
     expect(ensureAgentSession).toHaveBeenCalledWith(session);
     expect(readTurnSnapshot).toHaveBeenCalledWith(session, "turn-1", {
       syncActiveTurn: true,
-      treatMissingAsStale: false
+      treatMissingAsStale: false,
     });
     expect(resetTurnBatchToPending).not.toHaveBeenCalled();
     expect(setActiveTurnId).not.toHaveBeenCalled();
@@ -53,7 +53,7 @@ describe("SlackTurnReconciler", () => {
       agentSessionId: "thread-1",
       activeTurnId: "turn-1",
       createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
     };
 
     const setActiveTurnId = vi.fn(async () => session);
@@ -63,23 +63,25 @@ describe("SlackTurnReconciler", () => {
 
     const reconciler = new SlackTurnReconciler({
       sessions: {
-        setActiveTurnId
+        setActiveTurnId,
       } as never,
       inboundStore: {
-        resetTurnBatchToPending
+        resetTurnBatchToPending,
       } as never,
       turnRunner: {
         ensureAgentSession,
-        readTurnSnapshot
-      } as never
+        readTurnSnapshot,
+      } as never,
     });
 
-    await expect(reconciler.reconcileSingleActiveTurn(session, {
-      treatMissingAsStale: true
-    })).resolves.toBe("cleared");
+    await expect(
+      reconciler.reconcileSingleActiveTurn(session, {
+        treatMissingAsStale: true,
+      }),
+    ).resolves.toBe("cleared");
     expect(readTurnSnapshot).toHaveBeenCalledWith(session, "turn-1", {
       syncActiveTurn: true,
-      treatMissingAsStale: true
+      treatMissingAsStale: true,
     });
     expect(resetTurnBatchToPending).toHaveBeenCalledWith(session, "turn-1");
     expect(setActiveTurnId).toHaveBeenCalledWith("C123", "111.222", undefined);

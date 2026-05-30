@@ -16,9 +16,9 @@ describe("macOS bootstrap", () => {
       tempDirs.splice(0).map((directory) =>
         fs.rm(directory, {
           force: true,
-          recursive: true
-        })
-      )
+          recursive: true,
+        }),
+      ),
     );
   });
 
@@ -39,20 +39,20 @@ describe("macOS bootstrap", () => {
     await fs.writeFile(
       path.join(serviceRoot, "config", "broker.env"),
       [
-        "SLACK_APP_TOKEN=\"xapp-from-broker-env\"",
-        "SLACK_BOT_TOKEN=\"xoxb-from-broker-env\"",
-        "DISK_CLEANUP_MIN_FREE_BYTES=\"21474836480\"",
-        "DISK_CLEANUP_TARGET_FREE_BYTES=\"32212254720\"",
-        "LOG_RAW_MAX_BYTES=\"65536\"",
-        "ADMIN_BASE_URL=\"https://admin.example.test\"",
-        "BROKER_DEFAULT_GITHUB_LOGIN=\"default-pr-account\"",
-        "BROKER_DEFAULT_GITHUB_TOKEN=\"default-pr-token\"",
-        "GH_TOKEN=\"legacy-gh-token\"",
-        "GITHUB_TOKEN=\"legacy-github-token\"",
-        "CLOUDFLARED_TUNNEL_TOKEN=\"cloudflared-test-token\"",
-        "CURRENT_RELEASE_PATH=\"stale-single-release-path\""
+        'SLACK_APP_TOKEN="xapp-from-broker-env"',
+        'SLACK_BOT_TOKEN="xoxb-from-broker-env"',
+        'DISK_CLEANUP_MIN_FREE_BYTES="21474836480"',
+        'DISK_CLEANUP_TARGET_FREE_BYTES="32212254720"',
+        'LOG_RAW_MAX_BYTES="65536"',
+        'ADMIN_BASE_URL="https://admin.example.test"',
+        'BROKER_DEFAULT_GITHUB_LOGIN="default-pr-account"',
+        'BROKER_DEFAULT_GITHUB_TOKEN="default-pr-token"',
+        'GH_TOKEN="legacy-gh-token"',
+        'GITHUB_TOKEN="legacy-github-token"',
+        'CLOUDFLARED_TUNNEL_TOKEN="cloudflared-test-token"',
+        'CURRENT_RELEASE_PATH="stale-single-release-path"',
       ].join("\n") + "\n",
-      "utf8"
+      "utf8",
     );
     await writeExecutable(path.join(fakeBin, "npm"), fakeNpmScript());
     await writeExecutable(path.join(fakeBin, "launchctl"), fakeCommandScript("launchctl"));
@@ -60,15 +60,7 @@ describe("macOS bootstrap", () => {
     await writeExecutable(path.join(fakeBin, "cloudflared"), fakeCommandScript("cloudflared"));
 
     const childEnv = { ...process.env };
-    for (const key of [
-      "ADMIN_BASE_URL",
-      "BROKER_DEFAULT_GITHUB_LOGIN",
-      "BROKER_DEFAULT_GITHUB_TOKEN",
-      "GH_TOKEN",
-      "GITHUB_TOKEN",
-      "CLOUDFLARED_TUNNEL_TOKEN",
-      "CURRENT_RELEASE_PATH"
-    ]) {
+    for (const key of ["ADMIN_BASE_URL", "BROKER_DEFAULT_GITHUB_LOGIN", "BROKER_DEFAULT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN", "CLOUDFLARED_TUNNEL_TOKEN", "CURRENT_RELEASE_PATH"]) {
       delete childEnv[key];
     }
 
@@ -95,7 +87,7 @@ describe("macOS bootstrap", () => {
         path.join(fakeBin, "cloudflared"),
         "--package-version",
         packageVersion,
-        "--start-worker"
+        "--start-worker",
       ],
       {
         ...childEnv,
@@ -103,8 +95,8 @@ describe("macOS bootstrap", () => {
         HOME: home,
         SLACK_APP_TOKEN: "xapp-test",
         SLACK_BOT_TOKEN: "xoxb-test",
-        FAKE_COMMAND_LOG: commandLog
-      }
+        FAKE_COMMAND_LOG: commandLog,
+      },
     );
 
     expect(result.status).toBe(0);
@@ -115,7 +107,7 @@ describe("macOS bootstrap", () => {
       currentAdminReleasePath: path.join(serviceRoot, "current-admin"),
       currentWorkerReleasePath: path.join(serviceRoot, "current-worker"),
       workerStarted: true,
-      cloudflaredStarted: true
+      cloudflaredStarted: true,
     });
 
     const currentAdminReleasePath = path.join(serviceRoot, "current-admin");
@@ -140,14 +132,14 @@ describe("macOS bootstrap", () => {
       repoRootPath: currentAdminReleasePath,
       entryPoint: "dist/src/admin-index.js",
       runUser: "test-admin",
-      home
+      home,
     });
     expectLaunchdRuntime(workerPlist, {
       launcherPath: workerLauncherPath,
       repoRootPath: currentWorkerReleasePath,
       entryPoint: "dist/src/worker-index.js",
       runUser: "test-admin",
-      home
+      home,
     });
     expect(cloudflaredPlist).toContain("<key>UserName</key>");
     expect(cloudflaredPlist).toContain("<string>test-admin</string>");
@@ -189,45 +181,44 @@ async function writeExecutable(filePath: string, content: string): Promise<void>
 }
 
 function fakeCommandScript(command: string): string {
-  return [
-    "#!/bin/sh",
-    "set -eu",
-    `echo "${command} $*" >> "$FAKE_COMMAND_LOG"`
-  ].join("\n");
+  return ["#!/bin/sh", "set -eu", `echo "${command} $*" >> "$FAKE_COMMAND_LOG"`].join("\n");
 }
 
 function fakeNpmScript(): string {
   return [
     "#!/bin/sh",
     "set -eu",
-    "echo \"npm $*\" >> \"$FAKE_COMMAND_LOG\"",
-    "if [ \"${1:-}\" = \"install\" ] && [ \"${2:-}\" = \"--prefix\" ]; then",
-    "  prefix=\"$3\"",
-    "  last=\"\"",
-    "  for arg in \"$@\"; do last=\"$arg\"; done",
-    "  version=\"${last##*@}\"",
-    "  package_name=\"${last%@*}\"",
+    'echo "npm $*" >> "$FAKE_COMMAND_LOG"',
+    'if [ "${1:-}" = "install" ] && [ "${2:-}" = "--prefix" ]; then',
+    '  prefix="$3"',
+    '  last=""',
+    '  for arg in "$@"; do last="$arg"; done',
+    '  version="${last##*@}"',
+    '  package_name="${last%@*}"',
     "  package_path=\"$(printf '%s' \"$package_name\" | sed 's#/# #g')\"",
     "  set -- $package_path",
-    "  package_root=\"$prefix/node_modules/$1/$2\"",
-    "  mkdir -p \"$package_root/dist/src\" \"$package_root/scripts/ops\"",
-    "  if [ \"$package_name\" = \"@agent-session-broker/admin\" ]; then",
-    "    mkdir -p \"$package_root/dist/admin-ui\"",
-    "    : > \"$package_root/dist/src/admin-index.js\"",
-    "    : > \"$package_root/dist/admin-ui/index.html\"",
-    "    : > \"$package_root/scripts/ops/macos-bootstrap.mjs\"",
+    '  package_root="$prefix/node_modules/$1/$2"',
+    '  mkdir -p "$package_root/dist/src" "$package_root/scripts/ops"',
+    '  if [ "$package_name" = "@agent-session-broker/admin" ]; then',
+    '    mkdir -p "$package_root/dist/admin-ui"',
+    '    : > "$package_root/dist/src/admin-index.js"',
+    '    : > "$package_root/dist/admin-ui/index.html"',
+    '    : > "$package_root/scripts/ops/macos-bootstrap.mjs"',
     "  fi",
-    "  if [ \"$package_name\" = \"@agent-session-broker/worker\" ]; then",
-    "    : > \"$package_root/dist/src/worker-index.js\"",
+    '  if [ "$package_name" = "@agent-session-broker/worker" ]; then',
+    '    : > "$package_root/dist/src/worker-index.js"',
     "  fi",
-    "  : > \"$package_root/scripts/ops/macos-launchd-launcher.mjs\"",
-    "  : > \"$package_root/scripts/ops/macos-launchd-restart.mjs\"",
-    "  printf '{\"name\":\"%s\",\"version\":\"%s\"}\\n' \"$package_name\" \"$version\" > \"$package_root/package.json\"",
-    "fi"
+    '  : > "$package_root/scripts/ops/macos-launchd-launcher.mjs"',
+    '  : > "$package_root/scripts/ops/macos-launchd-restart.mjs"',
+    '  printf \'{"name":"%s","version":"%s"}\\n\' "$package_name" "$version" > "$package_root/package.json"',
+    "fi",
   ].join("\n");
 }
 
-function runNodeScript(args: readonly string[], env: NodeJS.ProcessEnv): Promise<{
+function runNodeScript(
+  args: readonly string[],
+  env: NodeJS.ProcessEnv,
+): Promise<{
   readonly status: number | null;
   readonly stdout: string;
   readonly stderr: string;
@@ -236,7 +227,7 @@ function runNodeScript(args: readonly string[], env: NodeJS.ProcessEnv): Promise
     const child = spawn(process.execPath, args, {
       cwd: repoRoot,
       env,
-      stdio: ["ignore", "pipe", "pipe"]
+      stdio: ["ignore", "pipe", "pipe"],
     });
     let stdout = "";
     let stderr = "";
@@ -252,7 +243,7 @@ function runNodeScript(args: readonly string[], env: NodeJS.ProcessEnv): Promise
       resolve({
         status,
         stdout,
-        stderr
+        stderr,
       });
     });
   });
@@ -266,7 +257,7 @@ function expectLaunchdRuntime(
     readonly entryPoint: string;
     readonly runUser: string;
     readonly home: string;
-  }
+  },
 ): void {
   expect(plist).toContain("<key>UserName</key>");
   expect(plist).toContain(`<string>${expected.runUser}</string>`);
@@ -274,16 +265,7 @@ function expectLaunchdRuntime(
   expect(plist).toContain("<key>HOME</key>");
   expect(plist).toContain(`<string>${expected.home}</string>`);
   expect(plist).toContain(`<string>${expected.launcherPath}</string>`);
-  expect(plist).toContain([
-    "    <string>--repo-root</string>",
-    `    <string>${expected.repoRootPath}</string>`
-  ].join("\n"));
-  expect(plist).toContain([
-    "    <string>--entry-point</string>",
-    `    <string>${expected.entryPoint}</string>`
-  ].join("\n"));
-  expect(plist).toContain([
-    "  <key>WorkingDirectory</key>",
-    `  <string>${expected.repoRootPath}</string>`
-  ].join("\n"));
+  expect(plist).toContain(["    <string>--repo-root</string>", `    <string>${expected.repoRootPath}</string>`].join("\n"));
+  expect(plist).toContain(["    <string>--entry-point</string>", `    <string>${expected.entryPoint}</string>`].join("\n"));
+  expect(plist).toContain(["  <key>WorkingDirectory</key>", `  <string>${expected.repoRootPath}</string>`].join("\n"));
 }

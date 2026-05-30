@@ -6,19 +6,7 @@ import { logger } from "./logger.js";
 import { AdminService } from "./services/admin-service.js";
 import { AuthProfileService } from "./services/auth-profile-service.js";
 import { CodexRuntimeControl } from "./services/codex-runtime-control.js";
-import {
-  configureServiceLogger,
-  createAgentRuntime,
-  createCodexBroker,
-  createDiskPressureCleanup,
-  createGitHubAuthorMappings,
-  createGitHubPrIdentity,
-  createIsolatedMcpService,
-  createJobManager,
-  createSessionServices,
-  createSlackApi,
-  createSlackBridge
-} from "./services/service-components.js";
+import { configureServiceLogger, createAgentRuntime, createCodexBroker, createDiskPressureCleanup, createGitHubAuthorMappings, createGitHubPrIdentity, createIsolatedMcpService, createJobManager, createSessionServices, createSlackApi, createSlackBridge } from "./services/service-components.js";
 
 export async function startService(): Promise<{
   readonly stop: () => Promise<void>;
@@ -30,31 +18,31 @@ export async function startService(): Promise<{
   const githubAuthorMappings = await createGitHubAuthorMappings(config);
   const githubPrIdentity = await createGitHubPrIdentity(config);
   const authProfiles = new AuthProfileService({
-    config
+    config,
   });
   const codexBroker = createCodexBroker(config);
   const agentRuntime = createAgentRuntime({
     config,
     codex: codexBroker,
     sessions: sessionManager,
-    authProfiles
+    authProfiles,
   });
   const bridge = createSlackBridge({
     config,
     sessions: sessionManager,
     agentRuntime,
-    githubPrIdentity
+    githubPrIdentity,
   });
   const isolatedMcp = createIsolatedMcpService(config);
   const jobManager = createJobManager({
     config,
     sessions: sessionManager,
-    bridge
+    bridge,
   });
   const diskCleanup = createDiskPressureCleanup({
     config,
     sessions: sessionManager,
-    jobManager
+    jobManager,
   });
   const adminService = new AdminService({
     config,
@@ -64,7 +52,7 @@ export async function startService(): Promise<{
     githubAuthorMappings,
     githubPrIdentity,
     startedAt,
-    slackConversations: createSlackApi(config)
+    slackConversations: createSlackApi(config),
   });
   const server = http.createServer(
     createHttpHandler({
@@ -72,8 +60,8 @@ export async function startService(): Promise<{
       bridge,
       isolatedMcp,
       jobManager,
-      config
-    })
+      config,
+    }),
   );
 
   try {
@@ -101,7 +89,7 @@ export async function startService(): Promise<{
   logger.info("Service booted", {
     port: config.port,
     sessionsRoot: config.sessionsRoot,
-    reposRoot: config.reposRoot
+    reposRoot: config.reposRoot,
   });
 
   return {
@@ -119,13 +107,13 @@ export async function startService(): Promise<{
           resolve();
         });
       });
-    }
+    },
   };
 }
 
 startService().catch((error: unknown) => {
   logger.error("Fatal startup error", {
-    error: error instanceof Error ? error.message : String(error)
+    error: error instanceof Error ? error.message : String(error),
   });
   process.exit(1);
 });

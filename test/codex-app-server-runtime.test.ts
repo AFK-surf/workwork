@@ -14,7 +14,7 @@ const TEST_SESSION: SlackSessionRecord = {
   agentSessionId: "thread-1",
   activeTurnId: "turn-1",
   createdAt: "2026-05-09T00:00:00.000Z",
-  updatedAt: "2026-05-09T00:00:00.000Z"
+  updatedAt: "2026-05-09T00:00:00.000Z",
 };
 
 describe("CodexAppServerRuntime", () => {
@@ -27,7 +27,7 @@ describe("CodexAppServerRuntime", () => {
       item: {
         type: "commandExecution",
         id: "call-1",
-        command: "/bin/zsh -lc \"pnpm test\"",
+        command: '/bin/zsh -lc "pnpm test"',
         cwd: "/repo",
         processId: "123",
         source: "unifiedExecStartup",
@@ -35,8 +35,8 @@ describe("CodexAppServerRuntime", () => {
         commandActions: [{ type: "keyboard", key: "ctrl-c" }],
         aggregatedOutput: null,
         exitCode: null,
-        durationMs: null
-      }
+        durationMs: null,
+      },
     });
     codex.emit("notification", "item/completed", {
       threadId: "thread-1",
@@ -44,15 +44,15 @@ describe("CodexAppServerRuntime", () => {
       item: {
         type: "commandExecution",
         id: "call-1",
-        command: "/bin/zsh -lc \"pnpm test\"",
+        command: '/bin/zsh -lc "pnpm test"',
         cwd: "/repo",
         processId: "123",
         source: "unifiedExecStartup",
         status: "completed",
         aggregatedOutput: "PASS test",
         exitCode: 0,
-        durationMs: 240
-      }
+        durationMs: 240,
+      },
     });
 
     expect(events).toHaveLength(2);
@@ -66,13 +66,13 @@ describe("CodexAppServerRuntime", () => {
       input: {
         type: "commandExecution",
         id: "call-1",
-        command: "/bin/zsh -lc \"pnpm test\"",
+        command: '/bin/zsh -lc "pnpm test"',
         cwd: "/repo",
         processId: "123",
         source: "unifiedExecStartup",
         status: "inProgress",
-        commandActions: [{ type: "keyboard", key: "ctrl-c" }]
-      }
+        commandActions: [{ type: "keyboard", key: "ctrl-c" }],
+      },
     });
     expect(events[1]).toMatchObject({
       type: "agent.tool.completed",
@@ -85,15 +85,15 @@ describe("CodexAppServerRuntime", () => {
       output: {
         type: "commandExecution",
         id: "call-1",
-        command: "/bin/zsh -lc \"pnpm test\"",
+        command: '/bin/zsh -lc "pnpm test"',
         cwd: "/repo",
         processId: "123",
         source: "unifiedExecStartup",
         status: "completed",
         aggregatedOutput: "PASS test",
         exitCode: 0,
-        durationMs: 240
-      }
+        durationMs: 240,
+      },
     });
   });
 
@@ -106,11 +106,11 @@ describe("CodexAppServerRuntime", () => {
       item: {
         type: "commandExecution",
         id: "call-2",
-        command: "/bin/zsh -lc \"pnpm lint\"",
+        command: '/bin/zsh -lc "pnpm lint"',
         status: "completed",
         aggregatedOutput: "lint failed",
-        exitCode: 1
-      }
+        exitCode: 1,
+      },
     });
 
     expect(events).toEqual([
@@ -120,11 +120,11 @@ describe("CodexAppServerRuntime", () => {
         name: "exec_command",
         status: "failed",
         output: expect.objectContaining({
-          command: "/bin/zsh -lc \"pnpm lint\"",
+          command: '/bin/zsh -lc "pnpm lint"',
           exitCode: 1,
-          aggregatedOutput: "lint failed"
-        })
-      })
+          aggregatedOutput: "lint failed",
+        }),
+      }),
     ]);
   });
 
@@ -143,12 +143,12 @@ describe("CodexAppServerRuntime", () => {
           content: [
             {
               type: "output_text",
-              text: "我已经修好移动端布局。"
-            }
-          ]
+              text: "我已经修好移动端布局。",
+            },
+          ],
         },
-        timestamp: "2026-05-09T00:00:01.000Z"
-      }
+        timestamp: "2026-05-09T00:00:01.000Z",
+      },
     });
 
     expect(events).toEqual([
@@ -159,8 +159,8 @@ describe("CodexAppServerRuntime", () => {
         turnId: "turn-1",
         messageId: "message-1",
         role: "assistant",
-        text: "我已经修好移动端布局。"
-      })
+        text: "我已经修好移动端布局。",
+      }),
     ]);
   });
 
@@ -168,16 +168,14 @@ describe("CodexAppServerRuntime", () => {
     const switchedSession: SlackSessionRecord = {
       ...TEST_SESSION,
       agentSessionId: "thread-new",
-      activeTurnId: "turn-new"
+      activeTurnId: "turn-new",
     };
     const { codex, events } = createRuntimeFixture({
       sessions: {
         findSessionByWorkspace: vi.fn(() => undefined),
-        findSessionByAgentActivity: vi.fn(({ agentSessionId, turnId }) =>
-          agentSessionId === "thread-old" || turnId === "turn-old" ? switchedSession : undefined
-        ),
-        listSessions: vi.fn(() => [switchedSession])
-      } as never
+        findSessionByAgentActivity: vi.fn(({ agentSessionId, turnId }) => (agentSessionId === "thread-old" || turnId === "turn-old" ? switchedSession : undefined)),
+        listSessions: vi.fn(() => [switchedSession]),
+      } as never,
     });
 
     codex.emit("notification", "codex/event", {
@@ -192,11 +190,11 @@ describe("CodexAppServerRuntime", () => {
           content: [
             {
               type: "output_text",
-              text: "旧 turn 的迟到事件仍然属于这个 Slack thread。"
-            }
-          ]
-        }
-      }
+              text: "旧 turn 的迟到事件仍然属于这个 Slack thread。",
+            },
+          ],
+        },
+      },
     });
 
     expect(events).toEqual([
@@ -206,8 +204,8 @@ describe("CodexAppServerRuntime", () => {
         brokerSessionKey: TEST_SESSION.key,
         turnId: "turn-old",
         messageId: "message-late",
-        text: "旧 turn 的迟到事件仍然属于这个 Slack thread。"
-      })
+        text: "旧 turn 的迟到事件仍然属于这个 Slack thread。",
+      }),
     ]);
   });
 
@@ -223,18 +221,16 @@ describe("CodexAppServerRuntime", () => {
           type: "message",
           id: "message-empty",
           role: "assistant",
-          content: []
-        }
-      }
+          content: [],
+        },
+      },
     });
 
     expect(events).toEqual([]);
   });
 });
 
-function createRuntimeFixture(options?: {
-  readonly sessions?: unknown;
-}): {
+function createRuntimeFixture(options?: { readonly sessions?: unknown }): {
   readonly codex: EventEmitter;
   readonly events: AgentRuntimeEvent[];
 } {
@@ -250,19 +246,19 @@ function createRuntimeFixture(options?: {
         threadId: "thread-1",
         turnId: "turn-1",
         finalMessage: "",
-        aborted: false
-      })
+        aborted: false,
+      }),
     })),
     interrupt: vi.fn(async () => undefined),
-    readTurnResult: vi.fn(async () => null)
+    readTurnResult: vi.fn(async () => null),
   });
   const runtime = new CodexAppServerRuntime({
     codex: codex as never,
     sessions: (options?.sessions ?? {
       findSessionByWorkspace: vi.fn(() => undefined),
       findSessionByAgentActivity: vi.fn(() => undefined),
-      listSessions: vi.fn(() => [TEST_SESSION])
-    }) as never
+      listSessions: vi.fn(() => [TEST_SESSION]),
+    }) as never,
   });
   const events: AgentRuntimeEvent[] = [];
   runtime.on("event", (event: AgentRuntimeEvent) => {

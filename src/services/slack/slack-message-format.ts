@@ -1,12 +1,4 @@
-import type {
-  BackgroundJobEventPayload,
-  JsonLike,
-  ResolvedSlackThreadMessage,
-  SlackImageAttachment,
-  SlackInputMessage,
-  SlackUserIdentity,
-  UnexpectedTurnStopPayload
-} from "../../types.js";
+import type { BackgroundJobEventPayload, JsonLike, ResolvedSlackThreadMessage, SlackImageAttachment, SlackInputMessage, SlackUserIdentity, UnexpectedTurnStopPayload } from "../../types.js";
 
 interface SlackRenderableMessage {
   readonly messageTs?: string | undefined;
@@ -25,10 +17,7 @@ interface SlackRenderableMessage {
   readonly unexpectedTurnStop?: UnexpectedTurnStopPayload | undefined;
 }
 
-export function formatSlackMessageForAgent(
-  message: SlackInputMessage,
-  sender: SlackUserIdentity | null
-): string {
+export function formatSlackMessageForAgent(message: SlackInputMessage, sender: SlackUserIdentity | null): string {
   if (message.source === "background_job_event" && message.backgroundJob) {
     return formatBackgroundJobEventForAgent(message);
   }
@@ -51,24 +40,15 @@ export function formatSlackMessageForAgent(
     return currentMessageBlock;
   }
 
-  return [
-    message.contextText.trim(),
-    "Current Slack message requiring a response:",
-    currentMessageBlock
-  ].join("\n\n");
+  return [message.contextText.trim(), "Current Slack message requiring a response:", currentMessageBlock].join("\n\n");
 }
 
-export function formatSlackHistoryContextForAgent(
-  history: readonly ResolvedSlackThreadMessage[]
-): string | undefined {
+export function formatSlackHistoryContextForAgent(history: readonly ResolvedSlackThreadMessage[]): string | undefined {
   if (history.length === 0) {
     return undefined;
   }
 
-  const sections = [
-    "Earlier Slack thread context before the current message. Treat these history items as context only; do not reply to them individually.",
-    `history_count: ${history.length}`
-  ];
+  const sections = ["Earlier Slack thread context before the current message. Treat these history items as context only; do not reply to them individually.", `history_count: ${history.length}`];
 
   history.forEach((message, index) => {
     sections.push(`[history ${index + 1}]`);
@@ -86,25 +66,20 @@ export function formatSlackHistoryContextForAgent(
           mentionedUserIds: message.mentionedUserIds,
           mentionedUsers: message.mentionedUsers,
           images: message.images,
-          slackMessage: message.slackMessage
+          slackMessage: message.slackMessage,
         },
-        message.sender
-      )
+        message.sender,
+      ),
     );
   });
 
   return sections.join("\n\n");
 }
 
-function formatSlackMessageBlock(
-  message: SlackRenderableMessage,
-  sender: SlackUserIdentity | null
-): string {
+function formatSlackMessageBlock(message: SlackRenderableMessage, sender: SlackUserIdentity | null): string {
   const payload = buildSlackMessagePayload(message, sender);
 
-  const header = message.source === "thread_history"
-    ? "An earlier Slack thread message."
-    : "A new message arrived in the active Slack thread. Carefully judge whether it requires a reply or action from you.";
+  const header = message.source === "thread_history" ? "An earlier Slack thread message." : "A new message arrived in the active Slack thread. Carefully judge whether it requires a reply or action from you.";
 
   return `${header}\nstructured_message_json:\n\`\`\`json\n${JSON.stringify(payload, null, 2)}\n\`\`\``;
 }
@@ -116,11 +91,11 @@ function formatBackgroundJobEventForAgent(message: SlackInputMessage): string {
     job: {
       job_id: message.backgroundJob?.jobId,
       job_kind: message.backgroundJob?.jobKind,
-      event_kind: message.backgroundJob?.eventKind
+      event_kind: message.backgroundJob?.eventKind,
     },
     summary: message.backgroundJob?.summary ?? (message.text.trim() || "[no summary]"),
     details_text: message.backgroundJob?.detailsText,
-    details_json: message.backgroundJob?.detailsJson
+    details_json: message.backgroundJob?.detailsJson,
   };
 
   return [
@@ -132,7 +107,7 @@ function formatBackgroundJobEventForAgent(message: SlackInputMessage): string {
     "background_job_event_json:",
     "```json",
     JSON.stringify(payload, null, 2),
-    "```"
+    "```",
   ].join("\n");
 }
 
@@ -141,12 +116,9 @@ function formatUnexpectedTurnStopForAgent(message: SlackInputMessage): string {
     source: message.source,
     message_ts: message.messageTs,
     previous_turn: {
-      turn_id: message.unexpectedTurnStop?.turnId
+      turn_id: message.unexpectedTurnStop?.turnId,
     },
-    reason:
-      message.unexpectedTurnStop?.reason ??
-      message.text.trim() ??
-      "The previous run ended without an explicit final/block/wait state."
+    reason: message.unexpectedTurnStop?.reason ?? message.text.trim() ?? "The previous run ended without an explicit final/block/wait state.",
   };
 
   return [
@@ -162,7 +134,7 @@ function formatUnexpectedTurnStopForAgent(message: SlackInputMessage): string {
     "unexpected_turn_stop_json:",
     "```json",
     JSON.stringify(payload, null, 2),
-    "```"
+    "```",
   ].join("\n");
 }
 
@@ -170,34 +142,21 @@ function formatAdminSessionResetForAgent(message: SlackInputMessage): string {
   const payload = {
     source: message.source,
     message_ts: message.messageTs,
-    reason: message.text.trim() || "The broker admin reset this session."
+    reason: message.text.trim() || "The broker admin reset this session.",
   };
   const sections = [
     "The broker admin manually reset this Slack session.",
     "The previous agent thread/history was intentionally discarded. Treat this as a fresh agent session.",
-    "Use the Slack thread context below as the only prior context, continue from the latest user intent, and reply only if the current Slack state requires it."
+    "Use the Slack thread context below as the only prior context, continue from the latest user intent, and reply only if the current Slack state requires it.",
   ];
 
   if (message.contextText?.trim()) {
-    sections.push(
-      "",
-      "Current Slack thread context:",
-      message.contextText.trim()
-    );
+    sections.push("", "Current Slack thread context:", message.contextText.trim());
   } else {
-    sections.push(
-      "",
-      "No Slack thread context was available from the broker at reset time."
-    );
+    sections.push("", "No Slack thread context was available from the broker at reset time.");
   }
 
-  sections.push(
-    "",
-    "admin_session_reset_json:",
-    "```json",
-    JSON.stringify(payload, null, 2),
-    "```"
-  );
+  sections.push("", "admin_session_reset_json:", "```json", JSON.stringify(payload, null, 2), "```");
 
   return sections.join("\n");
 }
@@ -207,10 +166,9 @@ function formatRecoveredSlackBatchForAgent(message: SlackInputMessage): string {
   const payload = {
     source: message.source,
     recovery_kind: message.recoveryKind,
-    recovery_summary:
-      "The broker server restarted or reconnected. These are Slack thread messages that may have been missed while the broker was offline.",
+    recovery_summary: "The broker server restarted or reconnected. These are Slack thread messages that may have been missed while the broker was offline.",
     batch_message_count: batchMessages.length,
-    messages: batchMessages.map((entry) => buildSlackMessagePayload(entry, entry.sender ?? null))
+    messages: batchMessages.map((entry) => buildSlackMessagePayload(entry, entry.sender ?? null)),
   };
 
   return [
@@ -220,33 +178,27 @@ function formatRecoveredSlackBatchForAgent(message: SlackInputMessage): string {
     "recovered_message_batch_json:",
     "```json",
     JSON.stringify(payload, null, 2),
-    "```"
+    "```",
   ].join("\n");
 }
 
-function buildSlackMessagePayload(
-  message: SlackRenderableMessage,
-  sender: SlackUserIdentity | null
-): Record<string, unknown> {
+function buildSlackMessagePayload(message: SlackRenderableMessage, sender: SlackUserIdentity | null): Record<string, unknown> {
   return {
     source: message.source,
     message_ts: message.messageTs,
     sender: buildSenderPayload(message, sender),
-    mentioned_user_ids: message.mentionedUserIds && message.mentionedUserIds.length > 0
-      ? [...message.mentionedUserIds]
-      : undefined,
-    mentioned_user_mentions: message.mentionedUserIds && message.mentionedUserIds.length > 0
-      ? message.mentionedUserIds.map((userId) => `<@${userId}>`)
-      : undefined,
-    mentioned_users: message.mentionedUsers && message.mentionedUsers.length > 0
-      ? message.mentionedUsers.map((user) => ({
-        user_id: user.userId,
-        mention: user.mention,
-        display_name: user.displayName,
-        real_name: user.realName && user.realName !== user.displayName ? user.realName : undefined,
-        username: user.username && user.username !== user.displayName ? user.username : undefined
-      }))
-      : undefined,
+    mentioned_user_ids: message.mentionedUserIds && message.mentionedUserIds.length > 0 ? [...message.mentionedUserIds] : undefined,
+    mentioned_user_mentions: message.mentionedUserIds && message.mentionedUserIds.length > 0 ? message.mentionedUserIds.map((userId) => `<@${userId}>`) : undefined,
+    mentioned_users:
+      message.mentionedUsers && message.mentionedUsers.length > 0
+        ? message.mentionedUsers.map((user) => ({
+            user_id: user.userId,
+            mention: user.mention,
+            display_name: user.displayName,
+            real_name: user.realName && user.realName !== user.displayName ? user.realName : undefined,
+            username: user.username && user.username !== user.displayName ? user.username : undefined,
+          }))
+        : undefined,
     text: message.text || "[no text body]",
     text_with_resolved_mentions: resolveMentionText(message.text || "[no text body]", message.mentionedUsers),
     attachments: (message.images ?? []).map((attachment) => ({
@@ -260,10 +212,10 @@ function buildSlackMessagePayload(
       height: attachment.height,
       dimensions: formatImageDimensions(attachment),
       local_path: attachment.localPath,
-      download_error: attachment.downloadError
+      download_error: attachment.downloadError,
     })),
     slack_message: buildSelectedSlackPayload(message),
-    unexpected_turn_stop: message.unexpectedTurnStop
+    unexpected_turn_stop: message.unexpectedTurnStop,
   };
 }
 
@@ -277,23 +229,11 @@ function buildSelectedSlackPayload(message: SlackRenderableMessage): JsonLike | 
     return undefined;
   }
 
-  const selected = pickJsonFields(raw, [
-    "subtype",
-    "bot_id",
-    "app_id",
-    "username",
-    "text",
-    "attachments",
-    "blocks",
-    "files"
-  ]);
+  const selected = pickJsonFields(raw, ["subtype", "bot_id", "app_id", "username", "text", "attachments", "blocks", "files"]);
   return Object.keys(selected).length > 0 ? selected : undefined;
 }
 
-function buildSenderPayload(
-  message: SlackRenderableMessage,
-  sender: SlackUserIdentity | null
-): Record<string, unknown> {
+function buildSenderPayload(message: SlackRenderableMessage, sender: SlackUserIdentity | null): Record<string, unknown> {
   if (message.senderKind === "user" || (!message.senderKind && sender)) {
     return {
       kind: "user",
@@ -301,7 +241,7 @@ function buildSenderPayload(
       mention: `<@${message.userId}>`,
       display_name: sender?.displayName,
       real_name: sender?.realName && sender.realName !== sender.displayName ? sender.realName : undefined,
-      username: sender?.username && sender.username !== sender.displayName ? sender.username : undefined
+      username: sender?.username && sender.username !== sender.displayName ? sender.username : undefined,
     };
   }
 
@@ -310,7 +250,7 @@ function buildSenderPayload(
     sender_id: message.userId,
     bot_id: message.botId,
     app_id: message.appId,
-    username: message.senderUsername
+    username: message.senderUsername,
   };
 }
 
@@ -339,10 +279,7 @@ function toRecord(value: JsonLike | undefined): Record<string, JsonLike> | undef
   return value as Record<string, JsonLike>;
 }
 
-export function resolveMentionText(
-  text: string,
-  mentionedUsers?: readonly SlackUserIdentity[] | undefined
-): string {
+export function resolveMentionText(text: string, mentionedUsers?: readonly SlackUserIdentity[] | undefined): string {
   if (!mentionedUsers || mentionedUsers.length === 0) {
     return text;
   }

@@ -1,9 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import {
-  normalizeSlackFileAttachments,
-  SlackApi
-} from "../src/services/slack/slack-api.js";
+import { normalizeSlackFileAttachments, SlackApi } from "../src/services/slack/slack-api.js";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -22,8 +19,8 @@ describe("normalizeSlackFileAttachments", () => {
         thumb_1024: "https://example.com/thumb-1024.png",
         url_private_download: "https://example.com/original.png",
         original_w: 1600,
-        original_h: 900
-      }
+        original_h: 900,
+      },
     ]);
 
     expect(files).toEqual([
@@ -36,8 +33,8 @@ describe("normalizeSlackFileAttachments", () => {
         size: 12345,
         width: 1600,
         height: 900,
-        url: "https://example.com/thumb-1024.png"
-      }
+        url: "https://example.com/thumb-1024.png",
+      },
     ]);
   });
 
@@ -47,14 +44,14 @@ describe("normalizeSlackFileAttachments", () => {
         id: "F234",
         name: "report.pdf",
         mimetype: "application/pdf",
-        url_private_download: "https://example.com/file.pdf"
+        url_private_download: "https://example.com/file.pdf",
       },
       {
         id: "F345",
         name: "screen.svg",
         mimetype: "image/svg+xml",
-        url_private_download: "https://example.com/screen.svg"
-      }
+        url_private_download: "https://example.com/screen.svg",
+      },
     ]);
 
     expect(files).toMatchObject([
@@ -62,14 +59,14 @@ describe("normalizeSlackFileAttachments", () => {
         fileId: "F234",
         name: "report.pdf",
         mimetype: "application/pdf",
-        url: "https://example.com/file.pdf"
+        url: "https://example.com/file.pdf",
       },
       {
         fileId: "F345",
         name: "screen.svg",
         mimetype: "image/svg+xml",
-        url: "https://example.com/screen.svg"
-      }
+        url: "https://example.com/screen.svg",
+      },
     ]);
   });
 
@@ -78,25 +75,25 @@ describe("normalizeSlackFileAttachments", () => {
       null,
       {
         mimetype: "application/pdf",
-        url_private_download: "https://example.com/missing-id.pdf"
+        url_private_download: "https://example.com/missing-id.pdf",
       },
       {
         id: "F456",
         mimetype: "application/pdf",
-        url_private_download: "https://example.com/file.pdf"
+        url_private_download: "https://example.com/file.pdf",
       },
       {
         id: "F789",
-        mimetype: "image/jpeg"
-      }
+        mimetype: "image/jpeg",
+      },
     ]);
 
     expect(files).toEqual([
       {
         fileId: "F456",
         mimetype: "application/pdf",
-        url: "https://example.com/file.pdf"
-      }
+        url: "https://example.com/file.pdf",
+      },
     ]);
   });
 });
@@ -114,19 +111,19 @@ describe("SlackApi.uploadThreadFile", () => {
           JSON.stringify({
             ok: true,
             upload_url: "https://uploads.slack.test/upload/abc",
-            file_id: "F123"
+            file_id: "F123",
           }),
           {
             status: 200,
-            headers: { "content-type": "application/json" }
-          }
+            headers: { "content-type": "application/json" },
+          },
         );
       }
 
       if (url === "https://uploads.slack.test/upload/abc") {
         expect(init?.method).toBe("POST");
         expect(init?.headers).toMatchObject({
-          "content-type": "text/plain"
+          "content-type": "text/plain",
         });
         expect(Buffer.from((init?.body as Buffer) ?? []).toString("utf8")).toBe("hello world");
         return new Response("ok", { status: 200 });
@@ -152,14 +149,14 @@ describe("SlackApi.uploadThreadFile", () => {
                 permalink: "https://slack.test/files/F123",
                 url_private: "https://slack.test/private/F123",
                 url_private_download: "https://slack.test/private/F123/download",
-                size: 11
-              }
-            ]
+                size: 11,
+              },
+            ],
           }),
           {
             status: 200,
-            headers: { "content-type": "application/json" }
-          }
+            headers: { "content-type": "application/json" },
+          },
         );
       }
 
@@ -170,7 +167,7 @@ describe("SlackApi.uploadThreadFile", () => {
     const api = new SlackApi({
       baseUrl: "https://slack.test/api",
       appToken: "xapp-test",
-      botToken: "xoxb-test"
+      botToken: "xoxb-test",
     });
 
     const result = await api.uploadThreadFile({
@@ -180,7 +177,7 @@ describe("SlackApi.uploadThreadFile", () => {
       bytes: Buffer.from("hello world"),
       title: "Build report",
       initialComment: "upload done",
-      contentType: "text/plain"
+      contentType: "text/plain",
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(3);
@@ -192,7 +189,7 @@ describe("SlackApi.uploadThreadFile", () => {
       permalink: "https://slack.test/files/F123",
       privateUrl: "https://slack.test/private/F123",
       downloadUrl: "https://slack.test/private/F123/download",
-      size: 11
+      size: 11,
     });
   });
 });
@@ -215,7 +212,7 @@ describe("SlackApi.setAssistantThreadStatus", () => {
 
       return new Response(JSON.stringify({ ok: true }), {
         status: 200,
-        headers: { "content-type": "application/json" }
+        headers: { "content-type": "application/json" },
       });
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -223,13 +220,13 @@ describe("SlackApi.setAssistantThreadStatus", () => {
     const api = new SlackApi({
       baseUrl: "https://slack.test/api",
       appToken: "xapp-test",
-      botToken: "xoxb-test"
+      botToken: "xoxb-test",
     });
 
     await api.setAssistantThreadStatus({
       channelId: "C123",
       threadTs: "111.222",
-      status: "Reading files..."
+      status: "Reading files...",
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -254,13 +251,13 @@ describe("SlackApi.getConversationInfo", () => {
           channel: {
             id: "C123",
             name: "deep-review",
-            is_channel: true
-          }
+            is_channel: true,
+          },
         }),
         {
           status: 200,
-          headers: { "content-type": "application/json" }
-        }
+          headers: { "content-type": "application/json" },
+        },
       );
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -268,18 +265,18 @@ describe("SlackApi.getConversationInfo", () => {
     const api = new SlackApi({
       baseUrl: "https://slack.test/api",
       appToken: "xapp-test",
-      botToken: "xoxb-test"
+      botToken: "xoxb-test",
     });
 
     await expect(api.getConversationInfo("C123")).resolves.toEqual({
       channelId: "C123",
       name: "deep-review",
-      channelType: "channel"
+      channelType: "channel",
     });
     await expect(api.getConversationInfo("C123")).resolves.toEqual({
       channelId: "C123",
       name: "deep-review",
-      channelType: "channel"
+      channelType: "channel",
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
@@ -308,16 +305,16 @@ describe("SlackApi.listThreadMessages", () => {
               attachments: [
                 {
                   title: "CUE-1180 感觉 ai chat webview 帧率很低",
-                  title_link: "https://linear.app/surf-cue/issue/CUE-1180"
-                }
-              ]
-            }
-          ]
+                  title_link: "https://linear.app/surf-cue/issue/CUE-1180",
+                },
+              ],
+            },
+          ],
         }),
         {
           status: 200,
-          headers: { "content-type": "application/json" }
-        }
+          headers: { "content-type": "application/json" },
+        },
       );
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -325,13 +322,13 @@ describe("SlackApi.listThreadMessages", () => {
     const api = new SlackApi({
       baseUrl: "https://slack.test/api",
       appToken: "xapp-test",
-      botToken: "xoxb-test"
+      botToken: "xoxb-test",
     });
 
     const messages = await api.listThreadMessages({
       channelId: "C123",
       rootThreadTs: "111.111",
-      channelType: "channel"
+      channelType: "channel",
     });
 
     expect(messages).toEqual([
@@ -357,11 +354,11 @@ describe("SlackApi.listThreadMessages", () => {
           attachments: [
             {
               title: "CUE-1180 感觉 ai chat webview 帧率很低",
-              title_link: "https://linear.app/surf-cue/issue/CUE-1180"
-            }
-          ]
-        }
-      }
+              title_link: "https://linear.app/surf-cue/issue/CUE-1180",
+            },
+          ],
+        },
+      },
     ]);
   });
 });
@@ -374,28 +371,31 @@ describe("SlackApi.getUserIdentity", () => {
         throw new Error(`Unexpected fetch ${url}`);
       }
 
-      return new Response(JSON.stringify({
-        ok: true,
-        user: {
-          id: "U123",
-          name: "alice",
-          real_name: "Alice Example",
-          profile: {
-            display_name: "Alice Slack",
-            email: "alice@example.com"
-          }
-        }
-      }), {
-        status: 200,
-        headers: { "content-type": "application/json" }
-      });
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          user: {
+            id: "U123",
+            name: "alice",
+            real_name: "Alice Example",
+            profile: {
+              display_name: "Alice Slack",
+              email: "alice@example.com",
+            },
+          },
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      );
     });
     vi.stubGlobal("fetch", fetchMock);
 
     const api = new SlackApi({
       baseUrl: "https://slack.test/api",
       appToken: "xapp-test",
-      botToken: "xoxb-test"
+      botToken: "xoxb-test",
     });
 
     await expect(api.getUserIdentity("U123")).resolves.toEqual({
@@ -404,7 +404,7 @@ describe("SlackApi.getUserIdentity", () => {
       username: "alice",
       displayName: "Alice Slack",
       realName: "Alice Example",
-      email: "alice@example.com"
+      email: "alice@example.com",
     });
   });
 });
@@ -425,12 +425,12 @@ describe("SlackApi.getPermalink", () => {
       return new Response(
         JSON.stringify({
           ok: true,
-          permalink: "https://workspace.slack.com/archives/C123/p111222?thread_ts=111.222&cid=C123"
+          permalink: "https://workspace.slack.com/archives/C123/p111222?thread_ts=111.222&cid=C123",
         }),
         {
           status: 200,
-          headers: { "content-type": "application/json" }
-        }
+          headers: { "content-type": "application/json" },
+        },
       );
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -438,13 +438,15 @@ describe("SlackApi.getPermalink", () => {
     const api = new SlackApi({
       baseUrl: "https://slack.test/api",
       appToken: "xapp-test",
-      botToken: "xoxb-test"
+      botToken: "xoxb-test",
     });
 
-    await expect(api.getPermalink({
-      channelId: "C123",
-      messageTs: "111.222"
-    })).resolves.toBe("https://workspace.slack.com/archives/C123/p111222?thread_ts=111.222&cid=C123");
+    await expect(
+      api.getPermalink({
+        channelId: "C123",
+        messageTs: "111.222",
+      }),
+    ).resolves.toBe("https://workspace.slack.com/archives/C123/p111222?thread_ts=111.222&cid=C123");
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
@@ -461,7 +463,7 @@ describe("SlackApi interactivity helpers", () => {
         expect(String(init?.body)).toContain("blocks=");
         return new Response(JSON.stringify({ ok: true, message_ts: "111.333" }), {
           status: 200,
-          headers: { "content-type": "application/json" }
+          headers: { "content-type": "application/json" },
         });
       }
 
@@ -470,7 +472,7 @@ describe("SlackApi interactivity helpers", () => {
         expect(String(init?.body)).toContain("view=");
         return new Response(JSON.stringify({ ok: true }), {
           status: 200,
-          headers: { "content-type": "application/json" }
+          headers: { "content-type": "application/json" },
         });
       }
 
@@ -481,20 +483,24 @@ describe("SlackApi interactivity helpers", () => {
     const api = new SlackApi({
       baseUrl: "https://slack.test/api",
       appToken: "xapp-test",
-      botToken: "xoxb-test"
+      botToken: "xoxb-test",
     });
 
-    await expect(api.postEphemeral({
-      channelId: "C123",
-      threadTs: "111.222",
-      userId: "U123",
-      text: "Configure co-authors",
-      blocks: [{ type: "section", text: { type: "mrkdwn", text: "hello" } }]
-    })).resolves.toBe("111.333");
+    await expect(
+      api.postEphemeral({
+        channelId: "C123",
+        threadTs: "111.222",
+        userId: "U123",
+        text: "Configure co-authors",
+        blocks: [{ type: "section", text: { type: "mrkdwn", text: "hello" } }],
+      }),
+    ).resolves.toBe("111.333");
 
-    await expect(api.openView({
-      triggerId: "trigger-1",
-      view: { type: "modal", title: { type: "plain_text", text: "Demo" } }
-    })).resolves.toBeUndefined();
+    await expect(
+      api.openView({
+        triggerId: "trigger-1",
+        view: { type: "modal", title: { type: "plain_text", text: "Demo" } },
+      }),
+    ).resolves.toBeUndefined();
   });
 });

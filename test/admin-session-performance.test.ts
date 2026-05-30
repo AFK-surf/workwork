@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { loadConfig } from "../src/config.js";
 import { createHttpHandler } from "../src/http/router.js";
+import { readCompanionSource } from "./source-helpers.js";
 import { AdminService } from "../src/services/admin-service.js";
 import { GitHubAuthorMappingService } from "../src/services/github-author-mapping-service.js";
 import { SessionManager } from "../src/services/session-manager.js";
@@ -24,9 +25,9 @@ describe("admin session performance contract", () => {
       tempDirs.splice(0).map((directory) =>
         fs.rm(directory, {
           force: true,
-          recursive: true
-        })
-      )
+          recursive: true,
+        }),
+      ),
     );
   });
 
@@ -46,7 +47,7 @@ describe("admin session performance contract", () => {
     const config = loadConfig({
       SLACK_APP_TOKEN: "xapp-test",
       SLACK_BOT_TOKEN: "xoxb-test",
-      DATA_ROOT: dataRoot
+      DATA_ROOT: dataRoot,
     } as NodeJS.ProcessEnv);
 
     const service = new AdminService({
@@ -60,8 +61,8 @@ describe("admin session performance contract", () => {
             rootThreadTs: "111.222",
             workspacePath: "/tmp/session",
             createdAt: "2026-03-19T00:00:00.000Z",
-            updatedAt: "2026-03-19T00:00:00.000Z"
-          }
+            updatedAt: "2026-03-19T00:00:00.000Z",
+          },
         ],
         listInboundMessages: () => [],
         listBackgroundJobs: () => [],
@@ -82,8 +83,8 @@ describe("admin session performance contract", () => {
             updatedAt: "2026-03-19T00:00:02.000Z",
             lastTurnAt: "2026-03-19T00:00:02.000Z",
             model: "test-model",
-            effort: "low"
-          }
+            effort: "low",
+          },
         ],
         listAgentTurnUsage: () => {
           throw new Error("session summaries must not scan raw turn usage");
@@ -93,29 +94,29 @@ describe("admin session performance contract", () => {
         },
         load: async () => {
           throw new Error("session summaries must not refresh session directories");
-        }
+        },
       } as never,
       authProfiles: {
         listProfilesStatus: async () => ({
           managedRoot: path.join(dataRoot, "auth-profiles"),
           profilesRoot: path.join(dataRoot, "auth-profiles", "docker", "profiles"),
-          profiles: []
-        })
+          profiles: [],
+        }),
       } as never,
       githubAuthorMappings: {
         load: async () => {},
-        listMappings: () => []
+        listMappings: () => [],
       } as never,
       runtime: {
         readAccountSummary: async () => ({
           account: null,
-          requiresOpenaiAuth: true
+          requiresOpenaiAuth: true,
         }),
         readAccountRateLimits: async () => ({
           rateLimits: null,
-          rateLimitsByLimitId: {}
-        })
-      } as never
+          rateLimitsByLimitId: {},
+        }),
+      } as never,
     });
 
     const summaries = await service.listSessionSummaries();
@@ -125,10 +126,10 @@ describe("admin session performance contract", () => {
           key: "C123:111.222",
           usage: {
             totalTokens: 16,
-            turnCount: 1
-          }
-        }
-      ]
+            turnCount: 1,
+          },
+        },
+      ],
     });
     const session = (summaries.sessions as Array<Record<string, unknown>>)[0]!;
     expect(session).not.toHaveProperty("workspacePath");
@@ -143,7 +144,7 @@ describe("admin session performance contract", () => {
     const config = loadConfig({
       SLACK_APP_TOKEN: "xapp-test",
       SLACK_BOT_TOKEN: "xoxb-test",
-      DATA_ROOT: dataRoot
+      DATA_ROOT: dataRoot,
     } as NodeJS.ProcessEnv);
     await fs.mkdir(config.codexHome, { recursive: true });
     await fs.mkdir(config.logDir, { recursive: true });
@@ -151,7 +152,7 @@ describe("admin session performance contract", () => {
     const stateStore = new StateStore(config.stateDir, config.sessionsRoot);
     const sessions = new SessionManager({
       stateStore,
-      sessionsRoot: config.sessionsRoot
+      sessionsRoot: config.sessionsRoot,
     });
     await sessions.load();
     await sessions.ensureSession("C123", "111.222");
@@ -169,7 +170,7 @@ describe("admin session performance contract", () => {
         status: "completed",
         role: "assistant",
         createdAt: "2026-03-19T00:00:00.000Z",
-        updatedAt: "2026-03-19T00:00:00.000Z"
+        updatedAt: "2026-03-19T00:00:00.000Z",
       });
     }
 
@@ -181,61 +182,55 @@ describe("admin session performance contract", () => {
         listProfilesStatus: async () => ({
           managedRoot: path.join(dataRoot, "auth-profiles"),
           profilesRoot: path.join(dataRoot, "auth-profiles", "docker", "profiles"),
-          profiles: []
-        })
+          profiles: [],
+        }),
       } as never,
       githubAuthorMappings: new GitHubAuthorMappingService({ stateDir: dataRoot }),
       runtime: {
         readAccountSummary: async () => ({
           account: null,
-          requiresOpenaiAuth: true
+          requiresOpenaiAuth: true,
         }),
         readAccountRateLimits: async () => ({
           rateLimits: null,
-          rateLimitsByLimitId: {}
-        })
-      } as never
+          rateLimitsByLimitId: {},
+        }),
+      } as never,
     });
     (sessions as unknown as { load: () => Promise<void> }).load = async () => {
       throw new Error("timeline reads must not refresh session directories");
     };
 
     const first = await service.getSessionTimeline("C123:111.222", { limit: 25 });
-    const firstTraceSequences = (first.events as Array<Record<string, unknown>>)
-      .map((event) => event.sequence)
-      .filter((sequence): sequence is number => typeof sequence === "number");
+    const firstTraceSequences = (first.events as Array<Record<string, unknown>>).map((event) => event.sequence).filter((sequence): sequence is number => typeof sequence === "number");
     expect(first.events).toHaveLength(25);
-    expect((first.events as Array<Record<string, unknown>>).map((event) => event.type)).toEqual(
-      Array.from({ length: 25 }, () => "agent_assistant_message")
-    );
+    expect((first.events as Array<Record<string, unknown>>).map((event) => event.type)).toEqual(Array.from({ length: 25 }, () => "agent_assistant_message"));
     expect(firstTraceSequences.slice(0, 3)).toEqual([96, 97, 98]);
     expect(firstTraceSequences.at(-1)).toBe(120);
     const firstEvents = first.events as Array<Record<string, unknown>>;
     expect(firstEvents[0]).toMatchObject({
-      detailAvailable: true
+      detailAvailable: true,
     });
     expect(firstEvents[0]).not.toHaveProperty("detail");
     expect(first.page).toMatchObject({
       limit: 25,
       hasMore: true,
-      nextBeforeSequence: 96
+      nextBeforeSequence: 96,
     });
     expect(first.trace).toMatchObject({
       eventCount: 120,
       categories: {
-        agent_assistant_message: 120
-      }
+        agent_assistant_message: 120,
+      },
     });
 
     const older = await service.getSessionTimeline("C123:111.222", { limit: 25, beforeSequence: 96 });
-    const olderTraceSequences = (older.events as Array<Record<string, unknown>>)
-      .map((event) => event.sequence)
-      .filter((sequence): sequence is number => typeof sequence === "number");
+    const olderTraceSequences = (older.events as Array<Record<string, unknown>>).map((event) => event.sequence).filter((sequence): sequence is number => typeof sequence === "number");
     expect(olderTraceSequences.slice(0, 3)).toEqual([71, 72, 73]);
     expect(olderTraceSequences.at(-1)).toBe(95);
     expect(older.page).toMatchObject({
       hasMore: true,
-      nextBeforeSequence: 71
+      nextBeforeSequence: 71,
     });
 
     const detail = await service.getSessionTimelineEvent("C123:111.222", "trace-120");
@@ -243,8 +238,8 @@ describe("admin session performance contract", () => {
       ok: true,
       event: {
         id: "trace-120",
-        detail: "detail 120"
-      }
+        detail: "detail 120",
+      },
     });
   });
 
@@ -254,7 +249,7 @@ describe("admin session performance contract", () => {
     const config = loadConfig({
       SLACK_APP_TOKEN: "xapp-test",
       SLACK_BOT_TOKEN: "xoxb-test",
-      DATA_ROOT: dataRoot
+      DATA_ROOT: dataRoot,
     } as NodeJS.ProcessEnv);
     await fs.mkdir(config.codexHome, { recursive: true });
     await fs.mkdir(config.logDir, { recursive: true });
@@ -262,7 +257,7 @@ describe("admin session performance contract", () => {
     const stateStore = new StateStore(config.stateDir, config.sessionsRoot);
     const sessions = new SessionManager({
       stateStore,
-      sessionsRoot: config.sessionsRoot
+      sessionsRoot: config.sessionsRoot,
     });
     await sessions.load();
     await sessions.ensureSession("C123", "111.222");
@@ -280,7 +275,7 @@ describe("admin session performance contract", () => {
         status: "completed",
         role: "assistant",
         createdAt: "2026-03-19T00:00:00.000Z",
-        updatedAt: "2026-03-19T00:00:00.000Z"
+        updatedAt: "2026-03-19T00:00:00.000Z",
       });
     }
     for (let index = 61; index <= 90; index += 1) {
@@ -297,7 +292,7 @@ describe("admin session performance contract", () => {
         status: "completed",
         role: "assistant",
         createdAt: "2026-03-19T00:00:00.000Z",
-        updatedAt: "2026-03-19T00:00:00.000Z"
+        updatedAt: "2026-03-19T00:00:00.000Z",
       });
     }
 
@@ -309,49 +304,48 @@ describe("admin session performance contract", () => {
         listProfilesStatus: async () => ({
           managedRoot: path.join(dataRoot, "auth-profiles"),
           profilesRoot: path.join(dataRoot, "auth-profiles", "docker", "profiles"),
-          profiles: []
-        })
+          profiles: [],
+        }),
       } as never,
       githubAuthorMappings: new GitHubAuthorMappingService({ stateDir: dataRoot }),
       runtime: {
         readAccountSummary: async () => ({
           account: null,
-          requiresOpenaiAuth: true
+          requiresOpenaiAuth: true,
         }),
         readAccountRateLimits: async () => ({
           rateLimits: null,
-          rateLimitsByLimitId: {}
-        })
-      } as never
+          rateLimitsByLimitId: {},
+        }),
+      } as never,
     });
 
     const page = await service.getSessionTimeline("C123:111.222", { limit: 25 });
-    const sequences = (page.events as Array<Record<string, unknown>>)
-      .map((event) => event.sequence)
-      .filter((sequence): sequence is number => typeof sequence === "number");
+    const sequences = (page.events as Array<Record<string, unknown>>).map((event) => event.sequence).filter((sequence): sequence is number => typeof sequence === "number");
     expect(page.events).toHaveLength(25);
-    expect((page.events as Array<Record<string, unknown>>).map((event) => event.type)).toEqual(
-      Array.from({ length: 25 }, () => "agent_assistant_message")
-    );
+    expect((page.events as Array<Record<string, unknown>>).map((event) => event.type)).toEqual(Array.from({ length: 25 }, () => "agent_assistant_message"));
     expect(sequences[0]).toBe(36);
     expect(sequences.at(-1)).toBe(60);
     expect(page.page).toMatchObject({
       hasMore: true,
-      nextBeforeSequence: 36
+      nextBeforeSequence: 36,
     });
   });
 
   it("passes timeline pagination query parameters through the HTTP route", async () => {
     const calls: Array<Record<string, unknown>> = [];
-    const baseUrl = await startAdminServer({
-      SLACK_APP_TOKEN: "xapp-test",
-      SLACK_BOT_TOKEN: "xoxb-test"
-    } as NodeJS.ProcessEnv, {
-      getSessionTimeline: async (sessionKey: string, options: Record<string, unknown>) => {
-        calls.push({ sessionKey, ...options });
-        return { ok: true, events: [], page: { limit: options.limit, hasMore: false } };
-      }
-    });
+    const baseUrl = await startAdminServer(
+      {
+        SLACK_APP_TOKEN: "xapp-test",
+        SLACK_BOT_TOKEN: "xoxb-test",
+      } as NodeJS.ProcessEnv,
+      {
+        getSessionTimeline: async (sessionKey: string, options: Record<string, unknown>) => {
+          calls.push({ sessionKey, ...options });
+          return { ok: true, events: [], page: { limit: options.limit, hasMore: false } };
+        },
+      },
+    );
 
     const response = await fetch(`${baseUrl}/admin/api/sessions/${encodeURIComponent("C123:111.222")}/timeline?limit=25&before_sequence=96`);
     expect(response.status).toBe(200);
@@ -362,13 +356,13 @@ describe("admin session performance contract", () => {
       {
         sessionKey: "C123:111.222",
         limit: 25,
-        beforeSequence: 96
-      }
+        beforeSequence: 96,
+      },
     ]);
   });
 
   it("keeps the React timeline request bounded and exposes load-older UI", async () => {
-    const source = await fs.readFile(new URL("../src/admin-ui/session-view.tsx", import.meta.url), "utf8");
+    const source = await readCompanionSource(new URL("../src/admin-ui/session-view.tsx", import.meta.url));
     expect(source).toContain("TIMELINE_PAGE_SIZE");
     expect(source).toContain("before_sequence");
     expect(source).toContain("加载更早活动");
@@ -387,8 +381,8 @@ describe("admin session performance contract", () => {
         bridge: {} as never,
         isolatedMcp: {} as never,
         jobManager: {} as never,
-        config
-      })
+        config,
+      }),
     );
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     cleanups.push(async () => {

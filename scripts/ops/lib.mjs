@@ -17,30 +17,19 @@ function formatCommand(command, args) {
 }
 
 export function runCommand(command, args, options = {}) {
-  const {
-    capture = false,
-    cwd = repoRoot,
-    env = undefined,
-    input = undefined
-  } = options;
+  const { capture = false, cwd = repoRoot, env = undefined, input = undefined } = options;
 
   const result = spawnSync(command, args, {
     cwd,
     encoding: "utf8",
     env: env ? { ...process.env, ...env } : process.env,
     input,
-    stdio: capture ? ["pipe", "pipe", "pipe"] : "inherit"
+    stdio: capture ? ["pipe", "pipe", "pipe"] : "inherit",
   });
 
   if (result.status !== 0) {
-    const details = capture
-      ? [result.stdout, result.stderr].filter(Boolean).join("\n").trim()
-      : "";
-    throw new Error(
-      `Command failed (${result.status ?? "null"}): ${formatCommand(command, args)}${
-        details ? `\n${details}` : ""
-      }`
-    );
+    const details = capture ? [result.stdout, result.stderr].filter(Boolean).join("\n").trim() : "";
+    throw new Error(`Command failed (${result.status ?? "null"}): ${formatCommand(command, args)}${details ? `\n${details}` : ""}`);
   }
 
   return capture ? result.stdout.trim() : "";
@@ -66,8 +55,7 @@ export function getDataRootSource(inspect) {
 }
 
 export function getPublishedPort(inspect, containerPort = "3000/tcp") {
-  const bindings =
-    inspect.NetworkSettings?.Ports?.[containerPort] ?? inspect.HostConfig?.PortBindings?.[containerPort];
+  const bindings = inspect.NetworkSettings?.Ports?.[containerPort] ?? inspect.HostConfig?.PortBindings?.[containerPort];
   const firstBinding = Array.isArray(bindings) ? bindings[0] : undefined;
   if (!firstBinding?.HostPort) {
     throw new Error(`Could not resolve published port for ${containerPort}`);
@@ -81,21 +69,23 @@ export async function readSessionStatsFromHost(dataRootSource) {
   if (!fs.existsSync(dbPath)) {
     return {
       activeCount: 0,
-      sessionCount: 0
+      sessionCount: 0,
     };
   }
 
   const db = new DatabaseSync(dbPath, { readOnly: true });
   try {
-    const row = db.prepare(`
+    const row = db
+      .prepare(`
       SELECT
         COUNT(*) AS sessionCount,
         SUM(CASE WHEN active_turn_id IS NOT NULL THEN 1 ELSE 0 END) AS activeCount
       FROM sessions
-    `).get();
+    `)
+      .get();
     return {
       activeCount: Number(row?.activeCount ?? 0),
-      sessionCount: Number(row?.sessionCount ?? 0)
+      sessionCount: Number(row?.sessionCount ?? 0),
     };
   } finally {
     db.close();
@@ -104,7 +94,7 @@ export async function readSessionStatsFromHost(dataRootSource) {
 
 function toMountArg(mount) {
   const type = mount.Type ?? "bind";
-  const source = type === "volume" ? mount.Name ?? mount.Source : mount.Source;
+  const source = type === "volume" ? (mount.Name ?? mount.Source) : mount.Source;
   if (!source || !mount.Destination) {
     throw new Error(`Unsupported mount: ${JSON.stringify(mount)}`);
   }
@@ -149,7 +139,7 @@ export function getRunArgumentsFromInspect(inspect) {
   return {
     mountArgs: (inspect.Mounts ?? []).map(toMountArg),
     portArgs: toPortArgs(inspect),
-    restartPolicy: getRestartPolicy(inspect)
+    restartPolicy: getRestartPolicy(inspect),
   };
 }
 
@@ -161,13 +151,13 @@ export async function createTempEnvFile(inspect) {
     envFile,
     cleanup: async () => {
       await fsp.rm(tempDir, { recursive: true, force: true });
-    }
+    },
   };
 }
 
 export function dockerExecNode(containerName, source) {
   return runCommand("docker", ["exec", containerName, "node", "-e", source], {
-    capture: true
+    capture: true,
   });
 }
 
@@ -219,7 +209,7 @@ export async function checkContainer(containerName, options = {}) {
 
       return payload;
     },
-    options
+    options,
   );
 
   const readyPayload = await retryUntil(
@@ -230,17 +220,17 @@ export async function checkContainer(containerName, options = {}) {
         [
           'fetch("http://127.0.0.1:4590/readyz")',
           "  .then(async (response) => {",
-          '    const text = await response.text();',
-          '    console.log(JSON.stringify({ status: response.status, body: text }));',
+          "    const text = await response.text();",
+          "    console.log(JSON.stringify({ status: response.status, body: text }));",
           "    if (!response.ok) process.exit(1);",
           "  })",
           "  .catch((error) => {",
           "    console.error(error.stack || String(error));",
           "    process.exit(1);",
-          "  });"
-        ].join("\n")
+          "  });",
+        ].join("\n"),
       ),
-    options
+    options,
   );
 
   const fileChecks = JSON.parse(
@@ -258,9 +248,9 @@ export async function checkContainer(containerName, options = {}) {
         "];",
         "const result = Object.fromEntries(checks.map((item) => [item, fs.existsSync(item)]));",
         "result.runtimeAgentLink = fs.readlinkSync('/app/.data/runtime-home/.codex/AGENT.md');",
-        "console.log(JSON.stringify(result));"
-      ].join("\n")
-    )
+        "console.log(JSON.stringify(result));",
+      ].join("\n"),
+    ),
   );
 
   const missing = Object.entries(fileChecks)
@@ -274,19 +264,15 @@ export async function checkContainer(containerName, options = {}) {
     "startup log markers",
     async () => {
       const logs = runCommand("docker", ["logs", "--tail", String(options.logsTail ?? 200), containerName], {
-        capture: true
+        capture: true,
       });
-      const requiredLogMarkers = [
-        "Codex app-server client connected",
-        "Connected to Slack Socket Mode",
-        "Service booted"
-      ];
+      const requiredLogMarkers = ["Codex app-server client connected", "Connected to Slack Socket Mode", "Service booted"];
       const missingMarkers = requiredLogMarkers.filter((marker) => !logs.includes(marker));
       if (missingMarkers.length > 0) {
         throw new Error(`Missing expected log markers: ${missingMarkers.join(", ")}`);
       }
     },
-    options
+    options,
   );
 
   const dataRootSource = getDataRootSource(inspect);
@@ -299,7 +285,7 @@ export async function checkContainer(containerName, options = {}) {
     sessionStats,
     healthPayload,
     readyPayload: JSON.parse(readyPayload),
-    runtimeAgentLink: fileChecks.runtimeAgentLink
+    runtimeAgentLink: fileChecks.runtimeAgentLink,
   };
 }
 
@@ -314,7 +300,7 @@ function readDetailedStateFromSqlite(dataRootSource) {
     return {
       sessions: [],
       inboundMessages: [],
-      backgroundJobs: []
+      backgroundJobs: [],
     };
   }
 
@@ -323,7 +309,7 @@ function readDetailedStateFromSqlite(dataRootSource) {
     return {
       sessions: db.prepare("SELECT * FROM sessions ORDER BY created_at ASC").all().map(sessionFromRow),
       inboundMessages: db.prepare("SELECT * FROM inbound_messages ORDER BY CAST(message_ts AS REAL), message_ts").all().map(inboundMessageFromRow),
-      backgroundJobs: db.prepare("SELECT * FROM background_jobs ORDER BY created_at ASC").all().map(backgroundJobFromRow)
+      backgroundJobs: db.prepare("SELECT * FROM background_jobs ORDER BY created_at ASC").all().map(backgroundJobFromRow),
     };
   } finally {
     db.close();
@@ -370,22 +356,22 @@ async function readRecentBrokerLogRecords(logsRoot, limit) {
     }
     throw error;
   });
-  const files = await Promise.all(entries
-    .filter((entry) => entry.isFile() && entry.name.endsWith(".jsonl"))
-    .map(async (entry) => {
-      const filePath = path.join(brokerLogRoot, entry.name);
-      const stat = await fsp.stat(filePath);
-      return {
-        path: filePath,
-        mtimeMs: stat.mtimeMs
-      };
-    }));
+  const files = await Promise.all(
+    entries
+      .filter((entry) => entry.isFile() && entry.name.endsWith(".jsonl"))
+      .map(async (entry) => {
+        const filePath = path.join(brokerLogRoot, entry.name);
+        const stat = await fsp.stat(filePath);
+        return {
+          path: filePath,
+          mtimeMs: stat.mtimeMs,
+        };
+      }),
+  );
   const chunks = [];
   let recordCount = 0;
 
-  for (const file of files.sort((left, right) =>
-    right.mtimeMs - left.mtimeMs || right.path.localeCompare(left.path)
-  )) {
+  for (const file of files.sort((left, right) => right.mtimeMs - left.mtimeMs || right.path.localeCompare(left.path))) {
     const records = await readLastJsonlLines(file.path, limit);
     chunks.push(records);
     recordCount += records.length;
@@ -401,19 +387,11 @@ export async function readDetailedStateFromHost(dataRootSource, options = {}) {
   const openInboundLimit = options.openInboundLimit ?? 20;
   const logLineLimit = options.logLineLimit ?? 40;
   const logsRoot = path.join(dataRootSource, "logs");
-  const {
-    sessions,
-    inboundMessages,
-    backgroundJobs
-  } = readDetailedStateFromSqlite(dataRootSource);
+  const { sessions, inboundMessages, backgroundJobs } = readDetailedStateFromSqlite(dataRootSource);
 
-  const activeSessions = sessions
-    .filter((session) => session?.activeTurnId)
-    .sort((left, right) => String(right.updatedAt ?? "").localeCompare(String(left.updatedAt ?? "")));
+  const activeSessions = sessions.filter((session) => session?.activeTurnId).sort((left, right) => String(right.updatedAt ?? "").localeCompare(String(left.updatedAt ?? "")));
 
-  const openInbound = inboundMessages
-    .filter((message) => message?.status === "pending" || message?.status === "inflight")
-    .sort((left, right) => String(left.updatedAt ?? "").localeCompare(String(right.updatedAt ?? "")));
+  const openInbound = inboundMessages.filter((message) => message?.status === "pending" || message?.status === "inflight").sort((left, right) => String(left.updatedAt ?? "").localeCompare(String(right.updatedAt ?? "")));
 
   const brokerLogs = await readRecentBrokerLogRecords(logsRoot, logLineLimit);
 
@@ -423,10 +401,8 @@ export async function readDetailedStateFromHost(dataRootSource, options = {}) {
     activeSessions,
     openInboundCount: openInbound.length,
     openInbound: openInbound.slice(0, openInboundLimit),
-    backgroundJobs: backgroundJobs.sort((left, right) =>
-      String(right.updatedAt ?? "").localeCompare(String(left.updatedAt ?? ""))
-    ),
-    recentBrokerLogs: brokerLogs
+    backgroundJobs: backgroundJobs.sort((left, right) => String(right.updatedAt ?? "").localeCompare(String(left.updatedAt ?? ""))),
+    recentBrokerLogs: brokerLogs,
   };
 }
 
@@ -454,7 +430,7 @@ function sessionFromRow(row) {
     coAuthorConfirmedRevision: row.co_author_confirmed_revision ?? undefined,
     coAuthorIgnoreMissingRevision: row.co_author_ignore_missing_revision ?? undefined,
     coAuthorPromptRevision: row.co_author_prompt_revision ?? undefined,
-    coAuthorPromptedAt: row.co_author_prompted_at ?? undefined
+    coAuthorPromptedAt: row.co_author_prompted_at ?? undefined,
   };
 }
 
@@ -482,7 +458,7 @@ function inboundMessageFromRow(row) {
     status: row.status,
     batchId: row.batch_id ?? undefined,
     createdAt: row.created_at,
-    updatedAt: row.updated_at
+    updatedAt: row.updated_at,
   };
 }
 
@@ -509,7 +485,7 @@ function backgroundJobFromRow(row) {
     error: row.error ?? undefined,
     lastEventAt: row.last_event_at ?? undefined,
     lastEventKind: row.last_event_kind ?? undefined,
-    lastEventSummary: row.last_event_summary ?? undefined
+    lastEventSummary: row.last_event_summary ?? undefined,
   };
 }
 

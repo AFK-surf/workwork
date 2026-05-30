@@ -33,12 +33,10 @@ const TOOL_STATUS_LABEL_ENTRIES: Array<readonly [string, string]> = [
   ["slackgetthread", "Checking Slack..."],
   ["slackgetchannelhistory", "Checking Slack..."],
   ["slackgetuserinfo", "Checking Slack..."],
-  ["slackaddreaction", "Checking Slack..."]
+  ["slackaddreaction", "Checking Slack..."],
 ];
 
-const TOOL_STATUS_LABELS = new Map<string, string>(
-  TOOL_STATUS_LABEL_ENTRIES.map(([toolName, status]) => [normalizeToolName(toolName), status] as const)
-);
+const TOOL_STATUS_LABELS = new Map<string, string>(TOOL_STATUS_LABEL_ENTRIES.map(([toolName, status]) => [normalizeToolName(toolName), status] as const));
 
 interface AssistantStateLike {
   readonly phase?: unknown;
@@ -62,11 +60,7 @@ export class SlackAssistantStatusController {
   readonly #activeToolCalls = new Map<string, string>();
   readonly #activeToolOrder: string[] = [];
 
-  constructor(options: {
-    readonly slackApi: SlackApi;
-    readonly channelId: string;
-    readonly threadTs: string;
-  }) {
+  constructor(options: { readonly slackApi: SlackApi; readonly channelId: string; readonly threadTs: string }) {
     this.#slackApi = options.slackApi;
     this.#channelId = options.channelId;
     this.#threadTs = options.threadTs;
@@ -251,7 +245,7 @@ export class SlackAssistantStatusController {
       await this.#slackApi.setAssistantThreadStatus({
         channelId: this.#channelId,
         threadTs: this.#threadTs,
-        status
+        status,
       });
       await this.#clearFallbackReactionIfNeeded();
       return true;
@@ -266,7 +260,7 @@ export class SlackAssistantStatusController {
         channelId: this.#channelId,
         threadTs: this.#threadTs,
         status,
-        error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
       });
       return false;
     }
@@ -280,7 +274,7 @@ export class SlackAssistantStatusController {
         await this.#slackApi.addReaction({
           channelId: this.#channelId,
           timestamp: this.#threadTs,
-          name: FALLBACK_REACTION_NAME
+          name: FALLBACK_REACTION_NAME,
         });
         this.#reactionActive = true;
       } catch (error) {
@@ -288,7 +282,7 @@ export class SlackAssistantStatusController {
           logger.warn("Failed to add Slack assistant fallback reaction", {
             channelId: this.#channelId,
             threadTs: this.#threadTs,
-            error: error instanceof Error ? error.message : String(error)
+            error: error instanceof Error ? error.message : String(error),
           });
           return;
         }
@@ -301,14 +295,14 @@ export class SlackAssistantStatusController {
         await this.#slackApi.removeReaction({
           channelId: this.#channelId,
           timestamp: this.#threadTs,
-          name: FALLBACK_REACTION_NAME
+          name: FALLBACK_REACTION_NAME,
         });
       } catch (error) {
         if (!isSlackApiError(error, "no_reaction")) {
           logger.warn("Failed to remove Slack assistant fallback reaction", {
             channelId: this.#channelId,
             threadTs: this.#threadTs,
-            error: error instanceof Error ? error.message : String(error)
+            error: error instanceof Error ? error.message : String(error),
           });
           return;
         }
@@ -326,14 +320,14 @@ export class SlackAssistantStatusController {
       await this.#slackApi.removeReaction({
         channelId: this.#channelId,
         timestamp: this.#threadTs,
-        name: FALLBACK_REACTION_NAME
+        name: FALLBACK_REACTION_NAME,
       });
     } catch (error) {
       if (!isSlackApiError(error, "no_reaction")) {
         logger.warn("Failed to clear Slack assistant fallback reaction", {
           channelId: this.#channelId,
           threadTs: this.#threadTs,
-          error: error instanceof Error ? error.message : String(error)
+          error: error instanceof Error ? error.message : String(error),
         });
         return;
       }
@@ -379,10 +373,7 @@ function latestAssistantToolName(tools: unknown): string | undefined {
       continue;
     }
 
-    const toolName = normalizeString(
-      (entry as { readonly tool_name?: unknown; readonly toolName?: unknown }).tool_name ??
-      (entry as { readonly toolName?: unknown }).toolName
-    );
+    const toolName = normalizeString((entry as { readonly tool_name?: unknown; readonly toolName?: unknown }).tool_name ?? (entry as { readonly toolName?: unknown }).toolName);
     if (toolName) {
       return toolName;
     }
@@ -409,13 +400,7 @@ function extractCallId(params: Record<string, unknown> | null | undefined): stri
     return undefined;
   }
 
-  return normalizeString(
-    params.callId ??
-      params.call_id ??
-      params.toolCallId ??
-      params.tool_call_id ??
-      params.id
-  );
+  return normalizeString(params.callId ?? params.call_id ?? params.toolCallId ?? params.tool_call_id ?? params.id);
 }
 
 function extractToolName(params: Record<string, unknown> | null | undefined): string | undefined {
@@ -430,11 +415,7 @@ function extractToolName(params: Record<string, unknown> | null | undefined): st
     }
   }
 
-  return normalizeString(
-    params.toolName ??
-      params.tool_name ??
-      params.name
-  );
+  return normalizeString(params.toolName ?? params.tool_name ?? params.name);
 }
 
 function normalizeString(value: unknown): string | undefined {
@@ -462,13 +443,7 @@ function clearsAssistantStatusForTerminal(status: string | null | undefined): bo
 
 function shouldFallbackAssistantStatus(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
-  return [
-    "missing_scope",
-    "unknown_method",
-    "not_allowed_token_type",
-    "feature_not_enabled",
-    "method_not_supported_for_channel_type"
-  ].some((token) => message.includes(token));
+  return ["missing_scope", "unknown_method", "not_allowed_token_type", "feature_not_enabled", "method_not_supported_for_channel_type"].some((token) => message.includes(token));
 }
 
 function isSlackApiError(error: unknown, code: string): boolean {

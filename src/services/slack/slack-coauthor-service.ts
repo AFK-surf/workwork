@@ -1,18 +1,7 @@
 import { logger } from "../../logger.js";
-import type {
-  SlackInputMessage,
-  SlackSessionRecord,
-  SlackUserIdentity
-} from "../../types.js";
-import {
-  appendCoAuthorTrailers,
-  isValidGitHubAuthor,
-  normalizeEmail
-} from "../git/github-author-utils.js";
-import type {
-  GitHubPrBindingRecord,
-  GitHubPrIdentityService
-} from "../github-pr-identity-service.js";
+import type { SlackInputMessage, SlackSessionRecord, SlackUserIdentity } from "../../types.js";
+import { appendCoAuthorTrailers, isValidGitHubAuthor, normalizeEmail } from "../git/github-author-utils.js";
+import type { GitHubPrBindingRecord, GitHubPrIdentityService } from "../github-pr-identity-service.js";
 import { SessionManager } from "../session-manager.js";
 import { SlackApi } from "./slack-api.js";
 
@@ -70,20 +59,13 @@ export class SlackCoauthorService {
   readonly #slackApi: SlackApi;
   readonly #githubPrIdentity: GitHubPrIdentityService;
 
-  constructor(options: {
-    readonly sessions: SessionManager;
-    readonly slackApi: SlackApi;
-    readonly githubPrIdentity: GitHubPrIdentityService;
-  }) {
+  constructor(options: { readonly sessions: SessionManager; readonly slackApi: SlackApi; readonly githubPrIdentity: GitHubPrIdentityService }) {
     this.#sessions = options.sessions;
     this.#slackApi = options.slackApi;
     this.#githubPrIdentity = options.githubPrIdentity;
   }
 
-  async noteIncomingSlackInput(
-    session: SlackSessionRecord,
-    input: SlackInputMessage
-  ): Promise<SlackSessionRecord> {
+  async noteIncomingSlackInput(session: SlackSessionRecord, input: SlackInputMessage): Promise<SlackSessionRecord> {
     const identities = await this.#resolveContributorIdentities(input);
     if (identities.length === 0) {
       return session;
@@ -92,7 +74,7 @@ export class SlackCoauthorService {
     return await this.#sessions.addCoAuthorCandidates(
       session.channelId,
       session.rootThreadTs,
-      identities.map((identity) => identity.userId)
+      identities.map((identity) => identity.userId),
     );
   }
 
@@ -106,13 +88,7 @@ export class SlackCoauthorService {
     return await this.#buildCommitCoauthorStatus(session);
   }
 
-  async configureSessionCoauthors(options: {
-    readonly cwd: string;
-    readonly coauthors?: readonly string[] | undefined;
-    readonly userIds?: readonly string[] | undefined;
-    readonly ignoreMissing?: boolean | undefined;
-    readonly mappings?: ReadonlyArray<unknown> | undefined;
-  }): Promise<CommitCoauthorStatus | null> {
+  async configureSessionCoauthors(options: { readonly cwd: string; readonly coauthors?: readonly string[] | undefined; readonly userIds?: readonly string[] | undefined; readonly ignoreMissing?: boolean | undefined; readonly mappings?: ReadonlyArray<unknown> | undefined }): Promise<CommitCoauthorStatus | null> {
     if ((options.mappings?.length ?? 0) > 0) {
       throw new Error(LEGACY_MAPPING_ERROR);
     }
@@ -126,14 +102,14 @@ export class SlackCoauthorService {
     let status = await this.#buildCommitCoauthorStatus(session);
     const selectedUserIds = this.#resolveRequestedUserIds(status, {
       coauthors: options.coauthors,
-      userIds: options.userIds
+      userIds: options.userIds,
     });
 
     if (selectedUserIds !== undefined || options.ignoreMissing !== undefined) {
       session = await this.#sessions.confirmCoAuthors(session.channelId, session.rootThreadTs, {
         userIds: selectedUserIds ?? status.selectedUserIds,
         candidateRevision: session.coAuthorCandidateRevision ?? 0,
-        ignoreMissing: options.ignoreMissing ?? status.ignoreMissing
+        ignoreMissing: options.ignoreMissing ?? status.ignoreMissing,
       });
       status = await this.#buildCommitCoauthorStatus(session);
     }
@@ -153,18 +129,16 @@ export class SlackCoauthorService {
     }
   }
 
-  async resolveCommitCoauthors(options: {
-    readonly cwd: string;
-    readonly commitMessage: string;
-    readonly primaryAuthorEmail?: string | undefined;
-  }): Promise<ResolveCommitCoauthorsResult & {
-    readonly commitMessage?: string | undefined;
-  }> {
+  async resolveCommitCoauthors(options: { readonly cwd: string; readonly commitMessage: string; readonly primaryAuthorEmail?: string | undefined }): Promise<
+    ResolveCommitCoauthorsResult & {
+      readonly commitMessage?: string | undefined;
+    }
+  > {
     await this.#githubPrIdentity.load();
     const session = this.#sessions.findSessionByWorkspace(options.cwd);
     if (!session) {
       return {
-        status: "noop"
+        status: "noop",
       };
     }
 
@@ -172,7 +146,7 @@ export class SlackCoauthorService {
     if (status.selectedUserIds.length === 0) {
       return {
         status: "noop",
-        sessionKey: session.key
+        sessionKey: session.key,
       };
     }
 
@@ -183,7 +157,7 @@ export class SlackCoauthorService {
     const coAuthors = status.resolvedCoAuthors;
     const commitMessage = appendCoAuthorTrailers(options.commitMessage, {
       coAuthors,
-      primaryAuthorEmail: options.primaryAuthorEmail
+      primaryAuthorEmail: options.primaryAuthorEmail,
     });
 
     if (commitMessage === options.commitMessage) {
@@ -191,10 +165,7 @@ export class SlackCoauthorService {
         status: "noop",
         sessionKey: session.key,
         coAuthors,
-        message:
-          status.missingSelectedUserIds.length > 0
-            ? "Some selected co-authors are missing GitHub OAuth binding and were skipped for this commit."
-            : undefined
+        message: status.missingSelectedUserIds.length > 0 ? "Some selected co-authors are missing GitHub OAuth binding and were skipped for this commit." : undefined,
       };
     }
 
@@ -203,10 +174,7 @@ export class SlackCoauthorService {
       sessionKey: session.key,
       coAuthors,
       commitMessage,
-      message:
-        status.missingSelectedUserIds.length > 0
-          ? "Bound co-authors were appended. Unbound co-authors were skipped for this commit."
-          : undefined
+      message: status.missingSelectedUserIds.length > 0 ? "Bound co-authors were appended. Unbound co-authors were skipped for this commit." : undefined,
     };
   }
 
@@ -235,18 +203,20 @@ export class SlackCoauthorService {
     const modalView = await this.#buildModalView(session);
     await this.#slackApi.openView({
       triggerId,
-      view: modalView
+      view: modalView,
     });
   }
 
   async #handleViewSubmission(payload: Record<string, unknown>): Promise<void> {
     const submitterUserId = readString((payload.user as { id?: string } | undefined)?.id);
-    const view = payload.view as {
-      private_metadata?: string;
-      state?: {
-        values?: Record<string, Record<string, Record<string, unknown>>>;
-      };
-    } | undefined;
+    const view = payload.view as
+      | {
+          private_metadata?: string;
+          state?: {
+            values?: Record<string, Record<string, Record<string, unknown>>>;
+          };
+        }
+      | undefined;
     const metadata = parsePrivateMetadata(view?.private_metadata);
     if (!metadata) {
       return;
@@ -265,15 +235,9 @@ export class SlackCoauthorService {
     await this.#sessions.confirmCoAuthors(session.channelId, session.rootThreadTs, {
       userIds: selectedUserIds,
       candidateRevision: metadata.candidateRevision,
-      ignoreMissing
+      ignoreMissing,
     });
-    await this.#postSubmitResult(
-      submitterUserId,
-      session.key,
-      ignoreMissing
-        ? "Co-author settings saved. Unbound GitHub accounts will be skipped."
-        : "Co-author settings saved. Missing GitHub OAuth bindings must be completed before those users can be included."
-    );
+    await this.#postSubmitResult(submitterUserId, session.key, ignoreMissing ? "Co-author settings saved. Unbound GitHub accounts will be skipped." : "Co-author settings saved. Missing GitHub OAuth bindings must be completed before those users can be included.");
   }
 
   async #ensurePrompt(session: SlackSessionRecord, status?: CommitCoauthorStatus): Promise<void> {
@@ -283,15 +247,12 @@ export class SlackCoauthorService {
     }
 
     const promptAtMs = session.coAuthorPromptedAt ? Date.parse(session.coAuthorPromptedAt) : Number.NaN;
-    const promptedRecently =
-      session.coAuthorPromptRevision === candidateRevision &&
-      Number.isFinite(promptAtMs) &&
-      Date.now() - promptAtMs < PROMPT_COOLDOWN_MS;
+    const promptedRecently = session.coAuthorPromptRevision === candidateRevision && Number.isFinite(promptAtMs) && Date.now() - promptAtMs < PROMPT_COOLDOWN_MS;
     if (promptedRecently) {
       return;
     }
 
-    const currentStatus = status ?? await this.#buildCommitCoauthorStatus(session);
+    const currentStatus = status ?? (await this.#buildCommitCoauthorStatus(session));
     const missingNames = currentStatus.missingSelectedUserIds
       .map((userId) => currentStatus.candidates.find((candidate) => candidate.userId === userId))
       .filter((candidate): candidate is CommitCoauthorCandidateStatus => candidate !== undefined)
@@ -305,8 +266,8 @@ export class SlackCoauthorService {
           text:
             missingNames.length > 0
               ? `*Co-author GitHub binding is incomplete:* commits can continue, but these co-authors are currently unresolved and will be skipped: ${missingNames.join(", ")}.`
-              : "*Co-author review available:* bound GitHub OAuth identities will be appended automatically for this session's commits."
-        }
+              : "*Co-author review available:* bound GitHub OAuth identities will be appended automatically for this session's commits.",
+        },
       },
       {
         type: "actions",
@@ -315,16 +276,16 @@ export class SlackCoauthorService {
             type: "button",
             text: {
               type: "plain_text",
-              text: "Configure co-authors"
+              text: "Configure co-authors",
             },
             action_id: COAUTHOR_CONFIGURE_ACTION_ID,
             value: JSON.stringify({
               session_key: session.key,
-              candidate_revision: candidateRevision
-            })
-          }
-        ]
-      }
+              candidate_revision: candidateRevision,
+            }),
+          },
+        ],
+      },
     ];
 
     let delivered = false;
@@ -335,14 +296,14 @@ export class SlackCoauthorService {
           threadTs: session.rootThreadTs,
           userId,
           text: "Review Slack co-author settings for this session.",
-          blocks
+          blocks,
         });
         delivered = true;
       } catch (error) {
         logger.warn("Failed to post Slack co-author prompt", {
           sessionKey: session.key,
           userId,
-          error: error instanceof Error ? error.message : String(error)
+          error: error instanceof Error ? error.message : String(error),
         });
       }
     }
@@ -354,20 +315,20 @@ export class SlackCoauthorService {
 
   async #buildModalView(session: SlackSessionRecord): Promise<Record<string, unknown>> {
     const candidateUserIds = session.coAuthorCandidateUserIds ?? [];
-    const selectedUserIds = session.coAuthorConfirmedRevision === session.coAuthorCandidateRevision
-      ? (session.coAuthorConfirmedUserIds ?? [])
-      : candidateUserIds;
-    const identities = await Promise.all(candidateUserIds.map(async (userId) => {
-      return await this.#slackApi.getUserIdentity(userId);
-    }));
+    const selectedUserIds = session.coAuthorConfirmedRevision === session.coAuthorCandidateRevision ? (session.coAuthorConfirmedUserIds ?? []) : candidateUserIds;
+    const identities = await Promise.all(
+      candidateUserIds.map(async (userId) => {
+        return await this.#slackApi.getUserIdentity(userId);
+      }),
+    );
     const contributorOptions = candidateUserIds.map((userId, index) => {
       const identity = identities[index];
       return {
         text: {
           type: "plain_text",
-          text: describeSlackUser(identity, userId)
+          text: describeSlackUser(identity, userId),
         },
-        value: userId
+        value: userId,
       };
     });
 
@@ -376,41 +337,41 @@ export class SlackCoauthorService {
       callback_id: COAUTHOR_MODAL_CALLBACK_ID,
       private_metadata: JSON.stringify({
         session_key: session.key,
-        candidate_revision: session.coAuthorCandidateRevision ?? 0
+        candidate_revision: session.coAuthorCandidateRevision ?? 0,
       }),
       title: {
         type: "plain_text",
-        text: "Confirm co-authors"
+        text: "Confirm co-authors",
       },
       submit: {
         type: "plain_text",
-        text: "Save"
+        text: "Save",
       },
       close: {
         type: "plain_text",
-        text: "Cancel"
+        text: "Cancel",
       },
       blocks: [
         {
           type: "section",
           text: {
             type: "mrkdwn",
-            text: "Choose which Slack participants should be written as GitHub co-authors for commits from this session. Selected users must have GitHub OAuth bindings; unresolved selections can be skipped if commits should continue without them."
-          }
+            text: "Choose which Slack participants should be written as GitHub co-authors for commits from this session. Selected users must have GitHub OAuth bindings; unresolved selections can be skipped if commits should continue without them.",
+          },
         },
         {
           type: "input",
           block_id: CONTRIBUTOR_BLOCK_ID,
           label: {
             type: "plain_text",
-            text: "Contributors"
+            text: "Contributors",
           },
           element: {
             type: "checkboxes",
             action_id: CONTRIBUTOR_ACTION_ID,
             options: contributorOptions,
-            initial_options: contributorOptions.filter((entry) => selectedUserIds.includes(String(entry.value)))
-          }
+            initial_options: contributorOptions.filter((entry) => selectedUserIds.includes(String(entry.value))),
+          },
         },
         {
           type: "input",
@@ -418,7 +379,7 @@ export class SlackCoauthorService {
           optional: true,
           label: {
             type: "plain_text",
-            text: "Commit behavior"
+            text: "Commit behavior",
           },
           element: {
             type: "checkboxes",
@@ -427,10 +388,10 @@ export class SlackCoauthorService {
               {
                 text: {
                   type: "plain_text",
-                  text: "Allow commits to continue without unresolved co-authors"
+                  text: "Allow commits to continue without unresolved co-authors",
                 },
-                value: IGNORE_MISSING_OPTION_VALUE
-              }
+                value: IGNORE_MISSING_OPTION_VALUE,
+              },
             ],
             initial_options:
               session.coAuthorIgnoreMissingRevision === session.coAuthorCandidateRevision
@@ -438,15 +399,15 @@ export class SlackCoauthorService {
                     {
                       text: {
                         type: "plain_text",
-                        text: "Allow commits to continue without unresolved co-authors"
+                        text: "Allow commits to continue without unresolved co-authors",
                       },
-                      value: IGNORE_MISSING_OPTION_VALUE
-                    }
+                      value: IGNORE_MISSING_OPTION_VALUE,
+                    },
                   ]
-                : []
-          }
-        }
-      ]
+                : [],
+          },
+        },
+      ],
     };
   }
 
@@ -462,18 +423,14 @@ export class SlackCoauthorService {
         continue;
       }
 
-      const sender = message.sender ?? await this.#slackApi.getUserIdentity(message.userId);
+      const sender = message.sender ?? (await this.#slackApi.getUserIdentity(message.userId));
       identities.set(message.userId, sender);
     }
 
     return [...identities.values()].filter((identity): identity is NonNullable<typeof identity> => identity !== null);
   }
 
-  async #postSubmitResult(
-    userId: string | undefined,
-    sessionKey: string,
-    text: string
-  ): Promise<void> {
+  async #postSubmitResult(userId: string | undefined, sessionKey: string, text: string): Promise<void> {
     if (!userId) {
       return;
     }
@@ -483,57 +440,55 @@ export class SlackCoauthorService {
       return;
     }
 
-    await this.#slackApi.postEphemeral({
-      channelId: session.channelId,
-      threadTs: session.rootThreadTs,
-      userId,
-      text
-    }).catch((error) => {
-      logger.warn("Failed to post Slack co-author modal result", {
-        sessionKey,
+    await this.#slackApi
+      .postEphemeral({
+        channelId: session.channelId,
+        threadTs: session.rootThreadTs,
         userId,
-        error: error instanceof Error ? error.message : String(error)
+        text,
+      })
+      .catch((error) => {
+        logger.warn("Failed to post Slack co-author modal result", {
+          sessionKey,
+          userId,
+          error: error instanceof Error ? error.message : String(error),
+        });
       });
-    });
   }
 
   async #buildCommitCoauthorStatus(session: SlackSessionRecord): Promise<CommitCoauthorStatus> {
     const candidateUserIds = session.coAuthorCandidateUserIds ?? [];
     const explicitSelection = session.coAuthorConfirmedRevision === session.coAuthorCandidateRevision;
-    const selectedUserIds = explicitSelection
-      ? (session.coAuthorConfirmedUserIds ?? [])
-      : candidateUserIds;
+    const selectedUserIds = explicitSelection ? (session.coAuthorConfirmedUserIds ?? []) : candidateUserIds;
     const ignoreMissing = session.coAuthorIgnoreMissingRevision === session.coAuthorCandidateRevision;
     await this.#githubPrIdentity.load();
     const bindings = new Map(this.#githubPrIdentity.listBindings().map((binding) => [binding.slackUserId, binding]));
-    const candidates = await Promise.all(candidateUserIds.map(async (userId) => {
-      const identity = await this.#slackApi.getUserIdentity(userId);
-      const binding = bindings.get(userId);
-      const githubAuthor = githubAuthorFromBinding(binding);
+    const candidates = await Promise.all(
+      candidateUserIds.map(async (userId) => {
+        const identity = await this.#slackApi.getUserIdentity(userId);
+        const binding = bindings.get(userId);
+        const githubAuthor = githubAuthorFromBinding(binding);
 
-      return {
-        userId,
-        mention: identity?.mention ?? `<@${userId}>`,
-        username: identity?.username,
-        displayName: identity?.displayName,
-        realName: identity?.realName,
-        email: identity?.email,
-        githubAuthor,
-        githubAuthorSource: githubAuthor ? "github_oauth" : undefined,
-        githubLogin: binding?.githubLogin,
-        githubEmail: binding?.githubEmail,
-        githubBindingState: githubBindingState(binding),
-        selected: selectedUserIds.includes(userId)
-      } satisfies CommitCoauthorCandidateStatus;
-    }));
+        return {
+          userId,
+          mention: identity?.mention ?? `<@${userId}>`,
+          username: identity?.username,
+          displayName: identity?.displayName,
+          realName: identity?.realName,
+          email: identity?.email,
+          githubAuthor,
+          githubAuthorSource: githubAuthor ? "github_oauth" : undefined,
+          githubLogin: binding?.githubLogin,
+          githubEmail: binding?.githubEmail,
+          githubBindingState: githubBindingState(binding),
+          selected: selectedUserIds.includes(userId),
+        } satisfies CommitCoauthorCandidateStatus;
+      }),
+    );
 
     const selectedCandidates = candidates.filter((candidate) => candidate.selected);
-    const missingSelectedUserIds = selectedCandidates
-      .filter((candidate) => !candidate.githubAuthor)
-      .map((candidate) => candidate.userId);
-    const resolvedCoAuthors = selectedCandidates
-      .map((candidate) => candidate.githubAuthor)
-      .filter((value): value is string => Boolean(value));
+    const missingSelectedUserIds = selectedCandidates.filter((candidate) => !candidate.githubAuthor).map((candidate) => candidate.userId);
+    const resolvedCoAuthors = selectedCandidates.map((candidate) => candidate.githubAuthor).filter((value): value is string => Boolean(value));
 
     return {
       sessionKey: session.key,
@@ -548,7 +503,7 @@ export class SlackCoauthorService {
       selectedUserIds,
       resolvedCoAuthors,
       missingSelectedUserIds,
-      candidates
+      candidates,
     };
   }
 
@@ -557,7 +512,7 @@ export class SlackCoauthorService {
     options: {
       readonly coauthors?: readonly string[] | undefined;
       readonly userIds?: readonly string[] | undefined;
-    }
+    },
   ): string[] | undefined {
     const resolved = new Set<string>();
 
@@ -595,16 +550,7 @@ export class SlackCoauthorService {
     }
 
     const matches = status.candidates.filter((candidate) => {
-      const fields = [
-        candidate.userId,
-        candidate.mention,
-        candidate.username,
-        candidate.displayName,
-        candidate.realName,
-        candidate.email,
-        candidate.githubLogin,
-        candidate.githubEmail
-      ];
+      const fields = [candidate.userId, candidate.mention, candidate.username, candidate.displayName, candidate.realName, candidate.email, candidate.githubLogin, candidate.githubEmail];
       return fields.some((value) => normalizeUserReference(value) === normalized);
     });
 
@@ -638,29 +584,23 @@ function parsePrivateMetadata(value: unknown): { sessionKey: string; candidateRe
 
     return {
       sessionKey,
-      candidateRevision
+      candidateRevision,
     };
   } catch {
     return null;
   }
 }
 
-function readSelectedContributorUserIds(
-  values: Record<string, Record<string, Record<string, unknown>>>
-): string[] {
+function readSelectedContributorUserIds(values: Record<string, Record<string, Record<string, unknown>>>): string[] {
   const selectedOptions = values[CONTRIBUTOR_BLOCK_ID]?.[CONTRIBUTOR_ACTION_ID]?.selected_options;
   if (!Array.isArray(selectedOptions)) {
     return [];
   }
 
-  return selectedOptions
-    .map((entry) => readString((entry as { value?: string } | undefined)?.value))
-    .filter((value): value is string => Boolean(value));
+  return selectedOptions.map((entry) => readString((entry as { value?: string } | undefined)?.value)).filter((value): value is string => Boolean(value));
 }
 
-function readIgnoreMissingSelection(
-  values: Record<string, Record<string, Record<string, unknown>>>
-): boolean {
+function readIgnoreMissingSelection(values: Record<string, Record<string, Record<string, unknown>>>): boolean {
   const selectedOptions = values[COMMIT_BEHAVIOR_BLOCK_ID]?.[COMMIT_BEHAVIOR_ACTION_ID]?.selected_options;
   if (!Array.isArray(selectedOptions)) {
     return false;
@@ -672,14 +612,17 @@ function readIgnoreMissingSelection(
 }
 
 function describeSlackUser(
-  identity: {
-    readonly userId?: string | undefined;
-    readonly displayName?: string | undefined;
-    readonly realName?: string | undefined;
-    readonly username?: string | undefined;
-    readonly email?: string | undefined;
-  } | null | undefined,
-  fallbackUserId: string
+  identity:
+    | {
+        readonly userId?: string | undefined;
+        readonly displayName?: string | undefined;
+        readonly realName?: string | undefined;
+        readonly username?: string | undefined;
+        readonly email?: string | undefined;
+      }
+    | null
+    | undefined,
+  fallbackUserId: string,
 ): string {
   const label = identity?.realName || identity?.displayName || identity?.username || fallbackUserId;
   if (identity?.email) {
@@ -718,7 +661,10 @@ function githubAuthorFromBinding(binding: GitHubPrBindingRecord | undefined): st
 }
 
 function normalizeGitHubAuthorName(value: string | undefined): string | undefined {
-  const normalized = value?.replace(/[<>\r\n]/gu, " ").replace(/\s+/gu, " ").trim();
+  const normalized = value
+    ?.replace(/[<>\r\n]/gu, " ")
+    .replace(/\s+/gu, " ")
+    .trim();
   return normalized || undefined;
 }
 

@@ -1,6 +1,4 @@
-export function renderAdminPage(options: {
-  readonly serviceName: string;
-}): string {
+export function renderAdminPage(options: { readonly serviceName: string }): string {
   const configJson = JSON.stringify({ serviceName: options.serviceName }).replaceAll("<", "\\u003c");
   const adminUiDevOrigin = normalizeAdminUiDevOrigin(process.env.ADMIN_UI_DEV_ORIGIN);
   const styleLink = adminUiDevOrigin ? "" : `  <link rel="stylesheet" href="/admin/assets/admin-ui.css" />\n`;
@@ -52,10 +50,5 @@ function normalizeAdminUiDevOrigin(value: string | undefined): string | null {
 }
 
 function escapeHtml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
+  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
 }

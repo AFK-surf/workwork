@@ -11,13 +11,13 @@ export function execCommand(
   options: {
     readonly cwd?: string;
     readonly env?: NodeJS.ProcessEnv;
-  } = {}
+  } = {},
 ): Promise<ExecResult> {
   return new Promise<ExecResult>((resolve, reject) => {
     const child = spawn(command, args, {
       cwd: options.cwd,
       env: options.env,
-      stdio: ["ignore", "pipe", "pipe"]
+      stdio: ["ignore", "pipe", "pipe"],
     });
 
     let stdout = "";
@@ -49,13 +49,13 @@ export function spawnDetachedCommand(
   options: {
     readonly cwd?: string;
     readonly env?: NodeJS.ProcessEnv;
-  } = {}
+  } = {},
 ): void {
   const child = spawn(command, args, {
     cwd: options.cwd,
     env: options.env,
     detached: true,
-    stdio: "ignore"
+    stdio: "ignore",
   });
 
   child.on("error", () => {

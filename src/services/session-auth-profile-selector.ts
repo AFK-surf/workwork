@@ -1,19 +1,7 @@
 import type { AuthProfileSummary, AuthProfilesStatus } from "./auth-profile-service.js";
-import {
-  daysUntilReset,
-  remainingPercent,
-  timestampMs,
-  weightedWeeklyQuotaScore
-} from "../auth-profile-quota.js";
+import { daysUntilReset, remainingPercent, timestampMs, weightedWeeklyQuotaScore } from "../auth-profile-quota.js";
 
-export type AuthProfileUnavailableReason =
-  | "profile_not_found"
-  | "account_probe_failed"
-  | "rate_limits_probe_failed"
-  | "primary_quota_exhausted"
-  | "secondary_quota_exhausted"
-  | "credits_exhausted"
-  | "no_usable_auth_profiles";
+export type AuthProfileUnavailableReason = "profile_not_found" | "account_probe_failed" | "rate_limits_probe_failed" | "primary_quota_exhausted" | "secondary_quota_exhausted" | "credits_exhausted" | "no_usable_auth_profiles";
 
 export interface AuthProfileEvaluation {
   readonly profileName: string;
@@ -26,9 +14,7 @@ export interface AuthProfileEvaluation {
   readonly weightedWeeklyQuotaScore?: number | undefined;
 }
 
-export function isAuthProfileProbeFailureReason(
-  reason: string | undefined
-): reason is "account_probe_failed" | "rate_limits_probe_failed" {
+export function isAuthProfileProbeFailureReason(reason: string | undefined): reason is "account_probe_failed" | "rate_limits_probe_failed" {
   return reason === "account_probe_failed" || reason === "rate_limits_probe_failed";
 }
 
@@ -36,15 +22,12 @@ export function isAuthProfileProbeFailure(evaluation: AuthProfileEvaluation): bo
   return !evaluation.usable && isAuthProfileProbeFailureReason(evaluation.reason);
 }
 
-export function selectBestAuthProfile(
-  status: AuthProfilesStatus,
-  options: { readonly now?: Date | number | string | undefined } = {}
-): AuthProfileSummary | null {
+export function selectBestAuthProfile(status: AuthProfilesStatus, options: { readonly now?: Date | number | string | undefined } = {}): AuthProfileSummary | null {
   const nowMs = timestampMs(options.now);
   const candidates = status.profiles
     .map((profile) => ({
       profile,
-      evaluation: evaluateAuthProfile(profile, { now: nowMs })
+      evaluation: evaluateAuthProfile(profile, { now: nowMs }),
     }))
     .filter((candidate) => candidate.evaluation.usable)
     .sort((left, right) => {
@@ -53,16 +36,12 @@ export function selectBestAuthProfile(
         return scoreDelta;
       }
 
-      const secondaryDelta =
-        (right.evaluation.secondaryRemainingPercent ?? 100) -
-        (left.evaluation.secondaryRemainingPercent ?? 100);
+      const secondaryDelta = (right.evaluation.secondaryRemainingPercent ?? 100) - (left.evaluation.secondaryRemainingPercent ?? 100);
       if (secondaryDelta) {
         return secondaryDelta;
       }
 
-      const primaryDelta =
-        (right.evaluation.primaryRemainingPercent ?? 100) -
-        (left.evaluation.primaryRemainingPercent ?? 100);
+      const primaryDelta = (right.evaluation.primaryRemainingPercent ?? 100) - (left.evaluation.primaryRemainingPercent ?? 100);
       if (primaryDelta) {
         return primaryDelta;
       }
@@ -77,10 +56,7 @@ export function findAuthProfile(status: AuthProfilesStatus, profileName: string)
   return status.profiles.find((profile) => profile.name === profileName) ?? null;
 }
 
-export function evaluateAuthProfile(
-  profile: AuthProfileSummary,
-  options: { readonly now?: Date | number | string | undefined } = {}
-): AuthProfileEvaluation {
+export function evaluateAuthProfile(profile: AuthProfileSummary, options: { readonly now?: Date | number | string | undefined } = {}): AuthProfileEvaluation {
   if (!profile.account.ok) {
     return unavailable(profile.name, "account_probe_failed");
   }
@@ -99,36 +75,32 @@ export function evaluateAuthProfile(
   if (primaryRemaining !== undefined && primaryRemaining <= 0) {
     return unavailable(profile.name, "primary_quota_exhausted", {
       primaryRemainingPercent: primaryRemaining,
-      secondaryRemainingPercent: secondaryRemaining
+      secondaryRemainingPercent: secondaryRemaining,
     });
   }
 
   if (secondaryRemaining !== undefined && secondaryRemaining <= 0) {
     return unavailable(profile.name, "secondary_quota_exhausted", {
       primaryRemainingPercent: primaryRemaining,
-      secondaryRemainingPercent: secondaryRemaining
+      secondaryRemainingPercent: secondaryRemaining,
     });
   }
 
   if (credits && !credits.unlimited && credits.hasCredits === false) {
     return unavailable(profile.name, "credits_exhausted", {
       primaryRemainingPercent: primaryRemaining,
-      secondaryRemainingPercent: secondaryRemaining
+      secondaryRemainingPercent: secondaryRemaining,
     });
   }
 
   return {
     profileName: profile.name,
     usable: true,
-    effectiveQuotaScore:
-      weightedWeeklyQuota ??
-      (secondaryRemaining !== undefined ? secondaryRemaining / 100 : undefined) ??
-      (primaryRemaining !== undefined ? primaryRemaining / 100 : undefined) ??
-      1,
+    effectiveQuotaScore: weightedWeeklyQuota ?? (secondaryRemaining !== undefined ? secondaryRemaining / 100 : undefined) ?? (primaryRemaining !== undefined ? primaryRemaining / 100 : undefined) ?? 1,
     primaryRemainingPercent: primaryRemaining,
     secondaryRemainingPercent: secondaryRemaining,
     secondaryRefreshDays,
-    weightedWeeklyQuotaScore: weightedWeeklyQuota
+    weightedWeeklyQuotaScore: weightedWeeklyQuota,
   };
 }
 
@@ -159,7 +131,7 @@ function unavailable(
   partial?: {
     readonly primaryRemainingPercent?: number | undefined;
     readonly secondaryRemainingPercent?: number | undefined;
-  }
+  },
 ): AuthProfileEvaluation {
   return {
     profileName,
@@ -167,6 +139,6 @@ function unavailable(
     reason,
     effectiveQuotaScore: 0,
     primaryRemainingPercent: partial?.primaryRemainingPercent,
-    secondaryRemainingPercent: partial?.secondaryRemainingPercent
+    secondaryRemainingPercent: partial?.secondaryRemainingPercent,
   };
 }

@@ -4,17 +4,10 @@ import path from "node:path";
 
 import { ensureDir, fileExists } from "../../utils/fs.js";
 
-const mirroredGeminiFiles = [
-  "settings.json",
-  "oauth_creds.json",
-  "google_accounts.json"
-] as const;
+const mirroredGeminiFiles = ["settings.json", "oauth_creds.json", "google_accounts.json"] as const;
 
 async function resolveSourceGeminiHome(hostGeminiHomePath?: string): Promise<string | undefined> {
-  const candidates = [
-    hostGeminiHomePath,
-    path.join(os.homedir(), ".gemini")
-  ].filter((value): value is string => Boolean(value));
+  const candidates = [hostGeminiHomePath, path.join(os.homedir(), ".gemini")].filter((value): value is string => Boolean(value));
 
   for (const candidate of candidates) {
     const resolvedCandidate = path.resolve(candidate);
@@ -26,10 +19,7 @@ async function resolveSourceGeminiHome(hostGeminiHomePath?: string): Promise<str
   return undefined;
 }
 
-export async function syncGeminiHome(options: {
-  readonly runtimeHomePath: string;
-  readonly hostGeminiHomePath?: string | undefined;
-}): Promise<void> {
+export async function syncGeminiHome(options: { readonly runtimeHomePath: string; readonly hostGeminiHomePath?: string | undefined }): Promise<void> {
   const sourceHome = await resolveSourceGeminiHome(options.hostGeminiHomePath);
   if (!sourceHome) {
     return;
@@ -53,7 +43,7 @@ export async function syncGeminiHome(options: {
 
     await fs.rm(targetPath, {
       force: true,
-      recursive: true
+      recursive: true,
     });
   }
 }

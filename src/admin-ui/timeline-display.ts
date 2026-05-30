@@ -1,9 +1,5 @@
 import { summarizeInputTraceDisplay } from "../input-trace-summary.js";
-import {
-  mergeToolTracePayloads,
-  parseToolTraceDetail,
-  summarizeToolTraceDisplay
-} from "../tool-trace-summary.js";
+import { mergeToolTracePayloads, parseToolTraceDetail, summarizeToolTraceDisplay } from "../tool-trace-summary.js";
 
 export type TimelineEvent = Record<string, any>;
 
@@ -41,7 +37,7 @@ export function filterVisibleTimelineEvents(events: readonly TimelineEvent[]): T
     events
       .filter((event) => String(event.type || "").toLowerCase() === "agent_tool_result")
       .map(toolTraceKey)
-      .filter(Boolean)
+      .filter(Boolean),
   );
   return events.filter((event) => {
     if (!isTimelineEventVisible(event)) {
@@ -66,13 +62,13 @@ export function getTimelineEventDisplay(event: TimelineEvent): TimelineEventDisp
         source: nonEmptyString(event.metadata?.source) || nonEmptyString(event.source),
         text: event.detail,
         fallbackTitle: rawTitle,
-        fallbackSummary: rawSummary
+        fallbackSummary: rawSummary,
       });
       if (inputDisplay) {
         return {
           badgeLabel: inputDisplay.badgeLabel || badgeLabel,
           title: inputDisplay.title,
-          summary: inputDisplay.summary
+          summary: inputDisplay.summary,
         };
       }
       break;
@@ -99,18 +95,18 @@ export function getTimelineEventDisplay(event: TimelineEvent): TimelineEventDisp
         status: nonEmptyString(event.status),
         payload: mergeToolTracePayloads(event.metadata, parseToolTraceDetail(event.detail)),
         fallbackTitle: rawTitle,
-        fallbackSummary: rawSummary
+        fallbackSummary: rawSummary,
       });
       if (toolDisplay) {
         return {
           badgeLabel: toolDisplay.badgeLabel || badgeLabel,
           title: toolDisplay.title,
-          summary: toolDisplay.summary
+          summary: toolDisplay.summary,
         };
       }
 
       const title = nonEmptyString(event.toolName) || rawSummary || rawTitle;
-      const summary = title === rawSummary ? "" : (rawSummary || "");
+      const summary = title === rawSummary ? "" : rawSummary || "";
       return { badgeLabel, title, summary };
     }
     default:
@@ -148,7 +144,7 @@ function timelineCategoryLabel(type: string, event: TimelineEvent): string {
     agent_session_resumed: "Session",
     session_created: "会话",
     turn_signal: "回合",
-    background_job: "Job"
+    background_job: "Job",
   };
   return labels[type] || statusLabel(type || event.status || "event");
 }
@@ -156,13 +152,7 @@ function timelineCategoryLabel(type: string, event: TimelineEvent): string {
 function isRedundantTimelineTitle(title: string, badgeLabel: string): boolean {
   const normalizedTitle = normalizeTimelineText(title);
   const normalizedBadge = normalizeTimelineText(badgeLabel);
-  return Boolean(
-    normalizedTitle &&
-    normalizedBadge &&
-    (normalizedTitle === normalizedBadge ||
-      normalizedTitle.startsWith(normalizedBadge) ||
-      normalizedBadge.startsWith(normalizedTitle))
-  );
+  return Boolean(normalizedTitle && normalizedBadge && (normalizedTitle === normalizedBadge || normalizedTitle.startsWith(normalizedBadge) || normalizedBadge.startsWith(normalizedTitle)));
 }
 
 function normalizeTimelineText(value: unknown): string {
@@ -189,10 +179,7 @@ function assistantMessageContent(event: TimelineEvent, rawSummary: string): stri
 
 function isGenericAssistantSummary(value: string): boolean {
   const normalized = value.trim().toLowerCase();
-  return normalized === "replied in slack." ||
-    normalized === "replied in slack" ||
-    normalized === "sent a slack reply." ||
-    normalized === "sent a slack reply";
+  return normalized === "replied in slack." || normalized === "replied in slack" || normalized === "sent a slack reply." || normalized === "sent a slack reply";
 }
 
 function toolTraceKey(event: TimelineEvent): string {
@@ -257,7 +244,7 @@ export function statusLabel(value: unknown): string {
     agent_reasoning: "推理",
     agent_token_count: "Token",
     agent_raw_event: "原始事件",
-    agent_response_item: "Response Item"
+    agent_response_item: "Response Item",
   };
   return labels[String(value || "").toLowerCase()] || String(value || "");
 }
