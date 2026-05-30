@@ -19,6 +19,20 @@ const requiredScripts = {
   "manual:feishu-smoke": "tsx test/manual/run-real-feishu-smoke.ts --",
 };
 
+const verifierEnv = {
+  SLACK_APP_TOKEN: "xapp-test",
+  SLACK_BOT_TOKEN: "xoxb-test",
+  FEISHU_ENABLED: "true",
+  FEISHU_APP_ID: "cli_test",
+  FEISHU_APP_SECRET: "test-secret",
+  FEISHU_BOT_OPEN_ID: "ou_test",
+  FEISHU_DOMAIN: "feishu",
+  FEISHU_API_BASE_URL: "https://open.feishu.cn/open-apis",
+  FEISHU_GROUP_MESSAGE_MODE: "all",
+  FEISHU_STARTUP_REQUIRED: "true",
+  LOG_RAW_FEISHU_EVENTS: "false",
+} satisfies Record<string, string>;
+
 describe("RFC 0001 test plan verifier", () => {
   it("accepts pnpm's optional argument separator before verifier flags", () => {
     expect(parseRfc0001TestPlanArgs(["--", "--json", "--evidence-dir", "evidence/feishu-smoke"])).toMatchObject({
@@ -29,7 +43,7 @@ describe("RFC 0001 test plan verifier", () => {
   });
 
   it("passes against the checked-in RFC 0001 test plan", async () => {
-    const report = await collectRfc0001TestPlanVerification({ env: {} });
+    const report = await collectRfc0001TestPlanVerification({ env: verifierEnv });
 
     expect(report.ok).toBe(true);
     expect(report.nextActions).toEqual([]);
