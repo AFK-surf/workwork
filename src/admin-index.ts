@@ -8,13 +8,7 @@ import { AdminService } from "./services/admin-service.js";
 import { AuthProfileService } from "./services/auth-profile-service.js";
 import { AuthFileRuntimeControl } from "./services/auth-file-runtime-control.js";
 import { ReleaseDeploymentService } from "./services/deploy/release-deployment-service.js";
-import {
-  configureServiceLogger,
-  createGitHubAuthorMappings,
-  createGitHubPrIdentity,
-  createSessionServices,
-  createSlackApi
-} from "./services/service-components.js";
+import { configureServiceLogger, createGitHubAuthorMappings, createGitHubPrIdentity, createSessionServices, createSlackApi } from "./services/service-components.js";
 
 export async function startAdminService(): Promise<{
   readonly stop: () => Promise<void>;
@@ -26,7 +20,7 @@ export async function startAdminService(): Promise<{
   const { sessions } = createSessionServices(config);
   await sessions.load();
   const authProfiles = new AuthProfileService({
-    config
+    config,
   });
   const githubAuthorMappings = await createGitHubAuthorMappings(config);
   const githubPrIdentity = await createGitHubPrIdentity(config);
@@ -37,7 +31,7 @@ export async function startAdminService(): Promise<{
         throw new Error("Release deployment is not configured for this admin runtime.");
       }
       await deployment.restartWorker(reason);
-    }
+    },
   });
   const adminService = new AdminService({
     config,
@@ -48,13 +42,13 @@ export async function startAdminService(): Promise<{
     githubPrIdentity,
     startedAt,
     deployment,
-    slackConversations: createSlackApi(config)
+    slackConversations: createSlackApi(config),
   });
   const server = http.createServer(
     createHttpHandler({
       adminService,
-      config
-    })
+      config,
+    }),
   );
 
   await new Promise<void>((resolve, reject) => {
@@ -65,7 +59,7 @@ export async function startAdminService(): Promise<{
   logger.info("Admin service booted", {
     port: config.port,
     serviceRoot: config.serviceRoot ?? null,
-    workerBaseUrl: config.workerBaseUrl
+    workerBaseUrl: config.workerBaseUrl,
   });
 
   return {
@@ -79,7 +73,7 @@ export async function startAdminService(): Promise<{
           resolve();
         });
       });
-    }
+    },
   };
 }
 
@@ -119,10 +113,10 @@ function createReleaseDeploymentService(config: ReturnType<typeof loadConfig>): 
     codexAppServerPort: config.codexAppServerPort,
     packages: {
       admin: config.releaseAdminPackageName,
-      worker: config.releaseWorkerPackageName
+      worker: config.releaseWorkerPackageName,
     },
     npmRegistryUrl: config.releaseNpmRegistryUrl,
-    scheduleAdminRestart: scheduleAdminRestartAfterResponse
+    scheduleAdminRestart: scheduleAdminRestartAfterResponse,
   });
 }
 
@@ -134,7 +128,7 @@ function scheduleAdminRestartAfterResponse(restart: () => Promise<void>): void {
   const timer = setTimeout(() => {
     void restart().catch((error: unknown) => {
       logger.error("Scheduled admin restart failed", {
-        error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
       });
     });
   }, 250);
@@ -143,7 +137,7 @@ function scheduleAdminRestartAfterResponse(restart: () => Promise<void>): void {
 
 startAdminService().catch((error: unknown) => {
   logger.error("Fatal admin startup error", {
-    error: error instanceof Error ? error.message : String(error)
+    error: error instanceof Error ? error.message : String(error),
   });
   process.exit(1);
 });

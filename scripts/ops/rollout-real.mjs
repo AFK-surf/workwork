@@ -3,17 +3,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import {
-  checkContainer,
-  createTempEnvFile,
-  getRunArgumentsFromInspect,
-  inspectContainer,
-  readSessionStatsFromHost,
-  repoRoot,
-  runCommand,
-  writeRolloutMetadata,
-  getDataRootSource
-} from "./lib.mjs";
+import { checkContainer, createTempEnvFile, getRunArgumentsFromInspect, inspectContainer, readSessionStatsFromHost, repoRoot, runCommand, writeRolloutMetadata, getDataRootSource } from "./lib.mjs";
 
 function parseArgs(argv) {
   const options = {
@@ -22,7 +12,7 @@ function parseArgs(argv) {
     skipBuild: false,
     skipTests: false,
     skipChecks: false,
-    allowActive: false
+    allowActive: false,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -54,9 +44,7 @@ function parseArgs(argv) {
         break;
       case "--help":
       case "-h":
-        console.log(
-          "Usage: node scripts/ops/rollout-real.mjs [--container <name>] [--image <name>] [--skip-build] [--skip-tests] [--skip-checks] [--allow-active]"
-        );
+        console.log("Usage: node scripts/ops/rollout-real.mjs [--container <name>] [--image <name>] [--skip-build] [--skip-tests] [--skip-checks] [--allow-active]");
         process.exit(0);
       default:
         throw new Error(`Unknown argument: ${argument}`);
@@ -70,9 +58,7 @@ async function assertNoActiveSessions(containerName, allowActive) {
   const inspect = inspectContainer(containerName);
   const sessionStats = await readSessionStatsFromHost(getDataRootSource(inspect));
   if (!allowActive && sessionStats.activeCount > 0) {
-    throw new Error(
-      `Refusing rollout while active sessions exist (activeCount=${sessionStats.activeCount}). Re-run with --allow-active if you really want to interrupt them.`
-    );
+    throw new Error(`Refusing rollout while active sessions exist (activeCount=${sessionStats.activeCount}). Re-run with --allow-active if you really want to interrupt them.`);
   }
 
   return sessionStats;
@@ -102,12 +88,9 @@ await writeRolloutMetadata(rolloutDir, {
   imageName: options.imageName,
   beforeStats,
   restartPolicy,
-  startedAt: new Date().toISOString()
+  startedAt: new Date().toISOString(),
 });
-await fs.writeFile(
-  path.join(rolloutDir, "logs-before.txt"),
-  `${runCommand("docker", ["logs", "--tail", "200", options.containerName], { capture: true })}\n`
-);
+await fs.writeFile(path.join(rolloutDir, "logs-before.txt"), `${runCommand("docker", ["logs", "--tail", "200", options.containerName], { capture: true })}\n`);
 
 try {
   const latestStats = await assertNoActiveSessions(options.containerName, options.allowActive);
@@ -116,24 +99,12 @@ try {
     imageName: options.imageName,
     beforeStats: latestStats,
     restartPolicy,
-    startedAt: new Date().toISOString()
+    startedAt: new Date().toISOString(),
   });
 
   runCommand("docker", ["rm", "-f", options.containerName]);
 
-  const dockerArgs = [
-    "run",
-    "-d",
-    "--name",
-    options.containerName,
-    "--restart",
-    restartPolicy,
-    "--env-file",
-    envFile,
-    ...portArgs,
-    ...mountArgs,
-    options.imageName
-  ];
+  const dockerArgs = ["run", "-d", "--name", options.containerName, "--restart", restartPolicy, "--env-file", envFile, ...portArgs, ...mountArgs, options.imageName];
   const containerId = runCommand("docker", dockerArgs, { capture: true });
 
   let summary = undefined;
@@ -146,7 +117,7 @@ try {
       restartPolicy,
       startedAt: new Date().toISOString(),
       containerId,
-      checkSummary: summary
+      checkSummary: summary,
     });
   }
 
@@ -155,11 +126,11 @@ try {
       {
         containerId,
         rolloutDir,
-        checkSummary: summary
+        checkSummary: summary,
       },
       null,
-      2
-    )
+      2,
+    ),
   );
 } finally {
   await cleanup();

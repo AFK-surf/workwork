@@ -1,14 +1,5 @@
-import type {
-  JsonLike,
-  SlackImageAttachment,
-  SlackInputMessage,
-  SlackSenderKind,
-  SlackThreadMessage
-} from "../../types.js";
-import {
-  normalizeSlackFileAttachments,
-  normalizeSlackJson
-} from "./slack-api.js";
+import type { JsonLike, SlackImageAttachment, SlackInputMessage, SlackSenderKind, SlackThreadMessage } from "../../types.js";
+import { normalizeSlackFileAttachments, normalizeSlackJson } from "./slack-api.js";
 
 export interface SlackEventAuthor {
   readonly userId: string;
@@ -61,8 +52,8 @@ export function parseSlackEvent(event: Record<string, any>, botUserId: string): 
         text: metadata.text,
         mentionedUserIds: metadata.mentionedUserIds,
         images,
-        slackMessage
-      })
+        slackMessage,
+      }),
     };
   }
 
@@ -93,8 +84,8 @@ export function parseSlackEvent(event: Record<string, any>, botUserId: string): 
         text: metadata.text,
         mentionedUserIds: metadata.mentionedUserIds,
         images,
-        slackMessage
-      })
+        slackMessage,
+      }),
     };
   }
 
@@ -124,15 +115,12 @@ export function parseSlackEvent(event: Record<string, any>, botUserId: string): 
       text: metadata.text,
       mentionedUserIds: metadata.mentionedUserIds,
       images,
-      slackMessage
-    })
+      slackMessage,
+    }),
   };
 }
 
-export function createSlackInputFromThreadMessage(
-  source: "thread_reply" | "thread_history",
-  message: SlackThreadMessage
-): SlackInputMessage {
+export function createSlackInputFromThreadMessage(source: "thread_reply" | "thread_history", message: SlackThreadMessage): SlackInputMessage {
   const metadata = parseSlackTextMetadata(message.text);
   return createSlackInput({
     source: source === "thread_history" ? "thread_reply" : source,
@@ -148,7 +136,7 @@ export function createSlackInputFromThreadMessage(
     text: metadata.text,
     mentionedUserIds: metadata.mentionedUserIds,
     images: message.images,
-    slackMessage: message.slackMessage
+    slackMessage: message.slackMessage,
   });
 }
 
@@ -158,7 +146,7 @@ export function parseSlackTextMetadata(rawText: string): {
 } {
   return {
     text: rawText,
-    mentionedUserIds: [...extractMentionedUserIds(rawText)]
+    mentionedUserIds: [...extractMentionedUserIds(rawText)],
   };
 }
 
@@ -166,11 +154,7 @@ export function normalizeControlText(text: string, botUserId: string): string {
   return text.replaceAll(`<@${botUserId}>`, "").trim();
 }
 
-export function isSlackMessageEffectivelyEmpty(
-  text: string,
-  images: readonly SlackImageAttachment[] = [],
-  slackMessage?: JsonLike | undefined
-): boolean {
+export function isSlackMessageEffectivelyEmpty(text: string, images: readonly SlackImageAttachment[] = [], slackMessage?: JsonLike | undefined): boolean {
   return !text.trim() && images.length === 0 && !slackMessage;
 }
 
@@ -179,7 +163,7 @@ export function resolveSlackEventAuthor(event: Record<string, any>): SlackEventA
   if (userId) {
     return {
       userId,
-      senderKind: "user"
+      senderKind: "user",
     };
   }
 
@@ -193,7 +177,7 @@ export function resolveSlackEventAuthor(event: Record<string, any>): SlackEventA
       senderKind: "bot",
       botId,
       appId,
-      senderUsername
+      senderUsername,
     };
   }
 
@@ -202,7 +186,7 @@ export function resolveSlackEventAuthor(event: Record<string, any>): SlackEventA
       userId: `app:${appId}`,
       senderKind: "app",
       appId,
-      senderUsername
+      senderUsername,
     };
   }
 
@@ -210,13 +194,13 @@ export function resolveSlackEventAuthor(event: Record<string, any>): SlackEventA
     return {
       userId: `username:${senderUsername}`,
       senderKind: "unknown",
-      senderUsername
+      senderUsername,
     };
   }
 
   return {
     userId: "unknown:slack-message",
-    senderKind: "unknown"
+    senderKind: "unknown",
   };
 }
 
@@ -250,7 +234,7 @@ function createSlackInput(options: {
     text: options.text,
     mentionedUserIds: options.mentionedUserIds,
     images: options.images,
-    slackMessage: options.slackMessage
+    slackMessage: options.slackMessage,
   };
 }
 

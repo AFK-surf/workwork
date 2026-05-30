@@ -3,9 +3,7 @@
 import { spawn } from "node:child_process";
 
 const sshHost = process.env.ADMIN_REMOTE_SSH_HOST || "admin@100.67.4.27";
-const sshProxyCommand =
-  process.env.ADMIN_REMOTE_SSH_PROXY_COMMAND ||
-  "/Applications/Tailscale.app/Contents/MacOS/Tailscale nc %h %p";
+const sshProxyCommand = process.env.ADMIN_REMOTE_SSH_PROXY_COMMAND || "/Applications/Tailscale.app/Contents/MacOS/Tailscale nc %h %p";
 const localApiPort = process.env.ADMIN_REMOTE_LOCAL_API_PORT || "3000";
 const remoteApiPort = process.env.ADMIN_REMOTE_API_PORT || "3000";
 const adminUiPort = process.env.ADMIN_UI_DEV_PORT || "5173";
@@ -24,22 +22,7 @@ async function main() {
   if (await isReady(readyUrl)) {
     console.log(`[admin-remote] reusing local API tunnel at ${apiOrigin}`);
   } else {
-    spawnManaged("ssh", [
-      "-o",
-      "BatchMode=yes",
-      "-o",
-      "ExitOnForwardFailure=yes",
-      "-o",
-      "ConnectTimeout=10",
-      "-o",
-      "ServerAliveInterval=15",
-      "-o",
-      `ProxyCommand=${sshProxyCommand}`,
-      "-N",
-      "-L",
-      `127.0.0.1:${localApiPort}:127.0.0.1:${remoteApiPort}`,
-      sshHost
-    ]);
+    spawnManaged("ssh", ["-o", "BatchMode=yes", "-o", "ExitOnForwardFailure=yes", "-o", "ConnectTimeout=10", "-o", "ServerAliveInterval=15", "-o", `ProxyCommand=${sshProxyCommand}`, "-N", "-L", `127.0.0.1:${localApiPort}:127.0.0.1:${remoteApiPort}`, sshHost]);
     await waitForReady(readyUrl, 15_000);
   }
 
@@ -49,15 +32,15 @@ async function main() {
     env: {
       ...process.env,
       ADMIN_API_PROXY_ORIGIN: apiOrigin,
-      ADMIN_UI_DEV_PORT: adminUiPort
-    }
+      ADMIN_UI_DEV_PORT: adminUiPort,
+    },
   });
 }
 
 function spawnManaged(command, args, options = {}) {
   const child = spawn(command, args, {
     stdio: "inherit",
-    ...options
+    ...options,
   });
   children.push(child);
   child.on("exit", (code, signal) => {
@@ -94,7 +77,7 @@ async function isReady(url) {
   const timer = setTimeout(() => controller.abort(), 1_000);
   try {
     const response = await fetch(url, {
-      signal: controller.signal
+      signal: controller.signal,
     });
     return response.ok;
   } catch {

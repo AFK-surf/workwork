@@ -37,7 +37,7 @@ describe("npm package deployment contract", () => {
 
     expect(packageJson).toMatchObject({
       name: "agent-session-broker-repo",
-      private: true
+      private: true,
     });
     expect(packageJson.repository?.url).toBe("git+https://github.com/HOOLC/slack-codex-broker.git");
     expect(packageJson.bugs?.url).toBe("https://github.com/HOOLC/slack-codex-broker/issues");
@@ -45,48 +45,25 @@ describe("npm package deployment contract", () => {
     expect(adminPackageJson).toMatchObject({
       name: "@agent-session-broker/admin",
       bin: {
-        "agent-session-broker-macos-bootstrap": "./scripts/ops/macos-bootstrap.mjs"
-      }
+        "agent-session-broker-macos-bootstrap": "./scripts/ops/macos-bootstrap.mjs",
+      },
     });
     expect(workerPackageJson).toMatchObject({
-      name: "@agent-session-broker/worker"
+      name: "@agent-session-broker/worker",
     });
     expect(adminPackageJson.publishConfig).toMatchObject({
       access: "public",
-      registry: "https://registry.npmjs.org/"
+      registry: "https://registry.npmjs.org/",
     });
     expect(workerPackageJson.publishConfig).toMatchObject({
       access: "public",
-      registry: "https://registry.npmjs.org/"
+      registry: "https://registry.npmjs.org/",
     });
-    expect(adminPackageJson.files).toEqual(expect.arrayContaining([
-      "dist/src/",
-      "dist/admin-ui/",
-      "scripts/ops/lib.mjs",
-      "scripts/ops/macos-bootstrap.mjs",
-      "scripts/ops/macos-launchd-launcher.mjs",
-      "scripts/ops/macos-launchd-restart.mjs"
-    ]));
-    expect(workerPackageJson.files).toEqual(expect.arrayContaining([
-      "dist/src/",
-      "scripts/ops/macos-launchd-launcher.mjs",
-      "scripts/ops/macos-launchd-restart.mjs"
-    ]));
+    expect(adminPackageJson.files).toEqual(expect.arrayContaining(["dist/src/", "dist/admin-ui/", "scripts/ops/lib.mjs", "scripts/ops/macos-bootstrap.mjs", "scripts/ops/macos-launchd-launcher.mjs", "scripts/ops/macos-launchd-restart.mjs"]));
+    expect(workerPackageJson.files).toEqual(expect.arrayContaining(["dist/src/", "scripts/ops/macos-launchd-launcher.mjs", "scripts/ops/macos-launchd-restart.mjs"]));
     expect(workerPackageJson.files).not.toEqual(expect.arrayContaining(["dist/admin-ui/"]));
-    expect(adminPackageJson.files).not.toEqual(expect.arrayContaining([
-      "src/",
-      "test/",
-      "dist/test/",
-      ".data/",
-      ".data-agent-trace-preview/"
-    ]));
-    expect(workerPackageJson.files).not.toEqual(expect.arrayContaining([
-      "src/",
-      "test/",
-      "dist/test/",
-      ".data/",
-      ".data-agent-trace-preview/"
-    ]));
+    expect(adminPackageJson.files).not.toEqual(expect.arrayContaining(["src/", "test/", "dist/test/", ".data/", ".data-agent-trace-preview/"]));
+    expect(workerPackageJson.files).not.toEqual(expect.arrayContaining(["src/", "test/", "dist/test/", ".data/", ".data-agent-trace-preview/"]));
     expect(packageJson.scripts?.["release:stage"]).toContain("stage-npm-packages");
     expect(packageJson.scripts?.["release:pack"]).toContain("pnpm build");
     expect(packageJson.scripts?.["release:pack"]).toContain("npm pack artifacts/npm-packages/admin");

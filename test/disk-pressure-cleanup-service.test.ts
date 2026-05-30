@@ -26,12 +26,12 @@ describe("DiskPressureCleanupService", () => {
         DATA_ROOT: dataRoot,
         DISK_CLEANUP_MIN_FREE_BYTES: "0",
         DISK_CLEANUP_TARGET_FREE_BYTES: "0",
-        DISK_CLEANUP_SESSION_CACHE_TTL_MS: String(DAY_MS)
+        DISK_CLEANUP_SESSION_CACHE_TTL_MS: String(DAY_MS),
       } as NodeJS.ProcessEnv);
       const stateStore = new StateStore(config.stateDir, config.sessionsRoot);
       const sessions = new SessionManager({
         stateStore,
-        sessionsRoot: config.sessionsRoot
+        sessionsRoot: config.sessionsRoot,
       });
       await sessions.load();
 
@@ -50,8 +50,8 @@ describe("DiskPressureCleanupService", () => {
         isDarwin: true,
         statFs: async () => ({
           freeBytes: 1000,
-          totalBytes: 1000
-        })
+          totalBytes: 1000,
+        }),
       });
 
       const result = await cleanup.runOnce("test");
@@ -61,12 +61,15 @@ describe("DiskPressureCleanupService", () => {
       expect(result.deletedCacheEntryCount).toBe(0);
       expect(await fileExists(path.dirname(derivedDataPath))).toBe(true);
       expect(await fileExists(path.dirname(nodeModulesPath))).toBe(true);
-      expect(infoSpy).toHaveBeenCalledWith("Disk cleanup session cache candidate", expect.objectContaining({
-        sessionKey: stale.key,
-        path: path.join(stale.workspacePath, "frontend/macos/.build/DerivedData"),
-        bytes: expect.any(Number),
-        dryRun: true
-      }));
+      expect(infoSpy).toHaveBeenCalledWith(
+        "Disk cleanup session cache candidate",
+        expect.objectContaining({
+          sessionKey: stale.key,
+          path: path.join(stale.workspacePath, "frontend/macos/.build/DerivedData"),
+          bytes: expect.any(Number),
+          dryRun: true,
+        }),
+      );
     } finally {
       infoSpy.mockRestore();
       await fs.rm(dataRoot, { force: true, recursive: true });
@@ -85,12 +88,12 @@ describe("DiskPressureCleanupService", () => {
         DISK_CLEANUP_DRY_RUN: "false",
         DISK_CLEANUP_MIN_FREE_BYTES: "0",
         DISK_CLEANUP_TARGET_FREE_BYTES: "0",
-        DISK_CLEANUP_SESSION_CACHE_TTL_MS: String(DAY_MS)
+        DISK_CLEANUP_SESSION_CACHE_TTL_MS: String(DAY_MS),
       } as NodeJS.ProcessEnv);
       const stateStore = new StateStore(config.stateDir, config.sessionsRoot);
       const sessions = new SessionManager({
         stateStore,
-        sessionsRoot: config.sessionsRoot
+        sessionsRoot: config.sessionsRoot,
       });
       await sessions.load();
 
@@ -99,7 +102,7 @@ describe("DiskPressureCleanupService", () => {
       const stale = await seedSession(sessions, stateStore, "CSTALECACHE", "100.000", oldAt);
       const active = await seedSession(sessions, stateStore, "CACTIVECACHE", "200.000", oldAt, {
         activeTurnId: "turn-active",
-        activeTurnStartedAt: oldAt
+        activeTurnStartedAt: oldAt,
       });
       const protectedJob = await seedSession(sessions, stateStore, "CJOBCACHE", "300.000", oldAt);
       await seedJob(config.jobsRoot, sessions, {
@@ -109,7 +112,7 @@ describe("DiskPressureCleanupService", () => {
         channelId: protectedJob.channelId,
         rootThreadTs: protectedJob.rootThreadTs,
         workspacePath: protectedJob.workspacePath,
-        at: oldAt
+        at: oldAt,
       });
 
       const staleDerivedDataPath = path.join(stale.workspacePath, "frontend/macos/.build/DerivedData/file.o");
@@ -128,8 +131,8 @@ describe("DiskPressureCleanupService", () => {
         isDarwin: true,
         statFs: async () => ({
           freeBytes: 1000,
-          totalBytes: 1000
-        })
+          totalBytes: 1000,
+        }),
       });
 
       const result = await cleanup.runOnce("test");
@@ -142,12 +145,15 @@ describe("DiskPressureCleanupService", () => {
       expect(await fileExists(path.join(stale.workspacePath, "web/node_modules"))).toBe(false);
       expect(await fileExists(path.join(active.workspacePath, "web/node_modules"))).toBe(true);
       expect(await fileExists(path.join(protectedJob.workspacePath, "web/node_modules"))).toBe(true);
-      expect(infoSpy).toHaveBeenCalledWith("Disk cleanup session cache deleted", expect.objectContaining({
-        sessionKey: stale.key,
-        path: path.join(stale.workspacePath, "web/node_modules"),
-        bytes: expect.any(Number),
-        dryRun: false
-      }));
+      expect(infoSpy).toHaveBeenCalledWith(
+        "Disk cleanup session cache deleted",
+        expect.objectContaining({
+          sessionKey: stale.key,
+          path: path.join(stale.workspacePath, "web/node_modules"),
+          bytes: expect.any(Number),
+          dryRun: false,
+        }),
+      );
     } finally {
       infoSpy.mockRestore();
       await fs.rm(dataRoot, { force: true, recursive: true });
@@ -165,12 +171,12 @@ describe("DiskPressureCleanupService", () => {
         DISK_CLEANUP_DRY_RUN: "false",
         DISK_CLEANUP_MIN_FREE_BYTES: "0",
         DISK_CLEANUP_TARGET_FREE_BYTES: "0",
-        DISK_CLEANUP_SESSION_CACHE_TTL_MS: String(DAY_MS)
+        DISK_CLEANUP_SESSION_CACHE_TTL_MS: String(DAY_MS),
       } as NodeJS.ProcessEnv);
       const stateStore = new StateStore(config.stateDir, config.sessionsRoot);
       const sessions = new SessionManager({
         stateStore,
-        sessionsRoot: config.sessionsRoot
+        sessionsRoot: config.sessionsRoot,
       });
       await sessions.load();
 
@@ -187,8 +193,8 @@ describe("DiskPressureCleanupService", () => {
         isDarwin: false,
         statFs: async () => ({
           freeBytes: 1000,
-          totalBytes: 1000
-        })
+          totalBytes: 1000,
+        }),
       });
 
       const result = await cleanup.runOnce("test");
@@ -214,12 +220,12 @@ describe("DiskPressureCleanupService", () => {
         DISK_CLEANUP_TARGET_FREE_BYTES: "100",
         DISK_CLEANUP_INACTIVE_SESSION_MS: String(DAY_MS),
         DISK_CLEANUP_JOB_PROTECTION_MS: String(2 * DAY_MS),
-        DISK_CLEANUP_OLD_LOG_MS: String(DAY_MS)
+        DISK_CLEANUP_OLD_LOG_MS: String(DAY_MS),
       } as NodeJS.ProcessEnv);
       const stateStore = new StateStore(config.stateDir, config.sessionsRoot);
       const sessions = new SessionManager({
         stateStore,
-        sessionsRoot: config.sessionsRoot
+        sessionsRoot: config.sessionsRoot,
       });
       await sessions.load();
 
@@ -229,7 +235,7 @@ describe("DiskPressureCleanupService", () => {
       const deletedPlain = await seedSession(sessions, stateStore, "COLD", "100.000", oldAt);
       const deletedActive = await seedSession(sessions, stateStore, "CACTIVE", "200.000", oldAt, {
         activeTurnId: "turn-old",
-        activeTurnStartedAt: oldAt
+        activeTurnStartedAt: oldAt,
       });
       const deletedPending = await seedSession(sessions, stateStore, "CPENDING", "300.000", oldAt);
       await sessions.upsertInboundMessage({
@@ -243,12 +249,12 @@ describe("DiskPressureCleanupService", () => {
         text: "still old enough to delete",
         status: "pending",
         createdAt: oldAt,
-        updatedAt: oldAt
+        updatedAt: oldAt,
       });
 
       const protectedActive = await seedSession(sessions, stateStore, "CPROTECTED", "400.000", protectedAt, {
         activeTurnId: "turn-protected",
-        activeTurnStartedAt: protectedAt
+        activeTurnStartedAt: protectedAt,
       });
       const protectedJob = await seedSession(sessions, stateStore, "CJOB", "500.000", protectedAt);
       await seedJob(config.jobsRoot, sessions, {
@@ -258,7 +264,7 @@ describe("DiskPressureCleanupService", () => {
         channelId: protectedJob.channelId,
         rootThreadTs: protectedJob.rootThreadTs,
         workspacePath: protectedJob.workspacePath,
-        at: protectedAt
+        at: protectedAt,
       });
       const deletedJob = await seedSession(sessions, stateStore, "CSTALEJOB", "600.000", oldAt);
       await seedJob(config.jobsRoot, sessions, {
@@ -268,27 +274,18 @@ describe("DiskPressureCleanupService", () => {
         channelId: deletedJob.channelId,
         rootThreadTs: deletedJob.rootThreadTs,
         workspacePath: deletedJob.workspacePath,
-        at: oldAt
+        at: oldAt,
       });
 
-      const deletedSessionLogPath = path.join(
-        getSessionLogDirectory(config.logDir, deletedPlain.key),
-        "2026-04-25-00.jsonl"
-      );
-      const deletedJobLogPath = path.join(
-        getJobLogDirectory(config.logDir, "job-stale"),
-        "2026-04-25-00.jsonl"
-      );
-      const protectedJobLogPath = path.join(
-        getJobLogDirectory(config.logDir, "job-protected"),
-        "2026-04-25-00.jsonl"
-      );
+      const deletedSessionLogPath = path.join(getSessionLogDirectory(config.logDir, deletedPlain.key), "2026-04-25-00.jsonl");
+      const deletedJobLogPath = path.join(getJobLogDirectory(config.logDir, "job-stale"), "2026-04-25-00.jsonl");
+      const protectedJobLogPath = path.join(getJobLogDirectory(config.logDir, "job-protected"), "2026-04-25-00.jsonl");
       await fs.mkdir(path.dirname(deletedSessionLogPath), { recursive: true });
       await fs.mkdir(path.dirname(deletedJobLogPath), { recursive: true });
       await fs.mkdir(path.dirname(protectedJobLogPath), { recursive: true });
-      await fs.writeFile(deletedSessionLogPath, "{\"session\":\"deleted\"}\n");
-      await fs.writeFile(deletedJobLogPath, "{\"job\":\"deleted\"}\n");
-      await fs.writeFile(protectedJobLogPath, "{\"job\":\"protected\"}\n");
+      await fs.writeFile(deletedSessionLogPath, '{"session":"deleted"}\n');
+      await fs.writeFile(deletedJobLogPath, '{"job":"deleted"}\n');
+      await fs.writeFile(protectedJobLogPath, '{"job":"protected"}\n');
 
       const brokerLogDir = path.join(config.logDir, "broker");
       const rawLogDir = path.join(config.logDir, "raw", "codex-rpc");
@@ -300,10 +297,10 @@ describe("DiskPressureCleanupService", () => {
       const rawLogPath = path.join(rawLogDir, "2026-04-22-00.jsonl");
       const compressedRawLogPath = path.join(rawLogDir, "2026-04-22-00.jsonl.gz");
       const freshRawLogPath = path.join(freshRawLogDir, "2026-04-25-00.jsonl");
-      await fs.writeFile(brokerLogPath, "{\"old\":true}\n");
-      await fs.writeFile(rawLogPath, "{\"old\":true}\n");
+      await fs.writeFile(brokerLogPath, '{"old":true}\n');
+      await fs.writeFile(rawLogPath, '{"old":true}\n');
       await fs.writeFile(compressedRawLogPath, "compressed");
-      await fs.writeFile(freshRawLogPath, "{\"fresh\":true}\n");
+      await fs.writeFile(freshRawLogPath, '{"fresh":true}\n');
       await fs.utimes(brokerLogPath, new Date(oldAt), new Date(oldAt));
       await fs.utimes(rawLogPath, new Date(oldAt), new Date(oldAt));
       await fs.utimes(compressedRawLogPath, new Date(oldAt), new Date(oldAt));
@@ -316,8 +313,8 @@ describe("DiskPressureCleanupService", () => {
         now: () => now,
         statFs: async () => ({
           freeBytes: sessions.listSessions().length <= 2 ? 100 : 0,
-          totalBytes: 1000
-        })
+          totalBytes: 1000,
+        }),
       });
 
       const result = await cleanup.runOnce("test");
@@ -327,7 +324,7 @@ describe("DiskPressureCleanupService", () => {
       expect(cancelJob).toHaveBeenCalledTimes(1);
       expect(cancelJob).toHaveBeenCalledWith("job-stale", undefined, {
         skipTokenCheck: true,
-        skipEvent: true
+        skipEvent: true,
       });
       expect(sessions.getSessionByKey(deletedPlain.key)).toBeUndefined();
       expect(sessions.getSessionByKey(deletedActive.key)).toBeUndefined();
@@ -364,12 +361,12 @@ describe("DiskPressureCleanupService", () => {
         DISK_CLEANUP_TARGET_FREE_BYTES: "100",
         DISK_CLEANUP_INACTIVE_SESSION_MS: String(DAY_MS),
         DISK_CLEANUP_JOB_PROTECTION_MS: String(2 * DAY_MS),
-        DISK_CLEANUP_OLD_LOG_MS: String(DAY_MS)
+        DISK_CLEANUP_OLD_LOG_MS: String(DAY_MS),
       } as NodeJS.ProcessEnv);
       const stateStore = new StateStore(config.stateDir, config.sessionsRoot);
       const sessions = new SessionManager({
         stateStore,
-        sessionsRoot: config.sessionsRoot
+        sessionsRoot: config.sessionsRoot,
       });
       await sessions.load();
 
@@ -377,7 +374,7 @@ describe("DiskPressureCleanupService", () => {
       const oldAt = new Date(now.getTime() - 72 * 60 * 60 * 1000).toISOString();
       const oldLogPath = path.join(config.logDir, "broker", "2026-04-22-00.jsonl");
       await fs.mkdir(path.dirname(oldLogPath), { recursive: true });
-      await fs.writeFile(oldLogPath, "{\"old\":true}\n");
+      await fs.writeFile(oldLogPath, '{"old":true}\n');
       await fs.utimes(oldLogPath, new Date(oldAt), new Date(oldAt));
 
       const cleanup = new DiskPressureCleanupService({
@@ -387,10 +384,10 @@ describe("DiskPressureCleanupService", () => {
         statFs: async (targetPath) => {
           const isLogRoot = path.resolve(targetPath) === path.resolve(config.logDir);
           return {
-            freeBytes: isLogRoot && await fileExists(oldLogPath) ? 0 : 100,
-            totalBytes: 1000
+            freeBytes: isLogRoot && (await fileExists(oldLogPath)) ? 0 : 100,
+            totalBytes: 1000,
           };
-        }
+        },
       });
 
       const result = await cleanup.runOnce("test");
@@ -415,14 +412,14 @@ async function seedSession(
   patch: {
     readonly activeTurnId?: string | undefined;
     readonly activeTurnStartedAt?: string | undefined;
-  } = {}
+  } = {},
 ) {
   const session = await sessions.ensureSession(channelId, rootThreadTs);
   const record = {
     ...session,
     ...patch,
     createdAt: at,
-    updatedAt: at
+    updatedAt: at,
   };
   await stateStore.upsertSession(record);
   await fs.writeFile(path.join(session.workspacePath, "marker.txt"), `${channelId}:${rootThreadTs}`);
@@ -445,7 +442,7 @@ async function seedJob(
     readonly rootThreadTs: string;
     readonly workspacePath: string;
     readonly at: string;
-  }
+  },
 ): Promise<void> {
   const jobDir = path.join(jobsRoot, options.id);
   await fs.mkdir(jobDir, { recursive: true });
@@ -467,6 +464,6 @@ async function seedJob(
     createdAt: options.at,
     updatedAt: options.at,
     startedAt: options.at,
-    heartbeatAt: options.at
+    heartbeatAt: options.at,
   });
 }

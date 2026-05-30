@@ -10,10 +10,14 @@ describe("GitHubAuthorMappingService", () => {
   const tempDirs: string[] = [];
 
   afterEach(async () => {
-    await Promise.all(tempDirs.splice(0).map((directory) => fs.rm(directory, {
-      recursive: true,
-      force: true
-    })));
+    await Promise.all(
+      tempDirs.splice(0).map((directory) =>
+        fs.rm(directory, {
+          recursive: true,
+          force: true,
+        }),
+      ),
+    );
   });
 
   it("infers mappings from Slack profile email and preserves manual overrides", async () => {
@@ -21,7 +25,7 @@ describe("GitHubAuthorMappingService", () => {
     tempDirs.push(stateDir);
 
     const service = new GitHubAuthorMappingService({
-      stateDir
+      stateDir,
     });
     await service.load();
 
@@ -31,22 +35,22 @@ describe("GitHubAuthorMappingService", () => {
       username: "alice",
       displayName: "Alice Slack",
       realName: "Alice Example",
-      email: "alice@example.com"
+      email: "alice@example.com",
     });
     expect(inferred).toMatchObject({
       slackUserId: "U123",
       githubAuthor: "Alice Example <alice@example.com>",
-      source: "slack_inferred"
+      source: "slack_inferred",
     });
 
     const manual = await service.upsertManualMapping({
       slackUserId: "U123",
-      githubAuthor: "Alice Manual <manual@example.com>"
+      githubAuthor: "Alice Manual <manual@example.com>",
     });
     expect(manual).toMatchObject({
       slackUserId: "U123",
       githubAuthor: "Alice Manual <manual@example.com>",
-      source: "manual"
+      source: "manual",
     });
 
     const afterManual = await service.recordObservedIdentity({
@@ -55,15 +59,15 @@ describe("GitHubAuthorMappingService", () => {
       username: "alice-updated",
       displayName: "Alice Updated",
       realName: "Alice Updated",
-      email: "alice-updated@example.com"
+      email: "alice-updated@example.com",
     });
     expect(afterManual).toMatchObject({
       githubAuthor: "Alice Manual <manual@example.com>",
       source: "manual",
       slackIdentity: {
         userId: "U123",
-        email: "alice-updated@example.com"
-      }
+        email: "alice-updated@example.com",
+      },
     });
   });
 });

@@ -2,11 +2,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import type {
-  GitHubAuthorMappingRecord,
-  GitHubAuthorMappingSource,
-  SlackUserIdentity
-} from "../types.js";
+import type { GitHubAuthorMappingRecord, GitHubAuthorMappingSource, SlackUserIdentity } from "../types.js";
 import { ensureDir } from "../utils/fs.js";
 import { inferGitHubAuthorFromSlackIdentity } from "./git/github-author-utils.js";
 
@@ -15,9 +11,7 @@ export class GitHubAuthorMappingService {
   readonly #mappingsDir: string;
   #mappings = new Map<string, GitHubAuthorMappingRecord>();
 
-  constructor(options: {
-    readonly stateDir: string;
-  }) {
+  constructor(options: { readonly stateDir: string }) {
     this.#rootDir = path.join(options.stateDir, "github-author-mappings");
     this.#mappingsDir = this.#rootDir;
   }
@@ -55,24 +49,19 @@ export class GitHubAuthorMappingService {
     return this.#mappings.get(slackUserId);
   }
 
-  async upsertManualMapping(options: {
-    readonly slackUserId: string;
-    readonly githubAuthor: string;
-    readonly slackIdentity?: SlackUserIdentity | undefined;
-  }): Promise<GitHubAuthorMappingRecord> {
-    const existing = await this.#readRecord(options.slackUserId) ?? this.#mappings.get(options.slackUserId);
+  async upsertManualMapping(options: { readonly slackUserId: string; readonly githubAuthor: string; readonly slackIdentity?: SlackUserIdentity | undefined }): Promise<GitHubAuthorMappingRecord> {
+    const existing = (await this.#readRecord(options.slackUserId)) ?? this.#mappings.get(options.slackUserId);
     const slackIdentity = normalizeSlackIdentity(options.slackIdentity) ??
-      existing?.slackIdentity ??
-      {
+      existing?.slackIdentity ?? {
         userId: options.slackUserId,
-        mention: `<@${options.slackUserId}>`
+        mention: `<@${options.slackUserId}>`,
       };
 
     const record = this.#buildRecord({
       slackUserId: options.slackUserId,
       githubAuthor: options.githubAuthor,
       source: "manual",
-      slackIdentity
+      slackIdentity,
     });
     await this.#writeRecord(record);
     return record;
@@ -81,7 +70,7 @@ export class GitHubAuthorMappingService {
   async deleteMapping(slackUserId: string): Promise<void> {
     this.#mappings.delete(slackUserId);
     await fs.rm(path.join(this.#mappingsDir, `${encodeKey(slackUserId)}.json`), {
-      force: true
+      force: true,
     });
   }
 
@@ -92,7 +81,7 @@ export class GitHubAuthorMappingService {
     }
 
     const inferredAuthor = inferGitHubAuthorFromSlackIdentity(normalizedIdentity);
-    const existing = await this.#readRecord(normalizedIdentity.userId) ?? this.#mappings.get(normalizedIdentity.userId);
+    const existing = (await this.#readRecord(normalizedIdentity.userId)) ?? this.#mappings.get(normalizedIdentity.userId);
 
     if (existing?.source === "manual") {
       if (!sameSlackIdentity(existing.slackIdentity, normalizedIdentity)) {
@@ -100,7 +89,7 @@ export class GitHubAuthorMappingService {
           slackUserId: existing.slackUserId,
           githubAuthor: existing.githubAuthor,
           source: existing.source,
-          slackIdentity: normalizedIdentity
+          slackIdentity: normalizedIdentity,
         });
         await this.#writeRecord(updated);
         return updated;
@@ -113,12 +102,7 @@ export class GitHubAuthorMappingService {
       return existing ?? null;
     }
 
-    if (
-      existing &&
-      existing.source === "slack_inferred" &&
-      existing.githubAuthor === inferredAuthor &&
-      sameSlackIdentity(existing.slackIdentity, normalizedIdentity)
-    ) {
+    if (existing && existing.source === "slack_inferred" && existing.githubAuthor === inferredAuthor && sameSlackIdentity(existing.slackIdentity, normalizedIdentity)) {
       return existing;
     }
 
@@ -126,24 +110,19 @@ export class GitHubAuthorMappingService {
       slackUserId: normalizedIdentity.userId,
       githubAuthor: inferredAuthor,
       source: "slack_inferred",
-      slackIdentity: normalizedIdentity
+      slackIdentity: normalizedIdentity,
     });
     await this.#writeRecord(record);
     return record;
   }
 
-  #buildRecord(options: {
-    readonly slackUserId: string;
-    readonly githubAuthor: string;
-    readonly source: GitHubAuthorMappingSource;
-    readonly slackIdentity: SlackUserIdentity;
-  }): GitHubAuthorMappingRecord {
+  #buildRecord(options: { readonly slackUserId: string; readonly githubAuthor: string; readonly source: GitHubAuthorMappingSource; readonly slackIdentity: SlackUserIdentity }): GitHubAuthorMappingRecord {
     return {
       slackUserId: options.slackUserId,
       githubAuthor: options.githubAuthor.trim(),
       source: options.source,
       slackIdentity: options.slackIdentity,
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
     };
   }
 
@@ -158,9 +137,7 @@ export class GitHubAuthorMappingService {
 
   async #readRecord(slackUserId: string): Promise<GitHubAuthorMappingRecord | null> {
     try {
-      const raw = JSON.parse(
-        await fs.readFile(path.join(this.#mappingsDir, `${encodeKey(slackUserId)}.json`), "utf8")
-      ) as Partial<GitHubAuthorMappingRecord>;
+      const raw = JSON.parse(await fs.readFile(path.join(this.#mappingsDir, `${encodeKey(slackUserId)}.json`), "utf8")) as Partial<GitHubAuthorMappingRecord>;
       const normalized = normalizeMapping(raw);
       if (normalized) {
         this.#mappings.set(normalized.slackUserId, normalized);
@@ -190,7 +167,7 @@ function normalizeMapping(raw: Partial<GitHubAuthorMappingRecord>): GitHubAuthor
     githubAuthor,
     source,
     slackIdentity,
-    updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : new Date().toISOString()
+    updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : new Date().toISOString(),
   };
 }
 
@@ -205,7 +182,7 @@ function normalizeSlackIdentity(identity: SlackUserIdentity | null | undefined):
     username: normalizeOptionalString(identity.username),
     displayName: normalizeOptionalString(identity.displayName),
     realName: normalizeOptionalString(identity.realName),
-    email: normalizeOptionalString(identity.email)?.toLowerCase()
+    email: normalizeOptionalString(identity.email)?.toLowerCase(),
   };
 }
 

@@ -19,9 +19,9 @@ afterEach(async () => {
     tmpRoots.splice(0).map(async (directory) => {
       await fs.rm(directory, {
         force: true,
-        recursive: true
+        recursive: true,
       });
-    })
+    }),
   );
 });
 
@@ -34,14 +34,14 @@ describe("syncUserCodexHome", () => {
     await fs.writeFile(path.join(sourceHome, "AGENT.md"), "personal memory\n");
     await fs.writeFile(path.join(sourceHome, "AGENTS.md"), "global agent memory\n");
     await fs.writeFile(path.join(sourceHome, "memory.md"), "persistent notes\n");
-    await fs.writeFile(path.join(sourceHome, "config.toml"), "model = \"gpt-5\"\n");
+    await fs.writeFile(path.join(sourceHome, "config.toml"), 'model = "gpt-5"\n');
     await fs.mkdir(path.join(sourceHome, "skills"), { recursive: true });
     await fs.writeFile(path.join(sourceHome, "skills", "README.md"), "skill docs\n");
 
     await syncUserCodexHome({
       codexHome: targetHome,
       hostCodexHomePath: sourceHome,
-      runtimeHomePath: runtimeHome
+      runtimeHomePath: runtimeHome,
     });
 
     expect(await fs.readFile(path.join(targetHome, "AGENT.md"), "utf8")).toBe("personal memory\n");
@@ -73,7 +73,7 @@ describe("syncUserCodexHome", () => {
     await syncUserCodexHome({
       codexHome: targetHome,
       hostCodexHomePath: sourceHome,
-      runtimeHomePath: runtimeHome
+      runtimeHomePath: runtimeHome,
     });
 
     await expect(fs.access(path.join(sourceHome, "AGENT.md"))).rejects.toThrow();
@@ -103,7 +103,7 @@ describe("syncUserCodexHome", () => {
 
     await syncUserCodexHome({
       codexHome: targetHome,
-      hostCodexHomePath: sourceHome
+      hostCodexHomePath: sourceHome,
     });
 
     expect(await fs.readFile(path.join(targetHome, "AGENTS.md"), "utf8")).toBe("host agents\n");
@@ -114,7 +114,7 @@ describe("syncUserCodexHome", () => {
 
     await syncUserCodexHome({
       codexHome: targetHome,
-      hostCodexHomePath: sourceHome
+      hostCodexHomePath: sourceHome,
     });
 
     expect(await fs.readFile(path.join(targetHome, "AGENTS.md"), "utf8")).toBe("broker-only agents\n");
@@ -127,13 +127,13 @@ describe("syncUserCodexHome", () => {
     await fs.writeFile(path.join(sourceHome, "config.toml"), "before = true\n");
     await syncUserCodexHome({
       codexHome: targetHome,
-      hostCodexHomePath: sourceHome
+      hostCodexHomePath: sourceHome,
     });
 
     await fs.rm(path.join(sourceHome, "config.toml"));
     await syncUserCodexHome({
       codexHome: targetHome,
-      hostCodexHomePath: sourceHome
+      hostCodexHomePath: sourceHome,
     });
 
     await expect(fs.access(path.join(targetHome, "config.toml"))).rejects.toThrow();
@@ -147,15 +147,11 @@ describe("syncUserCodexHome", () => {
     await fs.mkdir(path.join(sourceHome, "skills"), { recursive: true });
     await fs.mkdir(path.join(externalSkillRoot, "linked-skill"), { recursive: true });
     await fs.writeFile(path.join(externalSkillRoot, "linked-skill", "SKILL.md"), "linked skill\n");
-    await fs.symlink(
-      path.join(externalSkillRoot, "linked-skill"),
-      path.join(sourceHome, "skills", "linked-skill"),
-      "dir"
-    );
+    await fs.symlink(path.join(externalSkillRoot, "linked-skill"), path.join(sourceHome, "skills", "linked-skill"), "dir");
 
     await syncUserCodexHome({
       codexHome: targetHome,
-      hostCodexHomePath: sourceHome
+      hostCodexHomePath: sourceHome,
     });
 
     expect(await fs.readFile(path.join(targetHome, "skills", "linked-skill", "SKILL.md"), "utf8")).toBe("linked skill\n");
@@ -174,7 +170,7 @@ describe("syncUserCodexHome", () => {
       codexHome: targetHome,
       hostCodexHomePath: sourceHome,
       runtimeHomePath: runtimeHome,
-      legacyPersonalMemoryPath: path.join(legacyHome, ".codex", "AGENT.md")
+      legacyPersonalMemoryPath: path.join(legacyHome, ".codex", "AGENT.md"),
     });
 
     expect(await fs.readFile(path.join(targetHome, "AGENT.md"), "utf8")).toBe("legacy personal memory\n");

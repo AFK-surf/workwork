@@ -15,7 +15,7 @@ describe("AgentTraceRecorder", () => {
     const stateStore = new StateStore(stateDir, sessionsRoot);
     const sessions = new SessionManager({
       stateStore,
-      sessionsRoot
+      sessionsRoot,
     });
 
     await sessions.load();
@@ -24,7 +24,7 @@ describe("AgentTraceRecorder", () => {
     session = await sessions.setActiveTurnId(session.channelId, session.rootThreadTs, "turn-1");
 
     const recorder = new AgentTraceRecorder({
-      sessions
+      sessions,
     });
     await recorder.record({
       type: "agent.message.completed",
@@ -33,7 +33,7 @@ describe("AgentTraceRecorder", () => {
       messageId: "message-1",
       role: "assistant",
       text: "我会先检查状态。",
-      at: "2026-03-19T00:00:03.000Z"
+      at: "2026-03-19T00:00:03.000Z",
     });
 
     expect(sessions.listAgentTraceEvents(session.key)).toEqual([
@@ -42,14 +42,14 @@ describe("AgentTraceRecorder", () => {
         title: "Assistant 消息",
         summary: "我会先检查状态。",
         detail: "我会先检查状态。",
-        turnId: "turn-1"
-      })
+        turnId: "turn-1",
+      }),
     ]);
 
     stateStore.close();
     await fs.rm(stateDir, {
       force: true,
-      recursive: true
+      recursive: true,
     });
   });
 
@@ -59,7 +59,7 @@ describe("AgentTraceRecorder", () => {
     const stateStore = new StateStore(stateDir, sessionsRoot);
     const sessions = new SessionManager({
       stateStore,
-      sessionsRoot
+      sessionsRoot,
     });
 
     await sessions.load();
@@ -70,7 +70,7 @@ describe("AgentTraceRecorder", () => {
     session = await sessions.setActiveTurnId(session.channelId, session.rootThreadTs, "turn-new");
 
     const recorder = new AgentTraceRecorder({
-      sessions
+      sessions,
     });
     await recorder.record({
       type: "agent.message.completed",
@@ -79,7 +79,7 @@ describe("AgentTraceRecorder", () => {
       messageId: "message-late",
       role: "assistant",
       text: "旧 session 的迟到事件不能断链。",
-      at: "2026-03-19T00:00:03.000Z"
+      at: "2026-03-19T00:00:03.000Z",
     });
 
     expect(sessions.listAgentTraceEvents(session.key)).toEqual([
@@ -87,14 +87,14 @@ describe("AgentTraceRecorder", () => {
         type: "agent_assistant_message",
         summary: "旧 session 的迟到事件不能断链。",
         detail: "旧 session 的迟到事件不能断链。",
-        turnId: "turn-old"
-      })
+        turnId: "turn-old",
+      }),
     ]);
 
     stateStore.close();
     await fs.rm(stateDir, {
       force: true,
-      recursive: true
+      recursive: true,
     });
   });
 
@@ -104,7 +104,7 @@ describe("AgentTraceRecorder", () => {
     const stateStore = new StateStore(stateDir, sessionsRoot);
     const sessions = new SessionManager({
       stateStore,
-      sessionsRoot
+      sessionsRoot,
     });
 
     await sessions.load();
@@ -113,7 +113,7 @@ describe("AgentTraceRecorder", () => {
     session = await sessions.setActiveTurnId(session.channelId, session.rootThreadTs, "turn-1");
 
     const recorder = new AgentTraceRecorder({
-      sessions
+      sessions,
     });
     await recorder.record({
       type: "agent.message.completed",
@@ -122,7 +122,7 @@ describe("AgentTraceRecorder", () => {
       messageId: "message-empty",
       role: "assistant",
       text: "   \n  ",
-      at: "2026-03-19T00:00:03.000Z"
+      at: "2026-03-19T00:00:03.000Z",
     });
 
     expect(sessions.listAgentTraceEvents(session.key)).toEqual([]);
@@ -130,7 +130,7 @@ describe("AgentTraceRecorder", () => {
     stateStore.close();
     await fs.rm(stateDir, {
       force: true,
-      recursive: true
+      recursive: true,
     });
   });
 
@@ -140,7 +140,7 @@ describe("AgentTraceRecorder", () => {
     const stateStore = new StateStore(stateDir, sessionsRoot);
     const sessions = new SessionManager({
       stateStore,
-      sessionsRoot
+      sessionsRoot,
     });
 
     await sessions.load();
@@ -149,7 +149,7 @@ describe("AgentTraceRecorder", () => {
     session = await sessions.setActiveTurnId(session.channelId, session.rootThreadTs, "turn-1");
 
     const recorder = new AgentTraceRecorder({
-      sessions
+      sessions,
     });
     await recorder.record({
       type: "agent.turn.completed",
@@ -157,7 +157,7 @@ describe("AgentTraceRecorder", () => {
       brokerSessionKey: session.key,
       turnId: "turn-1",
       status: "completed",
-      at: "2026-03-19T00:00:03.000Z"
+      at: "2026-03-19T00:00:03.000Z",
     });
     await recorder.record({
       type: "agent.turn.completed",
@@ -166,7 +166,7 @@ describe("AgentTraceRecorder", () => {
       turnId: "turn-1",
       status: "completed",
       finalMessage: "处理完成，已回复 Slack。",
-      at: "2026-03-19T00:00:03.020Z"
+      at: "2026-03-19T00:00:03.020Z",
     });
 
     expect(sessions.listAgentTraceEvents(session.key)).toEqual([
@@ -176,14 +176,14 @@ describe("AgentTraceRecorder", () => {
         summary: "回合已完成",
         detail: "处理完成，已回复 Slack。",
         status: "completed",
-        turnId: "turn-1"
-      })
+        turnId: "turn-1",
+      }),
     ]);
 
     stateStore.close();
     await fs.rm(stateDir, {
       force: true,
-      recursive: true
+      recursive: true,
     });
   });
 
@@ -193,7 +193,7 @@ describe("AgentTraceRecorder", () => {
     const stateStore = new StateStore(stateDir, sessionsRoot);
     const sessions = new SessionManager({
       stateStore,
-      sessionsRoot
+      sessionsRoot,
     });
 
     await sessions.load();
@@ -202,7 +202,7 @@ describe("AgentTraceRecorder", () => {
     session = await sessions.setActiveTurnId(session.channelId, session.rootThreadTs, "turn-1");
 
     const recorder = new AgentTraceRecorder({
-      sessions
+      sessions,
     });
     await recorder.record({
       type: "agent.tool.started",
@@ -212,16 +212,16 @@ describe("AgentTraceRecorder", () => {
       callId: "call-1",
       name: "exec_command",
       input: {
-        command: "/bin/zsh -lc \"cd /tmp/workspace/app && pnpm test\"",
+        command: '/bin/zsh -lc "cd /tmp/workspace/app && pnpm test"',
         cwd: "/tmp/workspace",
         commandActions: [
           {
             type: "test",
-            name: "unit"
-          }
-        ]
+            name: "unit",
+          },
+        ],
       },
-      at: "2026-03-19T00:00:03.000Z"
+      at: "2026-03-19T00:00:03.000Z",
     });
     await recorder.record({
       type: "agent.tool.completed",
@@ -231,14 +231,14 @@ describe("AgentTraceRecorder", () => {
       callId: "call-1",
       name: "exec_command",
       output: {
-        command: "/bin/zsh -lc \"cd /tmp/workspace/app && pnpm test\"",
+        command: '/bin/zsh -lc "cd /tmp/workspace/app && pnpm test"',
         cwd: "/tmp/workspace",
         exitCode: 0,
         durationMs: 1200,
-        aggregatedOutput: "PASS unit tests"
+        aggregatedOutput: "PASS unit tests",
       },
       status: "completed",
-      at: "2026-03-19T00:00:04.000Z"
+      at: "2026-03-19T00:00:04.000Z",
     });
 
     expect(sessions.listAgentTraceEvents(session.key)).toEqual([
@@ -249,8 +249,8 @@ describe("AgentTraceRecorder", () => {
         metadata: expect.objectContaining({
           commandPreview: "pnpm test",
           cwdLabel: "app",
-          actionSummary: "测试 unit"
-        })
+          actionSummary: "测试 unit",
+        }),
       }),
       expect.objectContaining({
         type: "agent_tool_result",
@@ -259,15 +259,15 @@ describe("AgentTraceRecorder", () => {
         metadata: expect.objectContaining({
           exitCode: 0,
           durationMs: 1200,
-          outputPreview: "PASS unit tests"
-        })
-      })
+          outputPreview: "PASS unit tests",
+        }),
+      }),
     ]);
 
     stateStore.close();
     await fs.rm(stateDir, {
       force: true,
-      recursive: true
+      recursive: true,
     });
   });
 
@@ -277,7 +277,7 @@ describe("AgentTraceRecorder", () => {
     const stateStore = new StateStore(stateDir, sessionsRoot);
     const sessions = new SessionManager({
       stateStore,
-      sessionsRoot
+      sessionsRoot,
     });
 
     await sessions.load();
@@ -286,7 +286,7 @@ describe("AgentTraceRecorder", () => {
     session = await sessions.setActiveTurnId(session.channelId, session.rootThreadTs, "turn-1");
 
     const recorder = new AgentTraceRecorder({
-      sessions
+      sessions,
     });
     await recorder.record({
       type: "agent.input.received",
@@ -302,22 +302,26 @@ describe("AgentTraceRecorder", () => {
         "A new message arrived in the active Slack thread. Carefully judge whether it requires a reply or action from you.",
         "structured_message_json:",
         "```json",
-        JSON.stringify({
-          source: "app_mention",
-          message_ts: "1778316208.809479",
-          sender: {
-            kind: "user",
-            user_id: "U123",
-            mention: "<@U123>",
-            display_name: "Jc"
+        JSON.stringify(
+          {
+            source: "app_mention",
+            message_ts: "1778316208.809479",
+            sender: {
+              kind: "user",
+              user_id: "U123",
+              mention: "<@U123>",
+              display_name: "Jc",
+            },
+            text: "<@U0ALY77RMJL> 结合 willow repo，分析图中问题",
+            text_with_resolved_mentions: "@codex-3720 结合 willow repo，分析图中问题",
+            images: [],
           },
-          text: "<@U0ALY77RMJL> 结合 willow repo，分析图中问题",
-          text_with_resolved_mentions: "@codex-3720 结合 willow repo，分析图中问题",
-          images: []
-        }, null, 2),
-        "```"
+          null,
+          2,
+        ),
+        "```",
       ].join("\n"),
-      at: "2026-03-19T00:00:03.000Z"
+      at: "2026-03-19T00:00:03.000Z",
     });
 
     expect(sessions.listAgentTraceEvents(session.key)).toEqual([
@@ -330,15 +334,15 @@ describe("AgentTraceRecorder", () => {
           inputId: "input-1",
           source: "app_mention",
           sender: "Jc",
-          messageTs: "1778316208.809479"
-        })
-      })
+          messageTs: "1778316208.809479",
+        }),
+      }),
     ]);
 
     stateStore.close();
     await fs.rm(stateDir, {
       force: true,
-      recursive: true
+      recursive: true,
     });
   });
 
@@ -348,7 +352,7 @@ describe("AgentTraceRecorder", () => {
     const stateStore = new StateStore(stateDir, sessionsRoot);
     const sessions = new SessionManager({
       stateStore,
-      sessionsRoot
+      sessionsRoot,
     });
 
     await sessions.load();
@@ -357,7 +361,7 @@ describe("AgentTraceRecorder", () => {
     session = await sessions.setActiveTurnId(session.channelId, session.rootThreadTs, "turn-1");
 
     const recorder = new AgentTraceRecorder({
-      sessions
+      sessions,
     });
     await recorder.record({
       type: "agent.input.received",
@@ -370,19 +374,23 @@ describe("AgentTraceRecorder", () => {
         "A broker-managed background job reported a new asynchronous event for this session.",
         "background_job_event_json:",
         "```json",
-        JSON.stringify({
-          source: "background_job_event",
-          message_ts: "1778316208.809479",
-          job: {
-            job_id: "job-1",
-            job_kind: "watch_ci",
-            event_kind: "job_completed"
+        JSON.stringify(
+          {
+            source: "background_job_event",
+            message_ts: "1778316208.809479",
+            job: {
+              job_id: "job-1",
+              job_kind: "watch_ci",
+              event_kind: "job_completed",
+            },
+            summary: "PR #1873 checks 13 pass.",
           },
-          summary: "PR #1873 checks 13 pass."
-        }, null, 2),
-        "```"
+          null,
+          2,
+        ),
+        "```",
       ].join("\n"),
-      at: "2026-03-19T00:00:03.000Z"
+      at: "2026-03-19T00:00:03.000Z",
     });
 
     expect(sessions.listAgentTraceEvents(session.key)).toEqual([
@@ -395,15 +403,15 @@ describe("AgentTraceRecorder", () => {
           inputId: "input-runtime-1",
           source: "background_job_event",
           jobKind: "watch_ci",
-          eventKind: "job_completed"
-        })
-      })
+          eventKind: "job_completed",
+        }),
+      }),
     ]);
 
     stateStore.close();
     await fs.rm(stateDir, {
       force: true,
-      recursive: true
+      recursive: true,
     });
   });
 });

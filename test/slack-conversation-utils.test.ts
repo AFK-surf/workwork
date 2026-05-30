@@ -10,7 +10,7 @@ import {
   shouldAutoRecoverSession,
   shouldForceResetStaleIdleRuntime,
   shouldPostSlackRunFailure,
-  shouldNotifySlackFailure
+  shouldNotifySlackFailure,
 } from "../src/services/slack/slack-conversation-utils.js";
 
 describe("slack conversation utils", () => {
@@ -19,21 +19,13 @@ describe("slack conversation utils", () => {
   });
 
   it("detects an active turn mismatch input delivery error", () => {
-    expect(
-      isMissingActiveTurnInputError(
-        new Error("expected active turn id `turn-old` but found `turn-new`")
-      )
-    ).toBe(true);
+    expect(isMissingActiveTurnInputError(new Error("expected active turn id `turn-old` but found `turn-new`"))).toBe(true);
   });
 
   it("parses the actual active turn id from a mismatch error", () => {
-    expect(
-      parseActiveTurnMismatch(
-        new Error("expected active turn id `turn-old` but found `turn-new`")
-      )
-    ).toEqual({
+    expect(parseActiveTurnMismatch(new Error("expected active turn id `turn-old` but found `turn-new`"))).toEqual({
       expectedTurnId: "turn-old",
-      actualTurnId: "turn-new"
+      actualTurnId: "turn-new",
     });
   });
 
@@ -58,9 +50,7 @@ describe("slack conversation utils", () => {
   });
 
   it("formats recoverable websocket failures for Slack users", () => {
-    expect(formatSlackRunFailureMessage(new Error("app-server websocket closed"))).toBe(
-      "I lost my connection while working on this thread. I will resume as soon as the connection comes back."
-    );
+    expect(formatSlackRunFailureMessage(new Error("app-server websocket closed"))).toBe("I lost my connection while working on this thread. I will resume as soon as the connection comes back.");
   });
 
   it("suppresses visible Slack notifications for recoverable websocket failures", () => {
@@ -68,20 +58,12 @@ describe("slack conversation utils", () => {
   });
 
   it("treats EPIPE transport failures as recoverable", () => {
-    expect(formatSlackRunFailureMessage(new Error("write EPIPE"))).toBe(
-      "I lost my connection while working on this thread. I will resume as soon as the connection comes back."
-    );
+    expect(formatSlackRunFailureMessage(new Error("write EPIPE"))).toBe("I lost my connection while working on this thread. I will resume as soon as the connection comes back.");
     expect(shouldPostSlackRunFailure(new Error("write EPIPE"))).toBe(false);
   });
 
   it("formats active turn mismatches for Slack users", () => {
-    expect(
-      formatSlackRunFailureMessage(
-        new Error("expected active turn id `turn-old` but found `turn-new`")
-      )
-    ).toBe(
-      "I lost track of the current run while reconnecting. I am resyncing and will continue from the latest state."
-    );
+    expect(formatSlackRunFailureMessage(new Error("expected active turn id `turn-old` but found `turn-new`"))).toBe("I lost track of the current run while reconnecting. I am resyncing and will continue from the latest state.");
   });
 
   it("detects missing agent session errors", () => {
@@ -89,17 +71,11 @@ describe("slack conversation utils", () => {
   });
 
   it("formats missing agent session errors for Slack users", () => {
-    expect(
-      formatSlackRunFailureMessage(new Error("no rollout found for thread id 019cf4fd"))
-    ).toBe(
-      "I lost my previous runtime state for this thread. I am resetting the session and will continue from the latest state."
-    );
+    expect(formatSlackRunFailureMessage(new Error("no rollout found for thread id 019cf4fd"))).toBe("I lost my previous runtime state for this thread. I am resetting the session and will continue from the latest state.");
   });
 
   it("formats generic failures for Slack users", () => {
-    expect(formatSlackRunFailureMessage(new Error("something unexpected happened"))).toBe(
-      "I hit an internal issue while working on this thread. Send a quick follow-up and I will continue from the latest state."
-    );
+    expect(formatSlackRunFailureMessage(new Error("something unexpected happened"))).toBe("I hit an internal issue while working on this thread. Send a quick follow-up and I will continue from the latest state.");
   });
 
   it("suppresses duplicate failure notifications within the cooldown window", () => {
@@ -111,8 +87,8 @@ describe("slack conversation utils", () => {
         previousFingerprint: fingerprint,
         previousNotifiedAtMs: 10_000,
         error,
-        nowMs: 10_100
-      })
+        nowMs: 10_100,
+      }),
     ).toBe(false);
   });
 
@@ -125,7 +101,7 @@ describe("slack conversation utils", () => {
       workspacePath: "/tmp/workspace",
       createdAt: "2026-04-07T00:00:00.000Z",
       updatedAt: "2026-04-08T00:00:01.000Z",
-      lastObservedMessageTs: "1775621831.247979"
+      lastObservedMessageTs: "1775621831.247979",
     };
 
     expect(shouldAutoRecoverSession(baseSession, nowMs)).toBe(true);
@@ -133,41 +109,46 @@ describe("slack conversation utils", () => {
       shouldAutoRecoverSession(
         {
           ...baseSession,
-          updatedAt: "2026-04-07T11:59:59.000Z"
+          updatedAt: "2026-04-07T11:59:59.000Z",
         },
-        nowMs
-      )
+        nowMs,
+      ),
     ).toBe(false);
   });
 
   it("force-resets a stale idle runtime when open messages remain", () => {
-    expect(shouldForceResetStaleIdleRuntime({
-      activeTurnId: undefined,
-      runtimeProcessing: true,
-      latestOpenMessageUpdatedAt: "2026-04-17T04:00:00.000Z",
-      nowMs: Date.parse("2026-04-17T04:01:00.000Z"),
-      staleAfterMs: 30_000
-    })).toBe(true);
+    expect(
+      shouldForceResetStaleIdleRuntime({
+        activeTurnId: undefined,
+        runtimeProcessing: true,
+        latestOpenMessageUpdatedAt: "2026-04-17T04:00:00.000Z",
+        nowMs: Date.parse("2026-04-17T04:01:00.000Z"),
+        staleAfterMs: 30_000,
+      }),
+    ).toBe(true);
   });
 
   it("does not force-reset an idle runtime when the open messages are still fresh", () => {
-    expect(shouldForceResetStaleIdleRuntime({
-      activeTurnId: undefined,
-      runtimeProcessing: true,
-      latestOpenMessageUpdatedAt: "2026-04-17T04:00:45.000Z",
-      nowMs: Date.parse("2026-04-17T04:01:00.000Z"),
-      staleAfterMs: 30_000
-    })).toBe(false);
+    expect(
+      shouldForceResetStaleIdleRuntime({
+        activeTurnId: undefined,
+        runtimeProcessing: true,
+        latestOpenMessageUpdatedAt: "2026-04-17T04:00:45.000Z",
+        nowMs: Date.parse("2026-04-17T04:01:00.000Z"),
+        staleAfterMs: 30_000,
+      }),
+    ).toBe(false);
   });
 
   it("does not force-reset when an active turn still exists", () => {
-    expect(shouldForceResetStaleIdleRuntime({
-      activeTurnId: "turn-1",
-      runtimeProcessing: true,
-      latestOpenMessageUpdatedAt: "2026-04-17T04:00:00.000Z",
-      nowMs: Date.parse("2026-04-17T04:01:00.000Z"),
-      staleAfterMs: 30_000
-    })).toBe(false);
+    expect(
+      shouldForceResetStaleIdleRuntime({
+        activeTurnId: "turn-1",
+        runtimeProcessing: true,
+        latestOpenMessageUpdatedAt: "2026-04-17T04:00:00.000Z",
+        nowMs: Date.parse("2026-04-17T04:01:00.000Z"),
+        staleAfterMs: 30_000,
+      }),
+    ).toBe(false);
   });
-
 });

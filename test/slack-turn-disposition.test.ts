@@ -11,12 +11,12 @@ describe("planCompletedTurnDisposition", () => {
       dispatchMessages: [message({ source: "thread_reply" })],
       aborted: false,
       hasRunningBackgroundJob: false,
-      hasPendingUnexpectedStopNudge: false
+      hasPendingUnexpectedStopNudge: false,
     });
 
     expect(disposition).toMatchObject({
       kind: "unexpected_stop",
-      reason: expect.stringContaining("explicit final, block, or wait state")
+      reason: expect.stringContaining("explicit final, block, or wait state"),
     });
   });
 
@@ -24,13 +24,13 @@ describe("planCompletedTurnDisposition", () => {
     const disposition = planCompletedTurnDisposition({
       latestSession: session({
         lastTurnSignalTurnId: "turn-1",
-        lastTurnSignalKind: "wait"
+        lastTurnSignalKind: "wait",
       }),
       turnId: "turn-1",
       dispatchMessages: [message({ source: "thread_reply" })],
       aborted: false,
       hasRunningBackgroundJob: true,
-      hasPendingUnexpectedStopNudge: false
+      hasPendingUnexpectedStopNudge: false,
     });
 
     expect(disposition).toEqual({ kind: "none" });
@@ -40,18 +40,18 @@ describe("planCompletedTurnDisposition", () => {
     const disposition = planCompletedTurnDisposition({
       latestSession: session({
         lastTurnSignalTurnId: "turn-1",
-        lastTurnSignalKind: "wait"
+        lastTurnSignalKind: "wait",
       }),
       turnId: "turn-1",
       dispatchMessages: [message({ source: "thread_reply" })],
       aborted: false,
       hasRunningBackgroundJob: false,
-      hasPendingUnexpectedStopNudge: false
+      hasPendingUnexpectedStopNudge: false,
     });
 
     expect(disposition).toMatchObject({
       kind: "unexpected_stop",
-      reason: expect.stringContaining("there is no running broker-managed async job")
+      reason: expect.stringContaining("there is no running broker-managed async job"),
     });
   });
 });
@@ -64,7 +64,7 @@ function session(patch: Partial<SlackSessionRecord>): SlackSessionRecord {
     workspacePath: "/tmp/session",
     createdAt: "2026-03-19T00:00:00.000Z",
     updatedAt: "2026-03-19T00:00:00.000Z",
-    ...patch
+    ...patch,
   };
 }
 
@@ -81,6 +81,6 @@ function message(patch: Partial<PersistedInboundMessage>): PersistedInboundMessa
     status: "done",
     createdAt: "2026-03-19T00:00:00.000Z",
     updatedAt: "2026-03-19T00:00:00.000Z",
-    ...patch
+    ...patch,
   };
 }

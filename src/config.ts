@@ -162,22 +162,15 @@ export function loadConfig(env = process.env): AppConfig {
   const sessionsRoot = env.SESSIONS_ROOT ? path.resolve(env.SESSIONS_ROOT) : path.join(dataRoot, "sessions");
   const reposRoot = env.REPOS_ROOT ? path.resolve(env.REPOS_ROOT) : path.join(dataRoot, "repos");
   const codexHome = env.CODEX_HOME ? path.resolve(env.CODEX_HOME) : path.join(dataRoot, "codex-home");
-  const codexTeamHomePath = env.CODEX_TEAM_HOME
-    ? path.resolve(env.CODEX_TEAM_HOME)
-    : path.join(dataRoot, "team-codex-home");
+  const codexTeamHomePath = env.CODEX_TEAM_HOME ? path.resolve(env.CODEX_TEAM_HOME) : path.join(dataRoot, "team-codex-home");
   const logDir = env.LOG_DIR ? path.resolve(env.LOG_DIR) : path.join(dataRoot, "logs");
   const port = getNumber(env, "PORT", 3000);
   const workerPort = getNumber(env, "WORKER_PORT", port);
   const workerBindHost = env.WORKER_BIND_HOST?.trim() || "127.0.0.1";
 
   const isolatedMcpServers = getCsvList(env, "ISOLATED_MCP_SERVERS");
-  const effectiveIsolatedMcpServers =
-    isolatedMcpServers.length > 0 ? isolatedMcpServers : ["linear", "notion"];
-  const codexDisabledMcpServers = unique([
-    ALL_CODEX_MCP_SERVERS,
-    ...getCsvList(env, "CODEX_DISABLED_MCP_SERVERS"),
-    ...effectiveIsolatedMcpServers
-  ]);
+  const effectiveIsolatedMcpServers = isolatedMcpServers.length > 0 ? isolatedMcpServers : ["linear", "notion"];
+  const codexDisabledMcpServers = unique([ALL_CODEX_MCP_SERVERS, ...getCsvList(env, "CODEX_DISABLED_MCP_SERVERS"), ...effectiveIsolatedMcpServers]);
 
   return {
     serviceRoot,
@@ -188,11 +181,7 @@ export function loadConfig(env = process.env): AppConfig {
     slackInitialThreadHistoryCount: getNumber(env, "SLACK_INITIAL_THREAD_HISTORY_COUNT", 8),
     slackHistoryApiMaxLimit: getNumber(env, "SLACK_HISTORY_API_MAX_LIMIT", 50),
     slackActiveTurnReconcileIntervalMs: getNumber(env, "SLACK_ACTIVE_TURN_RECONCILE_INTERVAL_MS", 15_000),
-    slackMissedThreadRecoveryIntervalMs: getNumber(
-      env,
-      "SLACK_MISSED_THREAD_RECOVERY_INTERVAL_MS",
-      5 * 60_000
-    ),
+    slackMissedThreadRecoveryIntervalMs: getNumber(env, "SLACK_MISSED_THREAD_RECOVERY_INTERVAL_MS", 5 * 60_000),
     stateDir,
     jobsRoot,
     sessionsRoot,
@@ -212,9 +201,7 @@ export function loadConfig(env = process.env): AppConfig {
     codexOpenAiApiKey: getOptional(env, "OPENAI_API_KEY"),
     tempadLinkServiceUrl: getOptional(env, "TEMPAD_LINK_SERVICE_URL"),
     githubApiBaseUrl: env.GITHUB_API_BASE_URL ?? "https://api.github.com",
-    githubOAuthScopes: getCsvList(env, "GITHUB_OAUTH_SCOPES").length > 0
-      ? getCsvList(env, "GITHUB_OAUTH_SCOPES")
-      : ["repo", "read:user", "user:email"],
+    githubOAuthScopes: getCsvList(env, "GITHUB_OAUTH_SCOPES").length > 0 ? getCsvList(env, "GITHUB_OAUTH_SCOPES") : ["repo", "read:user", "user:email"],
     defaultGitHubLogin: getOptional(env, "BROKER_DEFAULT_GITHUB_LOGIN"),
     defaultGitHubToken: getOptional(env, "BROKER_DEFAULT_GITHUB_TOKEN"),
     port,
@@ -253,6 +240,6 @@ export function loadConfig(env = process.env): AppConfig {
     diskCleanupSessionCacheTtlMs: getNumber(env, "DISK_CLEANUP_SESSION_CACHE_TTL_MS", 7 * DAY_MS),
     diskCleanupInactiveSessionMs: getNumber(env, "DISK_CLEANUP_INACTIVE_SESSION_MS", DAY_MS),
     diskCleanupJobProtectionMs: getNumber(env, "DISK_CLEANUP_JOB_PROTECTION_MS", 2 * DAY_MS),
-    diskCleanupOldLogMs: getNumber(env, "DISK_CLEANUP_OLD_LOG_MS", DAY_MS)
+    diskCleanupOldLogMs: getNumber(env, "DISK_CLEANUP_OLD_LOG_MS", DAY_MS),
   };
 }

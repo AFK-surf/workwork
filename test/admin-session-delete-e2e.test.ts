@@ -26,20 +26,20 @@ describe("admin session delete API e2e", () => {
     cleanups.push(async () => {
       await fs.rm(dataRoot, {
         recursive: true,
-        force: true
+        force: true,
       });
     });
 
     const baseEnv = {
       SLACK_APP_TOKEN: "xapp-test",
       SLACK_BOT_TOKEN: "xoxb-test",
-      DATA_ROOT: dataRoot
+      DATA_ROOT: dataRoot,
     } as NodeJS.ProcessEnv;
     const workerConfig = loadConfig(baseEnv);
     const stateStore = new StateStore(workerConfig.stateDir, workerConfig.sessionsRoot);
     const sessions = new SessionManager({
       stateStore,
-      sessionsRoot: workerConfig.sessionsRoot
+      sessionsRoot: workerConfig.sessionsRoot,
     });
     await sessions.load();
 
@@ -58,7 +58,7 @@ describe("admin session delete API e2e", () => {
       text: "pending work",
       status: "pending",
       createdAt: "2026-05-18T00:00:01.000Z",
-      updatedAt: "2026-05-18T00:00:01.000Z"
+      updatedAt: "2026-05-18T00:00:01.000Z",
     });
 
     const jobDir = path.join(workerConfig.jobsRoot, "job-1");
@@ -77,7 +77,7 @@ describe("admin session delete API e2e", () => {
       restartOnBoot: true,
       status: "running",
       createdAt: "2026-05-18T00:00:00.000Z",
-      updatedAt: "2026-05-18T00:00:00.000Z"
+      updatedAt: "2026-05-18T00:00:00.000Z",
     });
     const failedCancelJobDir = path.join(workerConfig.jobsRoot, "job-cancel-fails");
     await fs.mkdir(failedCancelJobDir, { recursive: true });
@@ -95,7 +95,7 @@ describe("admin session delete API e2e", () => {
       restartOnBoot: true,
       status: "running",
       createdAt: "2026-05-18T00:00:00.000Z",
-      updatedAt: "2026-05-18T00:00:00.000Z"
+      updatedAt: "2026-05-18T00:00:00.000Z",
     });
 
     const sessionLogDir = getSessionLogDirectory(workerConfig.logDir, session.key);
@@ -109,57 +109,59 @@ describe("admin session delete API e2e", () => {
     await fs.writeFile(path.join(failedCancelJobLogDir, "2026-05-18-00.jsonl"), "{}\n", "utf8");
 
     const workerCalls: Array<Record<string, unknown>> = [];
-    const workerBaseUrl = await startServer(createHttpHandler({
-      bridge: {
-        deleteSession: async (sessionKey: string) => {
-          workerCalls.push({
-            type: "deleteSession",
-            sessionKey
-          });
-          const existing = sessions.getSessionByKey(sessionKey);
-          const deleted = await sessions.deleteSessionByKey(sessionKey);
-          return {
-            deleted,
-            interruptedActiveTurn: Boolean(existing?.activeTurnId),
-            previousAgentSessionId: existing?.agentSessionId ?? null,
-            previousActiveTurnId: existing?.activeTurnId ?? null,
-            clearedInboundCount: 1
-          };
-        }
-      } as never,
-      jobManager: {
-        cancelJobFromAdmin: async (jobId: string, options: { sessionKey: string }) => {
-          workerCalls.push({
-            type: "cancelJob",
-            jobId,
-            sessionKey: options.sessionKey
-          });
-          if (jobId === "job-cancel-fails") {
-            throw new Error("simulated_cancel_failure");
-          }
-          const job = sessions.getBackgroundJob(jobId);
-          if (!job || job.sessionKey !== options.sessionKey) {
-            throw new Error("job_session_mismatch");
-          }
-          const updated = {
-            ...job,
-            status: "cancelled" as const,
-            cancelledAt: "2026-05-18T00:00:01.000Z",
-            completedAt: "2026-05-18T00:00:01.000Z"
-          };
-          await sessions.upsertBackgroundJob(updated);
-          return updated;
-        }
-      } as never,
-      config: workerConfig
-    }));
+    const workerBaseUrl = await startServer(
+      createHttpHandler({
+        bridge: {
+          deleteSession: async (sessionKey: string) => {
+            workerCalls.push({
+              type: "deleteSession",
+              sessionKey,
+            });
+            const existing = sessions.getSessionByKey(sessionKey);
+            const deleted = await sessions.deleteSessionByKey(sessionKey);
+            return {
+              deleted,
+              interruptedActiveTurn: Boolean(existing?.activeTurnId),
+              previousAgentSessionId: existing?.agentSessionId ?? null,
+              previousActiveTurnId: existing?.activeTurnId ?? null,
+              clearedInboundCount: 1,
+            };
+          },
+        } as never,
+        jobManager: {
+          cancelJobFromAdmin: async (jobId: string, options: { sessionKey: string }) => {
+            workerCalls.push({
+              type: "cancelJob",
+              jobId,
+              sessionKey: options.sessionKey,
+            });
+            if (jobId === "job-cancel-fails") {
+              throw new Error("simulated_cancel_failure");
+            }
+            const job = sessions.getBackgroundJob(jobId);
+            if (!job || job.sessionKey !== options.sessionKey) {
+              throw new Error("job_session_mismatch");
+            }
+            const updated = {
+              ...job,
+              status: "cancelled" as const,
+              cancelledAt: "2026-05-18T00:00:01.000Z",
+              completedAt: "2026-05-18T00:00:01.000Z",
+            };
+            await sessions.upsertBackgroundJob(updated);
+            return updated;
+          },
+        } as never,
+        config: workerConfig,
+      }),
+    );
     cleanups.push(async () => {
       await stopServer(workerBaseUrl.server);
     });
 
     const adminConfig = loadConfig({
       ...baseEnv,
-      WORKER_BASE_URL: workerBaseUrl.baseUrl
+      WORKER_BASE_URL: workerBaseUrl.baseUrl,
     } as NodeJS.ProcessEnv);
     const adminService = new AdminService({
       config: adminConfig,
@@ -171,12 +173,12 @@ describe("admin session delete API e2e", () => {
           profilesRoot: path.join(dataRoot, "auth-profiles", "profiles"),
           activeProfile: null,
           activeAuthPath: path.join(adminConfig.codexHome, "auth.json"),
-          profiles: []
-        })
+          profiles: [],
+        }),
       } as never,
       githubAuthorMappings: {
         load: async () => {},
-        listMappings: () => []
+        listMappings: () => [],
       } as never,
       runtime: {
         restartRuntime: async () => {},
@@ -184,26 +186,28 @@ describe("admin session delete API e2e", () => {
           account: {
             email: "ops@example.com",
             type: "chatgpt",
-            planType: "team"
+            planType: "team",
           },
-          requiresOpenaiAuth: false
+          requiresOpenaiAuth: false,
         }),
         readAccountRateLimits: async () => ({
           rateLimits: null,
-          rateLimitsByLimitId: {}
-        })
-      } as never
+          rateLimitsByLimitId: {},
+        }),
+      } as never,
     });
-    const adminBaseUrl = await startServer(createHttpHandler({
-      adminService,
-      config: adminConfig
-    }));
+    const adminBaseUrl = await startServer(
+      createHttpHandler({
+        adminService,
+        config: adminConfig,
+      }),
+    );
     cleanups.push(async () => {
       await stopServer(adminBaseUrl.server);
     });
 
     const response = await fetch(`${adminBaseUrl.baseUrl}/admin/api/sessions/${encodeURIComponent(session.key)}`, {
-      method: "DELETE"
+      method: "DELETE",
     });
 
     expect(response.status).toBe(200);
@@ -215,38 +219,38 @@ describe("admin session delete API e2e", () => {
       cancelledJobs: [
         {
           id: "job-1",
-          ok: true
+          ok: true,
         },
         {
           id: "job-cancel-fails",
           ok: false,
-          error: "simulated_cancel_failure"
-        }
+          error: "simulated_cancel_failure",
+        },
       ],
       workerDelete: {
         ok: true,
         delete: {
           interruptedActiveTurn: true,
           previousAgentSessionId: "agent-session-1",
-          previousActiveTurnId: "turn-1"
-        }
-      }
+          previousActiveTurnId: "turn-1",
+        },
+      },
     });
     expect(workerCalls).toEqual([
       {
         type: "cancelJob",
         jobId: "job-1",
-        sessionKey: session.key
+        sessionKey: session.key,
       },
       {
         type: "cancelJob",
         jobId: "job-cancel-fails",
-        sessionKey: session.key
+        sessionKey: session.key,
       },
       {
         type: "deleteSession",
-        sessionKey: session.key
-      }
+        sessionKey: session.key,
+      },
     ]);
     expect(sessions.getSessionByKey(session.key)).toBeUndefined();
     expect(sessions.getBackgroundJob("job-1")).toBeUndefined();
@@ -274,7 +278,7 @@ async function startServer(handler: http.RequestListener): Promise<{
   }
   return {
     server,
-    baseUrl: `http://127.0.0.1:${address.port}`
+    baseUrl: `http://127.0.0.1:${address.port}`,
   };
 }
 

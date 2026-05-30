@@ -17,8 +17,8 @@ function usage() {
       "  node scripts/ops/auth-profiles.mjs bootstrap [--container <name>] [--profile <name>] [--refresh-host]",
       "  node scripts/ops/auth-profiles.mjs list [--container <name>]",
       "  node scripts/ops/auth-profiles.mjs import --name <profile> --from <path> [--container <name>]",
-      "  node scripts/ops/auth-profiles.mjs import-host --name <profile> [--container <name>]"
-    ].join("\n")
+      "  node scripts/ops/auth-profiles.mjs import-host --name <profile> [--container <name>]",
+    ].join("\n"),
   );
 }
 
@@ -37,7 +37,7 @@ function parseArgs(argv) {
     containerName: DEFAULT_CONTAINER_NAME,
     profileName: undefined,
     sourcePath: undefined,
-    refreshHost: false
+    refreshHost: false,
   };
 
   while (args.length > 0) {
@@ -89,7 +89,7 @@ async function pathInfo(filePath) {
     const base = {
       path: filePath,
       exists: true,
-      isSymlink: stat.isSymbolicLink()
+      isSymlink: stat.isSymbolicLink(),
     };
     if (stat.isSymbolicLink()) {
       const linkTarget = await fs.readlink(filePath);
@@ -100,20 +100,20 @@ async function pathInfo(filePath) {
         linkTarget,
         resolvedTarget,
         size: targetStat.size,
-        mtime: targetStat.mtime.toISOString()
+        mtime: targetStat.mtime.toISOString(),
       };
     }
 
     return {
       ...base,
       size: stat.size,
-      mtime: stat.mtime.toISOString()
+      mtime: stat.mtime.toISOString(),
     };
   } catch (error) {
     if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
       return {
         path: filePath,
-        exists: false
+        exists: false,
       };
     }
 
@@ -189,7 +189,7 @@ function resolvePaths(containerName) {
     hostManagedAuthPath: path.join(managedRoot, "host", "auth.json"),
     legacyDockerManagedAuthPath: path.join(dockerRoot, "auth.json"),
     hostAuthPath: path.join(os.homedir(), ".codex", "auth.json"),
-    dockerAuthPath: path.join(dataRootSource, "codex-home", "auth.json")
+    dockerAuthPath: path.join(dataRootSource, "codex-home", "auth.json"),
   };
 }
 
@@ -237,7 +237,7 @@ async function bootstrapProfiles(options) {
     linkPath: paths.hostAuthPath,
     targetPath: paths.hostManagedAuthPath,
     backupDir,
-    backupName: "host-auth.json"
+    backupName: "host-auth.json",
   });
   return {
     ok: true,
@@ -245,7 +245,7 @@ async function bootstrapProfiles(options) {
     copiedHost,
     initialProfileName,
     initialProfilePath,
-    hostBackup
+    hostBackup,
   };
 }
 
@@ -264,7 +264,7 @@ async function listProfiles(options) {
   return {
     containerName: options.containerName,
     managedRoot: paths.managedRoot,
-    profiles
+    profiles,
   };
 }
 
@@ -280,14 +280,14 @@ async function importProfile(options) {
     ok: true,
     profileName,
     sourcePath,
-    targetPath
+    targetPath,
   };
 }
 
 async function importHostProfile(options) {
   return await importProfile({
     ...options,
-    sourcePath: path.join(os.homedir(), ".codex", "auth.json")
+    sourcePath: path.join(os.homedir(), ".codex", "auth.json"),
   });
 }
 
@@ -301,7 +301,7 @@ async function getStatus(options) {
     hostAuth: await pathInfo(paths.hostAuthPath),
     dockerAuth: await pathInfo(paths.dockerAuthPath),
     hostManagedAuth: await pathInfo(paths.hostManagedAuthPath),
-    dockerProfiles: await listProfiles(options)
+    dockerProfiles: await listProfiles(options),
   };
 }
 

@@ -58,15 +58,18 @@ export class MockSlackServer {
   readonly reactionOperations: ReactionOperation[] = [];
   readonly #activeReactions = new Set<string>();
   readonly #channels = new Map<string, MockConversation>();
-  readonly #users = new Map<string, {
-    readonly id: string;
-    readonly name: string;
-    readonly real_name: string;
-    readonly profile: {
-      readonly display_name: string;
+  readonly #users = new Map<
+    string,
+    {
+      readonly id: string;
+      readonly name: string;
       readonly real_name: string;
-    };
-  }>([
+      readonly profile: {
+        readonly display_name: string;
+        readonly real_name: string;
+      };
+    }
+  >([
     [
       "U123",
       {
@@ -75,9 +78,9 @@ export class MockSlackServer {
         real_name: "Mock User 123",
         profile: {
           display_name: "Mock Display 123",
-          real_name: "Mock User 123"
-        }
-      }
+          real_name: "Mock User 123",
+        },
+      },
     ],
     [
       "U234",
@@ -87,9 +90,9 @@ export class MockSlackServer {
         real_name: "Mock User 234",
         profile: {
           display_name: "Mock Display 234",
-          real_name: "Mock User 234"
-        }
-      }
+          real_name: "Mock User 234",
+        },
+      },
     ],
     [
       "UBOT",
@@ -99,10 +102,10 @@ export class MockSlackServer {
         real_name: "Mock Bot",
         profile: {
           display_name: "Mock Bot",
-          real_name: "Mock Bot"
-        }
-      }
-    ]
+          real_name: "Mock Bot",
+        },
+      },
+    ],
   ]);
   readonly #threadMessages = new Map<string, MockThreadMessage[]>();
 
@@ -113,7 +116,7 @@ export class MockSlackServer {
       readonly appId?: string;
       readonly assistantStatusError?: string;
       readonly channels?: readonly MockConversation[] | undefined;
-    }
+    },
   ) {
     for (const channel of options?.channels ?? []) {
       this.#channels.set(channel.id, channel);
@@ -189,8 +192,8 @@ export class MockSlackServer {
       type: "events_api",
       payload: {
         event_id: eventId,
-        event
-      }
+        event,
+      },
     };
 
     process.stdout.write(`[mock-slack] server->client event ${eventId}\n`);
@@ -242,8 +245,8 @@ export class MockSlackServer {
       response.end(
         JSON.stringify({
           ok: true,
-          url: `ws://127.0.0.1:${(this.#server.address() as { port: number }).port}/socket`
-        })
+          url: `ws://127.0.0.1:${(this.#server.address() as { port: number }).port}/socket`,
+        }),
       );
       return;
     }
@@ -255,8 +258,8 @@ export class MockSlackServer {
           ok: true,
           user_id: this.botUserId,
           bot_id: this.options?.botId,
-          app_id: this.options?.appId
-        })
+          app_id: this.options?.appId,
+        }),
       );
       return;
     }
@@ -267,7 +270,7 @@ export class MockSlackServer {
         channel: String(body.channel),
         threadTs: String(body.thread_ts),
         text: String(body.text),
-        ts
+        ts,
       });
       this.recordThreadMessage({
         channel: String(body.channel),
@@ -276,14 +279,14 @@ export class MockSlackServer {
         text: String(body.text),
         user: this.botUserId,
         bot_id: this.options?.botId,
-        app_id: this.options?.appId
+        app_id: this.options?.appId,
       });
       response.writeHead(200, { "content-type": "application/json" });
       response.end(
         JSON.stringify({
           ok: true,
-          ts
-        })
+          ts,
+        }),
       );
       return;
     }
@@ -294,8 +297,8 @@ export class MockSlackServer {
         response.end(
           JSON.stringify({
             ok: false,
-            error: this.options.assistantStatusError
-          })
+            error: this.options.assistantStatusError,
+          }),
         );
         return;
       }
@@ -304,10 +307,7 @@ export class MockSlackServer {
         channel: String(body.channel_id),
         threadTs: String(body.thread_ts),
         status: String(body.status ?? ""),
-        loadingMessages:
-          typeof body.loading_messages === "string" && body.loading_messages.length > 0
-            ? body.loading_messages
-            : undefined
+        loadingMessages: typeof body.loading_messages === "string" && body.loading_messages.length > 0 ? body.loading_messages : undefined,
       });
 
       response.writeHead(200, { "content-type": "application/json" });
@@ -316,16 +316,12 @@ export class MockSlackServer {
     }
 
     if (request.url === "/api/reactions.add") {
-      const reactionKey = getReactionKey(
-        String(body.channel),
-        String(body.timestamp),
-        String(body.name)
-      );
+      const reactionKey = getReactionKey(String(body.channel), String(body.timestamp), String(body.name));
       this.reactionOperations.push({
         action: "add",
         channel: String(body.channel),
         timestamp: String(body.timestamp),
-        name: String(body.name)
+        name: String(body.name),
       });
       this.#activeReactions.add(reactionKey);
 
@@ -335,16 +331,12 @@ export class MockSlackServer {
     }
 
     if (request.url === "/api/reactions.remove") {
-      const reactionKey = getReactionKey(
-        String(body.channel),
-        String(body.timestamp),
-        String(body.name)
-      );
+      const reactionKey = getReactionKey(String(body.channel), String(body.timestamp), String(body.name));
       this.reactionOperations.push({
         action: "remove",
         channel: String(body.channel),
         timestamp: String(body.timestamp),
-        name: String(body.name)
+        name: String(body.name),
       });
       this.#activeReactions.delete(reactionKey);
 
@@ -360,8 +352,8 @@ export class MockSlackServer {
       response.end(
         JSON.stringify({
           ok: true,
-          user
-        })
+          user,
+        }),
       );
       return;
     }
@@ -374,8 +366,8 @@ export class MockSlackServer {
       response.end(
         JSON.stringify({
           ok: true,
-          channel
-        })
+          channel,
+        }),
       );
       return;
     }
@@ -389,8 +381,8 @@ export class MockSlackServer {
       response.end(
         JSON.stringify({
           ok: true,
-          messages
-        })
+          messages,
+        }),
       );
       return;
     }
@@ -423,9 +415,7 @@ export class MockSlackServer {
       username: typeof event.username === "string" ? event.username : undefined,
       files: Array.isArray(event.files) ? (event.files as readonly Record<string, unknown>[]) : undefined,
       blocks: Array.isArray(event.blocks) ? (event.blocks as readonly Record<string, unknown>[]) : undefined,
-      attachments: Array.isArray(event.attachments)
-        ? (event.attachments as readonly Record<string, unknown>[])
-        : undefined
+      attachments: Array.isArray(event.attachments) ? (event.attachments as readonly Record<string, unknown>[]) : undefined,
     });
   }
 }
@@ -470,7 +460,7 @@ function inferMockConversation(channelId: string): MockConversation {
   if (channelId.startsWith("D")) {
     return {
       id: channelId,
-      is_im: true
+      is_im: true,
     };
   }
 
@@ -478,13 +468,13 @@ function inferMockConversation(channelId: string): MockConversation {
     return {
       id: channelId,
       name: channelId.toLowerCase(),
-      is_group: true
+      is_group: true,
     };
   }
 
   return {
     id: channelId,
     name: channelId.toLowerCase(),
-    is_channel: true
+    is_channel: true,
   };
 }

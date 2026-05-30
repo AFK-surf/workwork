@@ -1,7 +1,4 @@
-import type {
-  AppServerAccountSummary,
-  AppServerRateLimitsResponse
-} from "./app-server-client.js";
+import type { AppServerAccountSummary, AppServerRateLimitsResponse } from "./app-server-client.js";
 
 export interface SerializedAccountStatusOk {
   readonly ok: true;
@@ -33,30 +30,28 @@ export function serializeAccountSummary(summary: AppServerAccountSummary): Seria
   return {
     ok: true,
     account: summary.account ?? null,
-    requiresOpenaiAuth: summary.requiresOpenaiAuth ?? false
+    requiresOpenaiAuth: summary.requiresOpenaiAuth ?? false,
   };
 }
 
-export function serializeRateLimits(
-  response: AppServerRateLimitsResponse
-): SerializedRateLimitsStatus {
+export function serializeRateLimits(response: AppServerRateLimitsResponse): SerializedRateLimitsStatus {
   return {
     ok: true,
     rateLimits: response.rateLimits,
-    rateLimitsByLimitId: response.rateLimitsByLimitId
+    rateLimitsByLimitId: response.rateLimitsByLimitId,
   };
 }
 
 export function serializeAccountError(error: unknown): SerializedAccountStatusError {
   return {
     ok: false,
-    error: error instanceof Error ? error.message : String(error)
+    error: error instanceof Error ? error.message : String(error),
   };
 }
 
 export function serializeRateLimitsError(error: unknown): SerializedRateLimitsStatusError {
   return {
     ok: false,
-    error: error instanceof Error ? error.message : String(error)
+    error: error instanceof Error ? error.message : String(error),
   };
 }

@@ -26,16 +26,10 @@ async function main(): Promise<void> {
     return;
   }
 
-  throw new Error(
-    `gemini exited with code ${attempt.code ?? "null"}${attempt.signal ? ` (signal ${attempt.signal})` : ""}`
-  );
+  throw new Error(`gemini exited with code ${attempt.code ?? "null"}${attempt.signal ? ` (signal ${attempt.signal})` : ""}`);
 }
 
-function buildCliArgs(
-  prompt: string,
-  includeDirectories: readonly string[],
-  model: string
-): string[] {
+function buildCliArgs(prompt: string, includeDirectories: readonly string[], model: string): string[] {
   const cliArgs = ["--prompt", prompt, "--output-format", "text", "--yolo", "--model", model];
 
   for (const includeDirectory of includeDirectories) {
@@ -94,7 +88,7 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
     includeDirectories,
     model,
     prompt,
-    promptFile
+    promptFile,
   };
 }
 
@@ -131,7 +125,7 @@ async function readStdin(): Promise<string> {
 
 function buildGeminiEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {
-    ...process.env
+    ...process.env,
   };
 
   mapProxyEnv(env, "BROKER_GEMINI_HTTP_PROXY", "HTTP_PROXY", "http_proxy");
@@ -141,16 +135,12 @@ function buildGeminiEnv(): NodeJS.ProcessEnv {
   return env;
 }
 
-async function runGemini(
-  cliArgs: readonly string[],
-  cwd: string | undefined,
-  env: NodeJS.ProcessEnv
-): Promise<{ ok: true } | { ok: false; code: number | null; signal: NodeJS.Signals | null; stderr: string }> {
+async function runGemini(cliArgs: readonly string[], cwd: string | undefined, env: NodeJS.ProcessEnv): Promise<{ ok: true } | { ok: false; code: number | null; signal: NodeJS.Signals | null; stderr: string }> {
   return await new Promise((resolve, reject) => {
     const child = spawn("gemini", cliArgs, {
       cwd,
       env,
-      stdio: ["ignore", "pipe", "pipe"]
+      stdio: ["ignore", "pipe", "pipe"],
     });
 
     let stderr = "";
@@ -176,19 +166,13 @@ async function runGemini(
         ok: false,
         code,
         signal,
-        stderr
+        stderr,
       });
     });
   });
 }
 
-
-function mapProxyEnv(
-  env: NodeJS.ProcessEnv,
-  sourceKey: "BROKER_GEMINI_HTTP_PROXY" | "BROKER_GEMINI_HTTPS_PROXY" | "BROKER_GEMINI_ALL_PROXY",
-  uppercaseKey: "HTTP_PROXY" | "HTTPS_PROXY" | "ALL_PROXY",
-  lowercaseKey: "http_proxy" | "https_proxy" | "all_proxy"
-): void {
+function mapProxyEnv(env: NodeJS.ProcessEnv, sourceKey: "BROKER_GEMINI_HTTP_PROXY" | "BROKER_GEMINI_HTTPS_PROXY" | "BROKER_GEMINI_ALL_PROXY", uppercaseKey: "HTTP_PROXY" | "HTTPS_PROXY" | "ALL_PROXY", lowercaseKey: "http_proxy" | "https_proxy" | "all_proxy"): void {
   const value = env[sourceKey]?.trim();
   if (!value) {
     return;

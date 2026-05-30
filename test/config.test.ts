@@ -4,15 +4,13 @@ import { loadConfig } from "../src/config.js";
 
 describe("loadConfig", () => {
   it("throws when required variables are missing", () => {
-    expect(() => loadConfig({} as NodeJS.ProcessEnv)).toThrowError(
-      "Missing required environment variable: SLACK_APP_TOKEN"
-    );
+    expect(() => loadConfig({} as NodeJS.ProcessEnv)).toThrowError("Missing required environment variable: SLACK_APP_TOKEN");
   });
 
   it("loads required configuration", () => {
     const config = loadConfig({
       SLACK_APP_TOKEN: "xapp-test",
-      SLACK_BOT_TOKEN: "xoxb-test"
+      SLACK_BOT_TOKEN: "xoxb-test",
     } as NodeJS.ProcessEnv);
 
     expect(config.slackAppToken).toBe("xapp-test");
@@ -61,17 +59,16 @@ describe("loadConfig", () => {
       loadConfig({
         SLACK_APP_TOKEN: "xapp-test",
         SLACK_BOT_TOKEN: "xoxb-test",
-        PORT: "nope"
-      } as NodeJS.ProcessEnv)
+        PORT: "nope",
+      } as NodeJS.ProcessEnv),
     ).toThrowError("Invalid numeric environment variable: PORT");
   });
-
 
   it("loads an explicit team codex home path", () => {
     const config = loadConfig({
       SLACK_APP_TOKEN: "xapp-test",
       SLACK_BOT_TOKEN: "xoxb-test",
-      CODEX_TEAM_HOME: "/team-codex-home"
+      CODEX_TEAM_HOME: "/team-codex-home",
     } as NodeJS.ProcessEnv);
 
     expect(config.codexTeamHomePath).toBe("/team-codex-home");
@@ -81,7 +78,7 @@ describe("loadConfig", () => {
     const config = loadConfig({
       SLACK_APP_TOKEN: "xapp-test",
       SLACK_BOT_TOKEN: "xoxb-test",
-      CODEX_HOST_HOME_PATH: "/host-codex-home"
+      CODEX_HOST_HOME_PATH: "/host-codex-home",
     } as NodeJS.ProcessEnv);
 
     expect(config.codexHostHomePath).toBe("/host-codex-home");
@@ -94,7 +91,7 @@ describe("loadConfig", () => {
       GEMINI_HOST_HOME_PATH: "/host-gemini-home",
       GEMINI_HTTP_PROXY: "http://host.docker.internal:6152",
       GEMINI_HTTPS_PROXY: "http://host.docker.internal:6152",
-      GEMINI_ALL_PROXY: "socks5://host.docker.internal:6153"
+      GEMINI_ALL_PROXY: "socks5://host.docker.internal:6153",
     } as NodeJS.ProcessEnv);
 
     expect(config.geminiHostHomePath).toBe("/host-gemini-home");
@@ -107,7 +104,7 @@ describe("loadConfig", () => {
     const config = loadConfig({
       SLACK_APP_TOKEN: "xapp-test",
       SLACK_BOT_TOKEN: "xoxb-test",
-      TEMPAD_LINK_SERVICE_URL: "http://host.docker.internal:4320"
+      TEMPAD_LINK_SERVICE_URL: "http://host.docker.internal:4320",
     } as NodeJS.ProcessEnv);
 
     expect(config.tempadLinkServiceUrl).toBe("http://host.docker.internal:4320");
@@ -118,7 +115,7 @@ describe("loadConfig", () => {
       SLACK_APP_TOKEN: "xapp-test",
       SLACK_BOT_TOKEN: "xoxb-test",
       CODEX_DISABLED_MCP_SERVERS: " github, linear ,, ",
-      ISOLATED_MCP_SERVERS: " notion, linear ,, "
+      ISOLATED_MCP_SERVERS: " notion, linear ,, ",
     } as NodeJS.ProcessEnv);
 
     expect(config.isolatedMcpServers).toEqual(["notion", "linear"]);
@@ -133,7 +130,7 @@ describe("loadConfig", () => {
       LOG_RAW_SLACK_EVENTS: "false",
       LOG_RAW_CODEX_RPC: "false",
       LOG_RAW_HTTP_REQUESTS: "true",
-      LOG_RAW_MAX_BYTES: "4096"
+      LOG_RAW_MAX_BYTES: "4096",
     } as NodeJS.ProcessEnv);
 
     expect(config.logLevel).toBe("debug");
@@ -147,7 +144,7 @@ describe("loadConfig", () => {
     const config = loadConfig({
       SLACK_APP_TOKEN: "xapp-test",
       SLACK_BOT_TOKEN: "xoxb-test",
-      BROKER_ADMIN_TOKEN: "secret-admin-token"
+      BROKER_ADMIN_TOKEN: "secret-admin-token",
     } as NodeJS.ProcessEnv);
 
     expect(config.brokerAdminToken).toBe("secret-admin-token");
@@ -160,7 +157,7 @@ describe("loadConfig", () => {
       GITHUB_API_BASE_URL: "https://github.enterprise.test/api/v3",
       GITHUB_OAUTH_SCOPES: "repo, read:user, workflow",
       BROKER_DEFAULT_GITHUB_LOGIN: "default-bot",
-      BROKER_DEFAULT_GITHUB_TOKEN: "default-token"
+      BROKER_DEFAULT_GITHUB_TOKEN: "default-token",
     } as NodeJS.ProcessEnv);
 
     expect(config.githubApiBaseUrl).toBe("https://github.enterprise.test/api/v3");
@@ -181,7 +178,7 @@ describe("loadConfig", () => {
       DISK_CLEANUP_SESSION_CACHE_TTL_MS: "654",
       DISK_CLEANUP_INACTIVE_SESSION_MS: "789",
       DISK_CLEANUP_JOB_PROTECTION_MS: "101112",
-      DISK_CLEANUP_OLD_LOG_MS: "131415"
+      DISK_CLEANUP_OLD_LOG_MS: "131415",
     } as NodeJS.ProcessEnv);
 
     expect(config.diskCleanupEnabled).toBe(false);

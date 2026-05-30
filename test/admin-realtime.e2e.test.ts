@@ -41,7 +41,7 @@ describe("admin realtime e2e", () => {
       workspacePath: path.join(fixture.config.sessionsRoot, "C123-111-222", "workspace"),
       createdAt: "2026-05-09T00:00:00.000Z",
       updatedAt: "2026-05-09T00:00:01.000Z",
-      activeTurnId: "turn-1"
+      activeTurnId: "turn-1",
     });
 
     const message = await eventPromise;
@@ -57,16 +57,16 @@ describe("admin realtime e2e", () => {
         session: {
           key: "C123:111.222",
           channelLabel: "#ops",
-          activeTurnId: "turn-1"
-        }
-      }
+          activeTurnId: "turn-1",
+        },
+      },
     });
   });
 
   it("starts zero-cursor streams from the current tail instead of replaying retained events", async () => {
     const fixture = await startAdminFixture();
     await fixture.sessions.ensureSession("COLD", "100.000", {
-      channelName: "old"
+      channelName: "old",
     });
 
     const controller = new AbortController();
@@ -85,7 +85,7 @@ describe("admin realtime e2e", () => {
       rootThreadTs: "200.000",
       workspacePath: path.join(fixture.config.sessionsRoot, "CNEW-200-000", "workspace"),
       createdAt: "2026-05-09T00:00:02.000Z",
-      updatedAt: "2026-05-09T00:00:03.000Z"
+      updatedAt: "2026-05-09T00:00:03.000Z",
     });
 
     const message = await eventPromise;
@@ -96,15 +96,15 @@ describe("admin realtime e2e", () => {
       event: {
         sequence: 2,
         kind: "session.upsert",
-        sessionKey: "CNEW:200.000"
-      }
+        sessionKey: "CNEW:200.000",
+      },
     });
   });
 
   it("replays missed events from the supplied cursor", async () => {
     const fixture = await startAdminFixture();
     await fixture.sessions.ensureSession("C123", "111.222", {
-      channelName: "ops"
+      channelName: "ops",
     });
     await fixture.sessions.upsertAgentTraceEvent({
       id: "trace-1",
@@ -115,14 +115,14 @@ describe("admin realtime e2e", () => {
       sequence: 1,
       title: "工具调用",
       summary: "exec_command",
-      detail: "{\"cmd\":\"pnpm test\"}",
+      detail: '{"cmd":"pnpm test"}',
       status: "running",
       role: "assistant",
       toolName: "exec_command",
       callId: "call-1",
       turnId: "turn-1",
       createdAt: "2026-05-09T00:00:01.000Z",
-      updatedAt: "2026-05-09T00:00:01.000Z"
+      updatedAt: "2026-05-09T00:00:01.000Z",
     });
 
     const controller = new AbortController();
@@ -138,9 +138,9 @@ describe("admin realtime e2e", () => {
         timelineEvent: {
           type: "agent_tool_call",
           toolName: "exec_command",
-          detailAvailable: true
-        }
-      }
+          detailAvailable: true,
+        },
+      },
     });
     expect((message.data.event as Record<string, unknown>).timelineEvent).not.toHaveProperty("detail");
     const event = message.data.event as Record<string, unknown>;
@@ -151,20 +151,20 @@ describe("admin realtime e2e", () => {
   it("uses Last-Event-ID instead of the original after query on SSE reconnect", async () => {
     const fixture = await startAdminFixture();
     await fixture.sessions.ensureSession("COLD1", "100.000", {
-      channelName: "old-one"
+      channelName: "old-one",
     });
     await fixture.sessions.ensureSession("COLD2", "200.000", {
-      channelName: "old-two"
+      channelName: "old-two",
     });
 
     const controller = new AbortController();
     const eventPromise = readSseEvent(`${fixture.baseUrl}/admin/api/events?after=1`, controller.signal, {
-      "last-event-id": "2"
+      "last-event-id": "2",
     });
 
     await delay(25);
     await fixture.sessions.ensureSession("CNEW", "300.000", {
-      channelName: "new"
+      channelName: "new",
     });
 
     const message = await eventPromise;
@@ -175,8 +175,8 @@ describe("admin realtime e2e", () => {
       event: {
         sequence: 3,
         kind: "session.upsert",
-        sessionKey: "CNEW:300.000"
-      }
+        sessionKey: "CNEW:300.000",
+      },
     });
   });
 
@@ -198,7 +198,7 @@ describe("admin realtime e2e", () => {
       ADMIN_LAUNCHD_LABEL: "admin.test",
       WORKER_LAUNCHD_LABEL: "worker.test",
       ADMIN_PLIST_PATH: path.join(dataRoot, "admin.plist"),
-      WORKER_PLIST_PATH: path.join(dataRoot, "worker.plist")
+      WORKER_PLIST_PATH: path.join(dataRoot, "worker.plist"),
     } as NodeJS.ProcessEnv);
     await fs.mkdir(config.codexHome, { recursive: true });
     await fs.mkdir(config.logDir, { recursive: true });
@@ -206,7 +206,7 @@ describe("admin realtime e2e", () => {
     const stateStore = new StateStore(config.stateDir, config.sessionsRoot);
     const sessions = new SessionManager({
       stateStore,
-      sessionsRoot: config.sessionsRoot
+      sessionsRoot: config.sessionsRoot,
     });
     await sessions.load();
     cleanups.push(async () => {
@@ -221,16 +221,16 @@ describe("admin realtime e2e", () => {
         listProfilesStatus: async () => ({
           managedRoot: path.join(dataRoot, "auth-profiles"),
           profilesRoot: path.join(dataRoot, "auth-profiles", "docker", "profiles"),
-          profiles: []
+          profiles: [],
         }),
         addProfile: async () => ({ name: "profile" }),
-        deleteProfile: async () => {}
+        deleteProfile: async () => {},
       } as never,
       githubAuthorMappings: {
         load: async () => {},
         listMappings: () => [],
         upsertManualMapping: async () => ({}),
-        deleteMapping: async () => {}
+        deleteMapping: async () => {},
       } as never,
       runtime: {
         restartRuntime: async () => {},
@@ -238,28 +238,28 @@ describe("admin realtime e2e", () => {
           account: {
             email: "admin@example.com",
             type: "chatgpt",
-            planType: "team"
+            planType: "team",
           },
-          requiresOpenaiAuth: false
+          requiresOpenaiAuth: false,
         }),
         readAccountRateLimits: async () => ({
           rateLimits: null,
-          rateLimitsByLimitId: {}
-        })
+          rateLimitsByLimitId: {},
+        }),
       } as never,
       deployment: {
         getStatus: async () => ({ ok: true }),
         deploy: async () => ({ ok: true }),
         rollback: async () => ({ ok: true }),
-        restartWorker: async () => {}
-      } as never
+        restartWorker: async () => {},
+      } as never,
     });
 
     const server = http.createServer(
       createHttpHandler({
         adminService,
-        config
-      })
+        config,
+      }),
     );
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     cleanups.push(async () => {
@@ -282,12 +282,16 @@ describe("admin realtime e2e", () => {
     return {
       baseUrl: `http://127.0.0.1:${address.port}`,
       config,
-      sessions
+      sessions,
     };
   }
 });
 
-async function readSseEvent(url: string, signal: AbortSignal, extraHeaders: Record<string, string> = {}): Promise<{
+async function readSseEvent(
+  url: string,
+  signal: AbortSignal,
+  extraHeaders: Record<string, string> = {},
+): Promise<{
   readonly event: string;
   readonly id: string;
   readonly data: Record<string, unknown>;
@@ -295,9 +299,9 @@ async function readSseEvent(url: string, signal: AbortSignal, extraHeaders: Reco
   const response = await fetch(url, {
     headers: {
       accept: "text/event-stream",
-      ...extraHeaders
+      ...extraHeaders,
     },
-    signal
+    signal,
   });
   expect(response.ok).toBe(true);
   expect(response.headers.get("content-type")).toContain("text/event-stream");
@@ -322,8 +326,16 @@ async function readSseEvent(url: string, signal: AbortSignal, extraHeaders: Reco
       }
       const block = buffer.slice(0, index);
       const lines = block.split("\n");
-      const event = lines.find((line) => line.startsWith("event:"))?.slice("event:".length).trim() || "message";
-      const id = lines.find((line) => line.startsWith("id:"))?.slice("id:".length).trim() || "";
+      const event =
+        lines
+          .find((line) => line.startsWith("event:"))
+          ?.slice("event:".length)
+          .trim() || "message";
+      const id =
+        lines
+          .find((line) => line.startsWith("id:"))
+          ?.slice("id:".length)
+          .trim() || "";
       const data = lines
         .filter((line) => line.startsWith("data:"))
         .map((line) => line.slice("data:".length).trimStart())
@@ -334,7 +346,7 @@ async function readSseEvent(url: string, signal: AbortSignal, extraHeaders: Reco
       return {
         event,
         id,
-        data: JSON.parse(data) as Record<string, unknown>
+        data: JSON.parse(data) as Record<string, unknown>,
       };
     }
   } finally {

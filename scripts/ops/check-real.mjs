@@ -25,7 +25,7 @@ function parseArgs(argv) {
   }
 
   return {
-    containerName
+    containerName,
   };
 }
 

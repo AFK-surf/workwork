@@ -19,9 +19,9 @@ afterEach(async () => {
     tmpRoots.splice(0).map(async (directory) => {
       await fs.rm(directory, {
         force: true,
-        recursive: true
+        recursive: true,
       });
-    })
+    }),
   );
 });
 
@@ -30,27 +30,21 @@ describe("syncGeminiHome", () => {
     const sourceHome = await makeTempDir("gemini-home-source-");
     const runtimeHome = await makeTempDir("gemini-runtime-home-");
 
-    await fs.writeFile(path.join(sourceHome, "settings.json"), "{\"selectedAuthType\":\"oauth-personal\"}\n");
-    await fs.writeFile(path.join(sourceHome, "oauth_creds.json"), "{\"refresh_token\":\"test\"}\n");
-    await fs.writeFile(path.join(sourceHome, "google_accounts.json"), "{\"email\":\"user@example.com\"}\n");
-    await fs.writeFile(path.join(sourceHome, "projects.json"), "{\"last\":\"ignored\"}\n");
+    await fs.writeFile(path.join(sourceHome, "settings.json"), '{"selectedAuthType":"oauth-personal"}\n');
+    await fs.writeFile(path.join(sourceHome, "oauth_creds.json"), '{"refresh_token":"test"}\n');
+    await fs.writeFile(path.join(sourceHome, "google_accounts.json"), '{"email":"user@example.com"}\n');
+    await fs.writeFile(path.join(sourceHome, "projects.json"), '{"last":"ignored"}\n');
     await fs.mkdir(path.join(sourceHome, "history"), { recursive: true });
     await fs.writeFile(path.join(sourceHome, "history", "log.txt"), "ignored\n");
 
     await syncGeminiHome({
       runtimeHomePath: runtimeHome,
-      hostGeminiHomePath: sourceHome
+      hostGeminiHomePath: sourceHome,
     });
 
-    expect(await fs.readFile(path.join(runtimeHome, ".gemini", "settings.json"), "utf8")).toContain(
-      "selectedAuthType"
-    );
-    expect(await fs.readFile(path.join(runtimeHome, ".gemini", "oauth_creds.json"), "utf8")).toContain(
-      "refresh_token"
-    );
-    expect(await fs.readFile(path.join(runtimeHome, ".gemini", "google_accounts.json"), "utf8")).toContain(
-      "user@example.com"
-    );
+    expect(await fs.readFile(path.join(runtimeHome, ".gemini", "settings.json"), "utf8")).toContain("selectedAuthType");
+    expect(await fs.readFile(path.join(runtimeHome, ".gemini", "oauth_creds.json"), "utf8")).toContain("refresh_token");
+    expect(await fs.readFile(path.join(runtimeHome, ".gemini", "google_accounts.json"), "utf8")).toContain("user@example.com");
     await expect(fs.access(path.join(runtimeHome, ".gemini", "projects.json"))).rejects.toThrow();
     await expect(fs.access(path.join(runtimeHome, ".gemini", "history"))).rejects.toThrow();
   });
@@ -59,18 +53,18 @@ describe("syncGeminiHome", () => {
     const sourceHome = await makeTempDir("gemini-home-source-");
     const runtimeHome = await makeTempDir("gemini-runtime-home-");
 
-    await fs.writeFile(path.join(sourceHome, "settings.json"), "{\"selectedAuthType\":\"oauth-personal\"}\n");
-    await fs.writeFile(path.join(sourceHome, "oauth_creds.json"), "{\"refresh_token\":\"test\"}\n");
+    await fs.writeFile(path.join(sourceHome, "settings.json"), '{"selectedAuthType":"oauth-personal"}\n');
+    await fs.writeFile(path.join(sourceHome, "oauth_creds.json"), '{"refresh_token":"test"}\n');
 
     await syncGeminiHome({
       runtimeHomePath: runtimeHome,
-      hostGeminiHomePath: sourceHome
+      hostGeminiHomePath: sourceHome,
     });
 
     await fs.rm(path.join(sourceHome, "oauth_creds.json"));
     await syncGeminiHome({
       runtimeHomePath: runtimeHome,
-      hostGeminiHomePath: sourceHome
+      hostGeminiHomePath: sourceHome,
     });
 
     await expect(fs.access(path.join(runtimeHome, ".gemini", "oauth_creds.json"))).rejects.toThrow();
@@ -80,14 +74,14 @@ describe("syncGeminiHome", () => {
     const runtimeHome = await makeTempDir("gemini-runtime-home-");
     const geminiHome = path.join(runtimeHome, ".gemini");
     await fs.mkdir(geminiHome, { recursive: true });
-    await fs.writeFile(path.join(geminiHome, "settings.json"), "{\"selectedAuthType\":\"oauth-personal\"}\n");
+    await fs.writeFile(path.join(geminiHome, "settings.json"), '{"selectedAuthType":"oauth-personal"}\n');
 
-    await expect(syncGeminiHome({
-      runtimeHomePath: runtimeHome,
-      hostGeminiHomePath: geminiHome
-    })).resolves.toBeUndefined();
-    await expect(fs.readFile(path.join(geminiHome, "settings.json"), "utf8")).resolves.toContain(
-      "selectedAuthType"
-    );
+    await expect(
+      syncGeminiHome({
+        runtimeHomePath: runtimeHome,
+        hostGeminiHomePath: geminiHome,
+      }),
+    ).resolves.toBeUndefined();
+    await expect(fs.readFile(path.join(geminiHome, "settings.json"), "utf8")).resolves.toContain("selectedAuthType");
   });
 });

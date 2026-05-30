@@ -12,7 +12,7 @@ function parseArgs(argv) {
     restart: true,
     allowActive: false,
     openInboundLimit: 10,
-    logLineLimit: 10
+    logLineLimit: 10,
   };
 
   let index = 0;
@@ -73,13 +73,7 @@ function parseArgs(argv) {
 }
 
 function printHelp() {
-  console.log(
-    [
-      "Usage:",
-      "  node scripts/ops/auth-real.mjs status [--container <name>] [--open-inbound-limit <n>] [--log-lines <n>]",
-      "  node scripts/ops/auth-real.mjs replace --auth-json <path> [--credentials-json <path>] [--config-toml <path>] [--container <name>] [--no-restart] [--allow-active]"
-    ].join("\n")
-  );
+  console.log(["Usage:", "  node scripts/ops/auth-real.mjs status [--container <name>] [--open-inbound-limit <n>] [--log-lines <n>]", "  node scripts/ops/auth-real.mjs replace --auth-json <path> [--credentials-json <path>] [--config-toml <path>] [--container <name>] [--no-restart] [--allow-active]"].join("\n"));
 }
 
 const options = parseArgs(process.argv.slice(2));
@@ -90,11 +84,11 @@ if (options.command === "status") {
       await getAuthRealStatus({
         containerName: options.containerName,
         openInboundLimit: options.openInboundLimit,
-        logLineLimit: options.logLineLimit
+        logLineLimit: options.logLineLimit,
       }),
       null,
-      2
-    )
+      2,
+    ),
   );
 } else {
   console.log(
@@ -105,10 +99,10 @@ if (options.command === "status") {
         credentialsJsonPath: options.credentialsJsonPath,
         configTomlPath: options.configTomlPath,
         restart: options.restart,
-        allowActive: options.allowActive
+        allowActive: options.allowActive,
       }),
       null,
-      2
-    )
+      2,
+    ),
   );
 }

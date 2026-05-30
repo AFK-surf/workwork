@@ -1,4 +1,4 @@
-FROM node:22-bookworm-slim AS base
+FROM node:22.13.0-bookworm-slim AS base
 
 ENV PNPM_HOME=/pnpm
 ENV PATH="$PNPM_HOME:$PATH"
@@ -24,7 +24,7 @@ FROM base AS prod-deps
 COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --prod --frozen-lockfile
 
-FROM node:22-bookworm-slim AS runtime
+FROM node:22.13.0-bookworm-slim AS runtime
 
 WORKDIR /app
 

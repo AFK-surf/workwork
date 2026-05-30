@@ -1,11 +1,6 @@
 import type { EventEmitter } from "node:events";
 
-import type {
-  AgentTurnTokenUsage,
-  GeneratedImageArtifact,
-  SlackSessionRecord,
-  SlackUserIdentity
-} from "../../types.js";
+import type { AgentTurnTokenUsage, GeneratedImageArtifact, SlackSessionRecord, SlackUserIdentity } from "../../types.js";
 
 export interface AgentTextInputItem {
   readonly type: "text";
@@ -235,11 +230,7 @@ export interface AgentRuntime extends EventEmitter {
   submitInput(input: SubmitAgentInput): Promise<AgentSubmitInputResult>;
   interrupt(session: SlackSessionRecord): Promise<void>;
   readSession(session: SlackSessionRecord): Promise<AgentSessionSnapshot | null>;
-  readTurn(
-    session: SlackSessionRecord,
-    turnId: string,
-    options?: ReadAgentTurnOptions
-  ): Promise<AgentTurnSnapshot | null>;
+  readTurn(session: SlackSessionRecord, turnId: string, options?: ReadAgentTurnOptions): Promise<AgentTurnSnapshot | null>;
   on(event: "event", handler: (event: AgentRuntimeEvent) => void): this;
   off(event: "event", handler: (event: AgentRuntimeEvent) => void): this;
 }

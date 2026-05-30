@@ -12,10 +12,7 @@ export function profileAccountLabel(profile: AuthProfileRecord): string {
   }
 
   const account = accountStatus.account || {};
-  return readString(account.email) ||
-    readString(account.name) ||
-    readString(account.id) ||
-    "未知账号";
+  return readString(account.email) || readString(account.name) || readString(account.id) || "未知账号";
 }
 
 export function profilePlanLabel(profile: AuthProfileRecord): string {
@@ -37,15 +34,11 @@ export function profilePlanLabel(profile: AuthProfileRecord): string {
 }
 
 export function profileDisplayLabel(profile: AuthProfileRecord): string {
-  return [profileAccountLabel(profile), profilePlanLabel(profile)]
-    .filter(Boolean)
-    .join(" · ");
+  return [profileAccountLabel(profile), profilePlanLabel(profile)].filter(Boolean).join(" · ");
 }
 
 export function profileOptionLabel(profile: AuthProfileRecord, options: QuotaLabelOptions = {}): string {
-  return [profileDisplayLabel(profile), profileQuotaLabel(profile, options)]
-    .filter(Boolean)
-    .join(" · ");
+  return [profileDisplayLabel(profile), profileQuotaLabel(profile, options)].filter(Boolean).join(" · ");
 }
 
 export function profileSessionActionLabel(profile: AuthProfileRecord, options: QuotaLabelOptions = {}): string {
@@ -54,9 +47,7 @@ export function profileSessionActionLabel(profile: AuthProfileRecord, options: Q
 
 export function profileTitle(profile: AuthProfileRecord, options: QuotaLabelOptions = {}): string {
   const internalName = readString(profile.name);
-  return [profileOptionLabel(profile, options), internalName ? `内部标识 ${internalName}` : ""]
-    .filter(Boolean)
-    .join(" · ");
+  return [profileOptionLabel(profile, options), internalName ? `内部标识 ${internalName}` : ""].filter(Boolean).join(" · ");
 }
 
 export function profileIsSelectable(profile: AuthProfileRecord): boolean {
@@ -73,7 +64,7 @@ export function profileQuotaLabel(profile: AuthProfileRecord, options: QuotaLabe
   const label = formatAuthQuotaDisplay({
     primary: limits.primary,
     secondary: limits.secondary,
-    now: options.now
+    now: options.now,
   });
   return label ?? "额度未知";
 }
@@ -85,11 +76,13 @@ export function profileWeeklyQuotaLabel(profile: AuthProfileRecord, options: Quo
   }
 
   const limits = rateLimits.rateLimits || {};
-  return formatAuthQuotaDisplay({
-    primary: limits.primary,
-    secondary: limits.secondary,
-    now: options.now
-  }) ?? "额度未知";
+  return (
+    formatAuthQuotaDisplay({
+      primary: limits.primary,
+      secondary: limits.secondary,
+      now: options.now,
+    }) ?? "额度未知"
+  );
 }
 
 function readString(value: unknown): string | null {

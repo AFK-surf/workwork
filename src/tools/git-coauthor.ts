@@ -10,29 +10,22 @@ interface ParsedArgs {
   readonly commitMessagePath: string;
 }
 
-export async function runCommitMsgHook(options: {
-  readonly brokerApiBase: string;
-  readonly cwd: string;
-  readonly commitMessagePath: string;
-}): Promise<void> {
+export async function runCommitMsgHook(options: { readonly brokerApiBase: string; readonly cwd: string; readonly commitMessagePath: string }): Promise<void> {
   const commitMessage = await fs.readFile(options.commitMessagePath, "utf8");
-  const primaryAuthorEmail =
-    normalizeOptionalString(process.env.GIT_AUTHOR_EMAIL) ??
-    readGitConfig(options.cwd, "user.email") ??
-    undefined;
+  const primaryAuthorEmail = normalizeOptionalString(process.env.GIT_AUTHOR_EMAIL) ?? readGitConfig(options.cwd, "user.email") ?? undefined;
 
   const response = await fetch(`${options.brokerApiBase}/slack/git-coauthors/resolve-commit-message`, {
     method: "POST",
     headers: {
-      "content-type": "application/json"
+      "content-type": "application/json",
     },
     body: JSON.stringify({
       cwd: options.cwd,
       commit_message: commitMessage,
-      primary_author_email: primaryAuthorEmail
-    })
+      primary_author_email: primaryAuthorEmail,
+    }),
   });
-  const payload = await response.json().catch(() => ({})) as {
+  const payload = (await response.json().catch(() => ({}))) as {
     ok?: boolean;
     error?: string;
     message?: string;
@@ -64,7 +57,7 @@ async function main(): Promise<void> {
     await runCommitMsgHook({
       brokerApiBase,
       cwd: process.cwd(),
-      commitMessagePath: path.resolve(parsed.commitMessagePath)
+      commitMessagePath: path.resolve(parsed.commitMessagePath),
     });
   }
 }
@@ -78,14 +71,14 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
 
   return {
     action,
-    commitMessagePath
+    commitMessagePath,
   };
 }
 
 function readGitConfig(cwd: string, key: string): string | null {
   const result = spawnSync("git", ["config", "--get", key], {
     cwd,
-    encoding: "utf8"
+    encoding: "utf8",
   });
   if (result.status !== 0) {
     return null;

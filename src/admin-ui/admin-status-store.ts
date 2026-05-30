@@ -39,7 +39,7 @@ export function publishAdminStatus(status: unknown): void {
   }
   snapshot = {
     status: mergeAdminStatusSnapshot(snapshot.status, status),
-    version: snapshot.version + 1
+    version: snapshot.version + 1,
   };
   listeners.forEach((listener) => listener());
 }
@@ -53,7 +53,7 @@ export function applyAdminRealtimeEvent(event: AdminRealtimeEvent): void {
   lastEventSequence = Math.max(lastEventSequence, eventSequence);
   snapshot = {
     status: applyAdminRealtimeEventToStatus(snapshot.status, event),
-    version: snapshot.version + 1
+    version: snapshot.version + 1,
   };
   publishTimelineRealtimeEvent(event);
   listeners.forEach((listener) => listener());
@@ -108,7 +108,7 @@ export function publishTimelinePayload(sessionKey: string, payload: unknown): vo
   const previous = timelineSnapshots.get(sessionKey);
   timelineSnapshots.set(sessionKey, {
     payload,
-    version: (previous?.version ?? 0) + 1
+    version: (previous?.version ?? 0) + 1,
   });
   notifyTimelineListeners(sessionKey);
 }
@@ -124,7 +124,7 @@ export function publishTimelineRealtimeEvent(event: AdminRealtimeEvent): void {
   }
   timelineSnapshots.set(sessionKey, {
     payload: applyTimelineRealtimeEvent(previous.payload, event),
-    version: previous.version + 1
+    version: previous.version + 1,
   });
   notifyTimelineListeners(sessionKey);
 }
@@ -153,28 +153,18 @@ export function mergeAdminStatusSnapshot(currentStatus: unknown, incomingStatus:
     return incomingStatus;
   }
 
-  const current = currentStatus && typeof currentStatus === "object" && !Array.isArray(currentStatus)
-    ? currentStatus as Record<string, any>
-    : {};
+  const current = currentStatus && typeof currentStatus === "object" && !Array.isArray(currentStatus) ? (currentStatus as Record<string, any>) : {};
   const incoming = incomingStatus as Record<string, any>;
-  const currentState = current.state && typeof current.state === "object" && !Array.isArray(current.state)
-    ? current.state as Record<string, any>
-    : {};
-  const incomingState = incoming.state && typeof incoming.state === "object" && !Array.isArray(incoming.state)
-    ? incoming.state as Record<string, any>
-    : {};
+  const currentState = current.state && typeof current.state === "object" && !Array.isArray(current.state) ? (current.state as Record<string, any>) : {};
+  const incomingState = incoming.state && typeof incoming.state === "object" && !Array.isArray(incoming.state) ? (incoming.state as Record<string, any>) : {};
   const currentSessions = Array.isArray(currentState.sessions) ? currentState.sessions : [];
   const incomingHasSessions = Array.isArray(incomingState.sessions);
-  const currentRealtime = current.realtime && typeof current.realtime === "object" && !Array.isArray(current.realtime)
-    ? current.realtime as Record<string, unknown>
-    : {};
-  const incomingRealtime = incoming.realtime && typeof incoming.realtime === "object" && !Array.isArray(incoming.realtime)
-    ? incoming.realtime as Record<string, unknown>
-    : {};
+  const currentRealtime = current.realtime && typeof current.realtime === "object" && !Array.isArray(current.realtime) ? (current.realtime as Record<string, unknown>) : {};
+  const incomingRealtime = incoming.realtime && typeof incoming.realtime === "object" && !Array.isArray(incoming.realtime) ? (incoming.realtime as Record<string, unknown>) : {};
   const mergedState: Record<string, unknown> = {
     ...currentState,
     ...incomingState,
-    sessions: incomingHasSessions ? incomingState.sessions : currentSessions
+    sessions: incomingHasSessions ? incomingState.sessions : currentSessions,
   };
 
   if (!incomingHasSessions && currentSessions.length > 0) {
@@ -188,13 +178,14 @@ export function mergeAdminStatusSnapshot(currentStatus: unknown, incomingStatus:
   return {
     ...current,
     ...incoming,
-    realtime: incomingHasSessions || Object.keys(currentRealtime).length === 0
-      ? {
-        ...currentRealtime,
-        ...incomingRealtime
-      }
-      : currentRealtime,
-    state: mergedState
+    realtime:
+      incomingHasSessions || Object.keys(currentRealtime).length === 0
+        ? {
+            ...currentRealtime,
+            ...incomingRealtime,
+          }
+        : currentRealtime,
+    state: mergedState,
   };
 }
 
@@ -207,21 +198,19 @@ export function applyAdminRealtimeEventToStatus(status: unknown, event: AdminRea
   const next: Record<string, any> = {
     ...current,
     realtime: {
-      ...(current.realtime || {}),
-      cursor: Math.max(Number(current.realtime?.cursor || 0), Number(event.sequence || 0))
-    }
+      ...current.realtime,
+      cursor: Math.max(Number(current.realtime?.cursor || 0), Number(event.sequence || 0)),
+    },
   };
 
   if (event.session !== undefined || event.kind === "session.delete") {
     const state = current.state && typeof current.state === "object" ? current.state : {};
-    const sessions = Array.isArray(state.sessions) ? state.sessions as Array<Record<string, unknown>> : [];
-    const nextSessions = event.kind === "session.delete"
-      ? sessions.filter((session) => String(session.key || "") !== String(event.sessionKey || event.entityId || ""))
-      : upsertSessionSummary(sessions, event.session);
+    const sessions = Array.isArray(state.sessions) ? (state.sessions as Array<Record<string, unknown>>) : [];
+    const nextSessions = event.kind === "session.delete" ? sessions.filter((session) => String(session.key || "") !== String(event.sessionKey || event.entityId || "")) : upsertSessionSummary(sessions, event.session);
     next.state = {
       ...state,
       sessions: nextSessions,
-      ...summarizeSessionCounts(nextSessions)
+      ...summarizeSessionCounts(nextSessions),
     };
   }
 
@@ -240,10 +229,8 @@ export function applyTimelineRealtimeEvent(payload: unknown, event: AdminRealtim
     return payload;
   }
 
-  const current = Array.isArray(payload)
-    ? { events: payload, trace: null }
-    : (payload && typeof payload === "object" ? payload as Record<string, any> : { events: [] });
-  const events = Array.isArray(current.events) ? current.events as Array<Record<string, unknown>> : [];
+  const current = Array.isArray(payload) ? { events: payload, trace: null } : payload && typeof payload === "object" ? (payload as Record<string, any>) : { events: [] };
+  const events = Array.isArray(current.events) ? (current.events as Array<Record<string, unknown>>) : [];
   const nextEvents = appendUniqueTimelineEvent(events, event.timelineEvent);
 
   if (Array.isArray(payload)) {
@@ -253,14 +240,11 @@ export function applyTimelineRealtimeEvent(payload: unknown, event: AdminRealtim
   return {
     ...current,
     events: nextEvents,
-    trace: event.trace || summarizeTraceFromEvents(nextEvents)
+    trace: event.trace || summarizeTraceFromEvents(nextEvents),
   };
 }
 
-function upsertSessionSummary(
-  sessions: readonly Record<string, unknown>[],
-  session: Record<string, unknown> | null | undefined
-): Array<Record<string, unknown>> {
+function upsertSessionSummary(sessions: readonly Record<string, unknown>[], session: Record<string, unknown> | null | undefined): Array<Record<string, unknown>> {
   if (!session?.key) {
     return [...sessions];
   }
@@ -279,14 +263,11 @@ function upsertSessionSummary(
   return next;
 }
 
-function mergeSessionSummary(
-  existing: Record<string, unknown>,
-  incoming: Record<string, unknown>
-): Record<string, unknown> {
+function mergeSessionSummary(existing: Record<string, unknown>, incoming: Record<string, unknown>): Record<string, unknown> {
   return {
     ...existing,
     ...incoming,
-    usage: mergeNestedObject(existing.usage, incoming.usage)
+    usage: mergeNestedObject(existing.usage, incoming.usage),
   };
 }
 
@@ -299,15 +280,11 @@ function mergeNestedObject(current: unknown, incoming: unknown): unknown {
   }
   return {
     ...(current as Record<string, unknown>),
-    ...(incoming as Record<string, unknown>)
+    ...(incoming as Record<string, unknown>),
   };
 }
 
-function upsertById(
-  records: readonly Record<string, unknown>[],
-  record: Record<string, unknown>,
-  keyName: string
-): Array<Record<string, unknown>> {
+function upsertById(records: readonly Record<string, unknown>[], record: Record<string, unknown>, keyName: string): Array<Record<string, unknown>> {
   const key = String(record[keyName] || "");
   if (!key) {
     return [record, ...records];
@@ -316,22 +293,13 @@ function upsertById(
   return [record, ...next];
 }
 
-function prependUnique(
-  records: readonly Record<string, unknown>[],
-  record: Record<string, unknown>,
-  keyName: string
-): Array<Record<string, unknown>> {
+function prependUnique(records: readonly Record<string, unknown>[], record: Record<string, unknown>, keyName: string): Array<Record<string, unknown>> {
   const key = String(record[keyName] || "");
   return [record, ...records.filter((item) => String(item[keyName] || "") !== key)];
 }
 
-function appendUniqueTimelineEvent(
-  events: readonly Record<string, unknown>[],
-  event: Record<string, unknown>
-): Array<Record<string, unknown>> {
-  const baseEvents = isToolResultEvent(event)
-    ? events.filter((existing) => !isMatchingToolCall(existing, event))
-    : events;
+function appendUniqueTimelineEvent(events: readonly Record<string, unknown>[], event: Record<string, unknown>): Array<Record<string, unknown>> {
+  const baseEvents = isToolResultEvent(event) ? events.filter((existing) => !isMatchingToolCall(existing, event)) : events;
   const key = timelineEventIdentity(event);
   if (key && baseEvents.some((existing) => timelineEventIdentity(existing) === key)) {
     return [...baseEvents];
@@ -340,26 +308,14 @@ function appendUniqueTimelineEvent(
 }
 
 function timelineEventIdentity(event: Record<string, unknown>): string {
-  return [
-    event.id,
-    event.at,
-    event.type,
-    event.callId,
-    event.turnId,
-    event.toolName,
-    event.title,
-    event.summary
-  ].filter(Boolean).join("\u001f");
+  return [event.id, event.at, event.type, event.callId, event.turnId, event.toolName, event.title, event.summary].filter(Boolean).join("\u001f");
 }
 
 function isToolResultEvent(event: Record<string, unknown>): boolean {
   return String(event.type || "") === "agent_tool_result";
 }
 
-function isMatchingToolCall(
-  existing: Record<string, unknown>,
-  result: Record<string, unknown>
-): boolean {
+function isMatchingToolCall(existing: Record<string, unknown>, result: Record<string, unknown>): boolean {
   if (String(existing.type || "") !== "agent_tool_call") {
     return false;
   }
@@ -406,7 +362,7 @@ function summarizeSessionCounts(sessions: readonly Record<string, unknown>[]): R
     openSystemInboundCount,
     backgroundJobCount,
     runningBackgroundJobCount,
-    failedBackgroundJobCount
+    failedBackgroundJobCount,
   };
 }
 
@@ -421,7 +377,7 @@ function summarizeTraceFromEvents(events: readonly Record<string, unknown>[]): R
   return {
     source: "broker_db",
     eventCount: events.length,
-    categories
+    categories,
   };
 }
 
@@ -450,15 +406,4 @@ function statusIncludesSessionSnapshot(status: unknown): boolean {
   return Boolean(state && typeof state === "object" && !Array.isArray(state) && Array.isArray(state.sessions));
 }
 
-const sessionDerivedStateKeys = [
-  "sessionCount",
-  "activeCount",
-  "openInboundCount",
-  "openHumanInboundCount",
-  "openSystemInboundCount",
-  "backgroundJobCount",
-  "runningBackgroundJobCount",
-  "failedBackgroundJobCount",
-  "activeSessions",
-  "openInbound"
-];
+const sessionDerivedStateKeys = ["sessionCount", "activeCount", "openInboundCount", "openHumanInboundCount", "openSystemInboundCount", "backgroundJobCount", "runningBackgroundJobCount", "failedBackgroundJobCount", "activeSessions", "openInbound"];

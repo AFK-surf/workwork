@@ -4,10 +4,7 @@ import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import {
-  getPersonalMemoryPath,
-  syncUserCodexHome
-} from "../src/services/codex/codex-home.js";
+import { getPersonalMemoryPath, syncUserCodexHome } from "../src/services/codex/codex-home.js";
 
 const tmpRoots: string[] = [];
 
@@ -21,7 +18,7 @@ afterEach(async () => {
   await Promise.all(
     tmpRoots.splice(0).map(async (directory) => {
       await fs.rm(directory, { force: true, recursive: true });
-    })
+    }),
   );
 });
 
@@ -40,26 +37,26 @@ describe("team Codex home", () => {
     await fs.mkdir(path.join(teamHome, "skills", "shared"), { recursive: true });
     await fs.writeFile(path.join(teamHome, "AGENT.md"), "team memory\n");
     await fs.writeFile(path.join(teamHome, "AGENTS.md"), "team agents\n");
-    await fs.writeFile(path.join(teamHome, "config.toml"), "model = \"gpt-5.5\"\n");
+    await fs.writeFile(path.join(teamHome, "config.toml"), 'model = "gpt-5.5"\n');
     await fs.writeFile(path.join(teamHome, "skills", "shared", "SKILL.md"), "team skill\n");
 
     await fs.mkdir(profileHome, { recursive: true });
     await fs.writeFile(path.join(profileHome, "AGENT.md"), "stale profile memory\n");
-    await fs.writeFile(path.join(profileHome, "auth.json"), "{\"profile\":\"one\"}\n");
+    await fs.writeFile(path.join(profileHome, "auth.json"), '{"profile":"one"}\n');
 
     await syncUserCodexHome({
       codexHome: profileHome,
       hostCodexHomePath: sourceHome,
       runtimeHomePath: runtimeHome,
-      teamCodexHomePath: teamHome
+      teamCodexHomePath: teamHome,
     });
 
     expect(await fs.readFile(path.join(profileHome, "AGENT.md"), "utf8")).toBe("team memory\n");
     expect(await fs.readFile(path.join(profileHome, "AGENTS.md"), "utf8")).toBe("team agents\n");
-    expect(await fs.readFile(path.join(profileHome, "config.toml"), "utf8")).toBe("model = \"gpt-5.5\"\n");
+    expect(await fs.readFile(path.join(profileHome, "config.toml"), "utf8")).toBe('model = "gpt-5.5"\n');
     expect(await fs.readFile(path.join(profileHome, "skills", "shared", "SKILL.md"), "utf8")).toBe("team skill\n");
     expect(await fs.readFile(path.join(teamHome, "AGENT.md"), "utf8")).toBe("team memory\n");
-    expect(await fs.readFile(path.join(profileHome, "auth.json"), "utf8")).toBe("{\"profile\":\"one\"}\n");
+    expect(await fs.readFile(path.join(profileHome, "auth.json"), "utf8")).toBe('{"profile":"one"}\n');
 
     expect((await fs.lstat(path.join(profileHome, "AGENT.md"))).isSymbolicLink()).toBe(true);
     expect((await fs.lstat(path.join(profileHome, "config.toml"))).isSymbolicLink()).toBe(true);
@@ -68,9 +65,7 @@ describe("team Codex home", () => {
 
     const runtimeAgentPath = path.join(runtimeHome, ".codex", "AGENT.md");
     expect((await fs.lstat(runtimeAgentPath)).isSymbolicLink()).toBe(true);
-    expect(path.resolve(path.dirname(runtimeAgentPath), await fs.readlink(runtimeAgentPath))).toBe(
-      path.join(teamHome, "AGENT.md")
-    );
+    expect(path.resolve(path.dirname(runtimeAgentPath), await fs.readlink(runtimeAgentPath))).toBe(path.join(teamHome, "AGENT.md"));
   });
 
   it("initializes an empty team home without importing existing host/profile memory", async () => {
@@ -85,7 +80,7 @@ describe("team Codex home", () => {
     await syncUserCodexHome({
       codexHome: profileHome,
       hostCodexHomePath: sourceHome,
-      teamCodexHomePath: teamHome
+      teamCodexHomePath: teamHome,
     });
 
     expect(await fs.readFile(path.join(teamHome, "AGENT.md"), "utf8")).toBe("");
@@ -103,24 +98,22 @@ describe("team Codex home", () => {
 
     await fs.mkdir(sourceHome, { recursive: true });
     await fs.writeFile(path.join(sourceHome, "AGENT.md"), "host memory should be preserved\n");
-    await fs.writeFile(path.join(sourceHome, "config.toml"), "model = \"gpt-5\"\n");
+    await fs.writeFile(path.join(sourceHome, "config.toml"), 'model = "gpt-5"\n');
 
     await syncUserCodexHome({
       codexHome: profileHome,
       hostCodexHomePath: sourceHome,
       runtimeHomePath: runtimeHome,
-      teamCodexHomePath: teamHome
+      teamCodexHomePath: teamHome,
     });
 
     expect(await fs.readFile(path.join(profileHome, "AGENT.md"), "utf8")).toBe("host memory should be preserved\n");
-    expect(await fs.readFile(path.join(profileHome, "config.toml"), "utf8")).toBe("model = \"gpt-5\"\n");
+    expect(await fs.readFile(path.join(profileHome, "config.toml"), "utf8")).toBe('model = "gpt-5"\n');
     expect((await fs.lstat(path.join(profileHome, "AGENT.md"))).isSymbolicLink()).toBe(false);
     expect((await fs.lstat(path.join(profileHome, "config.toml"))).isSymbolicLink()).toBe(false);
 
     const runtimeAgentPath = path.join(runtimeHome, ".codex", "AGENT.md");
-    expect(path.resolve(path.dirname(runtimeAgentPath), await fs.readlink(runtimeAgentPath))).toBe(
-      path.join(profileHome, "AGENT.md")
-    );
+    expect(path.resolve(path.dirname(runtimeAgentPath), await fs.readlink(runtimeAgentPath))).toBe(path.join(profileHome, "AGENT.md"));
     await expect(fs.access(path.join(teamHome, "AGENT.md"))).rejects.toThrow();
   });
 
@@ -129,8 +122,6 @@ describe("team Codex home", () => {
     const teamHome = await makeTempDir("team-codex-home-");
 
     expect(getPersonalMemoryPath(codexHome)).toBe(path.join(codexHome, "AGENT.md"));
-    expect(getPersonalMemoryPath(codexHome, { teamCodexHomePath: teamHome })).toBe(
-      path.join(teamHome, "AGENT.md")
-    );
+    expect(getPersonalMemoryPath(codexHome, { teamCodexHomePath: teamHome })).toBe(path.join(teamHome, "AGENT.md"));
   });
 });

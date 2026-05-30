@@ -79,11 +79,7 @@ export function parseJsonLike(value: unknown): JsonLike | undefined {
   return value as JsonLike;
 }
 
-export function respondJson(
-  response: http.ServerResponse,
-  statusCode: number,
-  body: Record<string, unknown>
-): void {
+export function respondJson(response: http.ServerResponse, statusCode: number, body: Record<string, unknown>): void {
   response.writeHead(statusCode, { "content-type": "application/json" });
   response.end(JSON.stringify(body));
 }

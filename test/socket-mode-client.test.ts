@@ -49,7 +49,7 @@ async function createSocketServer(): Promise<TestSocketServer> {
           server.close(() => done());
         });
       });
-    }
+    },
   };
 }
 
@@ -65,11 +65,11 @@ describe("SlackSocketModeClient", () => {
   it("retries after a failed socket-open request without crashing start()", async () => {
     vi.useFakeTimers();
     const api = {
-      openSocketConnection: vi.fn().mockRejectedValue(new Error("fetch failed"))
+      openSocketConnection: vi.fn().mockRejectedValue(new Error("fetch failed")),
     };
     const client = new SlackSocketModeClient({
       api: api as never,
-      socketOpenPath: "apps.connections.open"
+      socketOpenPath: "apps.connections.open",
     });
 
     await expect(client.start()).resolves.toBeUndefined();
@@ -86,9 +86,9 @@ describe("SlackSocketModeClient", () => {
     servers.push(server);
     const client = new SlackSocketModeClient({
       api: {
-        openSocketConnection: async () => server.url
+        openSocketConnection: async () => server.url,
       } as any,
-      socketOpenPath: "apps.connections.open"
+      socketOpenPath: "apps.connections.open",
     });
     const interactivePromise = new Promise<Record<string, unknown>>((resolve) => {
       client.on("interactive", (payload) => {
@@ -98,18 +98,20 @@ describe("SlackSocketModeClient", () => {
 
     await client.start();
     const socket = await server.connected;
-    socket.send(JSON.stringify({
-      envelope_id: "env-1",
-      type: "interactive",
-      payload: {
-        type: "block_actions",
-        trigger_id: "trigger-1"
-      }
-    }));
+    socket.send(
+      JSON.stringify({
+        envelope_id: "env-1",
+        type: "interactive",
+        payload: {
+          type: "block_actions",
+          trigger_id: "trigger-1",
+        },
+      }),
+    );
 
     await expect(interactivePromise).resolves.toMatchObject({
       type: "block_actions",
-      trigger_id: "trigger-1"
+      trigger_id: "trigger-1",
     });
     await client.stop();
   });
@@ -119,9 +121,9 @@ describe("SlackSocketModeClient", () => {
     servers.push(server);
     const client = new SlackSocketModeClient({
       api: {
-        openSocketConnection: async () => server.url
+        openSocketConnection: async () => server.url,
       } as any,
-      socketOpenPath: "apps.connections.open"
+      socketOpenPath: "apps.connections.open",
     });
     const accepted: string[] = [];
     const ackedAfterAccepted = new Promise<boolean>((resolve) => {
@@ -140,21 +142,23 @@ describe("SlackSocketModeClient", () => {
 
     await client.start();
     const socket = await server.connected;
-    socket.send(JSON.stringify({
-      envelope_id: "env-1",
-      type: "events_api",
-      payload: {
-        event_id: "Ev1",
-        event: {
-          type: "message",
-          channel: "C123",
-          thread_ts: "111.222",
-          ts: "111.223",
-          user: "U123",
-          text: "hello"
-        }
-      }
-    }));
+    socket.send(
+      JSON.stringify({
+        envelope_id: "env-1",
+        type: "events_api",
+        payload: {
+          event_id: "Ev1",
+          event: {
+            type: "message",
+            channel: "C123",
+            thread_ts: "111.222",
+            ts: "111.223",
+            user: "U123",
+            text: "hello",
+          },
+        },
+      }),
+    );
 
     await expect(ackedAfterAccepted).resolves.toBe(true);
     await client.stop();

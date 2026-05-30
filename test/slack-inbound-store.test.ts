@@ -15,7 +15,7 @@ describe("SlackInboundStore", () => {
     const store = new StateStore(stateDir, sessionsRoot);
     const sessions = new SessionManager({
       stateStore: store,
-      sessionsRoot
+      sessionsRoot,
     });
     await sessions.load();
 
@@ -34,7 +34,7 @@ describe("SlackInboundStore", () => {
       status: "inflight",
       batchId: "turn-old",
       createdAt: "2026-03-17T00:00:00.000Z",
-      updatedAt: "2026-03-17T00:00:00.000Z"
+      updatedAt: "2026-03-17T00:00:00.000Z",
     });
     await sessions.upsertInboundMessage({
       key: "done-2",
@@ -48,7 +48,7 @@ describe("SlackInboundStore", () => {
       status: "inflight",
       batchId: "turn-old",
       createdAt: "2026-03-17T00:00:00.000Z",
-      updatedAt: "2026-03-17T00:00:00.000Z"
+      updatedAt: "2026-03-17T00:00:00.000Z",
     });
     await sessions.upsertInboundMessage({
       key: "pending-1",
@@ -62,29 +62,29 @@ describe("SlackInboundStore", () => {
       status: "inflight",
       batchId: "turn-new",
       createdAt: "2026-03-17T00:00:00.000Z",
-      updatedAt: "2026-03-17T00:00:00.000Z"
+      updatedAt: "2026-03-17T00:00:00.000Z",
     });
 
     const inboundStore = new SlackInboundStore({
       sessions,
-      slackApi: {} as never
+      slackApi: {} as never,
     });
 
     const result = await inboundStore.reconcileOrphanedInflightMessages(session);
     expect(result).toEqual({
       markedDoneCount: 2,
-      resetToPendingCount: 1
+      resetToPendingCount: 1,
     });
 
     const doneMessages = sessions.listInboundMessages({
       channelId: "C123",
       rootThreadTs: "111.222",
-      status: "done"
+      status: "done",
     });
     const pendingMessages = sessions.listInboundMessages({
       channelId: "C123",
       rootThreadTs: "111.222",
-      status: "pending"
+      status: "pending",
     });
 
     expect(doneMessages.map((message) => message.messageTs)).toEqual(["111.300", "111.301"]);

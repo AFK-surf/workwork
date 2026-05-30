@@ -10,8 +10,8 @@ const repoRoot = path.resolve(scriptDir, "..", "..");
 const copies = [
   {
     source: path.join(repoRoot, "src", "services", "codex", "prompts"),
-    target: path.join(repoRoot, "dist", "src", "services", "codex", "prompts")
-  }
+    target: path.join(repoRoot, "dist", "src", "services", "codex", "prompts"),
+  },
 ];
 
 for (const entry of copies) {

@@ -22,16 +22,7 @@ describe("broker gh wrapper", () => {
     cleanups.push(async () => fs.rm(tempRoot, { recursive: true, force: true }));
     const capturePath = path.join(tempRoot, "capture.json");
     const realGhPath = path.join(tempRoot, "real-gh.mjs");
-	    await fs.writeFile(realGhPath, [
-	      "#!/usr/bin/env node",
-	      "import fs from 'node:fs/promises';",
-	      "await fs.writeFile(process.env.CAPTURE_PATH, JSON.stringify({",
-	      "  argv: process.argv.slice(2),",
-	      "  ghToken: process.env.GH_TOKEN,",
-	      "  githubToken: process.env.GITHUB_TOKEN,",
-	      "  cwd: process.cwd()",
-	      "}));"
-	    ].join("\n"));
+    await fs.writeFile(realGhPath, ["#!/usr/bin/env node", "import fs from 'node:fs/promises';", "await fs.writeFile(process.env.CAPTURE_PATH, JSON.stringify({", "  argv: process.argv.slice(2),", "  ghToken: process.env.GH_TOKEN,", "  githubToken: process.env.GITHUB_TOKEN,", "  cwd: process.cwd()", "}));"].join("\n"));
     await fs.chmod(realGhPath, 0o755);
 
     let resolveRequest: Record<string, unknown> | undefined;
@@ -47,12 +38,14 @@ describe("broker gh wrapper", () => {
       }
       resolveRequest = JSON.parse(body) as Record<string, unknown>;
       response.writeHead(200, { "content-type": "application/json" });
-      response.end(JSON.stringify({
-        ok: true,
-        mode: "initiator",
-        githubLogin: "alice",
-        token: "starter-token"
-      }));
+      response.end(
+        JSON.stringify({
+          ok: true,
+          mode: "initiator",
+          githubLogin: "alice",
+          token: "starter-token",
+        }),
+      );
     });
     server.listen(0, "127.0.0.1");
     await once(server, "listening");
@@ -63,37 +56,34 @@ describe("broker gh wrapper", () => {
       realGhPath,
       cwd: tempRoot,
       argv: ["pr", "create", "--fill"],
-	      env: {
-	        ...process.env,
-	        CAPTURE_PATH: capturePath,
-	        GH_TOKEN: "inherited-gh-token",
-	        GITHUB_TOKEN: "inherited-github-token"
-	      }
-	    });
+      env: {
+        ...process.env,
+        CAPTURE_PATH: capturePath,
+        GH_TOKEN: "inherited-gh-token",
+        GITHUB_TOKEN: "inherited-github-token",
+      },
+    });
 
     expect(result.status).toBe(0);
     expect(resolveRequest).toMatchObject({
       cwd: tempRoot,
-      command: ["pr", "create", "--fill"]
+      command: ["pr", "create", "--fill"],
     });
-	    const realTempRoot = await fs.realpath(tempRoot);
-	    const captured = JSON.parse(await fs.readFile(capturePath, "utf8")) as Record<string, unknown>;
-	    expect(captured).toMatchObject({
-	      argv: ["pr", "create", "--fill"],
-	      ghToken: "starter-token",
-	      cwd: realTempRoot
-	    });
-	    expect(captured).not.toHaveProperty("githubToken");
-	  });
+    const realTempRoot = await fs.realpath(tempRoot);
+    const captured = JSON.parse(await fs.readFile(capturePath, "utf8")) as Record<string, unknown>;
+    expect(captured).toMatchObject({
+      argv: ["pr", "create", "--fill"],
+      ghToken: "starter-token",
+      cwd: realTempRoot,
+    });
+    expect(captured).not.toHaveProperty("githubToken");
+  });
 
   it("does not call the real gh when broker token resolution blocks", async () => {
     const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "broker-gh-wrapper-"));
     cleanups.push(async () => fs.rm(tempRoot, { recursive: true, force: true }));
     const realGhPath = path.join(tempRoot, "real-gh.mjs");
-    await fs.writeFile(realGhPath, [
-      "#!/usr/bin/env node",
-      "throw new Error('real gh should not run');"
-    ].join("\n"));
+    await fs.writeFile(realGhPath, ["#!/usr/bin/env node", "throw new Error('real gh should not run');"].join("\n"));
     await fs.chmod(realGhPath, 0o755);
 
     const server = http.createServer((request, response) => {
@@ -103,12 +93,14 @@ describe("broker gh wrapper", () => {
         return;
       }
       response.writeHead(409, { "content-type": "application/json" });
-      response.end(JSON.stringify({
-        ok: false,
-        mode: "blocked",
-        reason: "initiator_token_invalid",
-        message: "GitHub token for alice is invalid."
-      }));
+      response.end(
+        JSON.stringify({
+          ok: false,
+          mode: "blocked",
+          reason: "initiator_token_invalid",
+          message: "GitHub token for alice is invalid.",
+        }),
+      );
     });
     server.listen(0, "127.0.0.1");
     await once(server, "listening");
@@ -119,7 +111,7 @@ describe("broker gh wrapper", () => {
       realGhPath,
       cwd: tempRoot,
       argv: ["pr", "create"],
-      env: process.env
+      env: process.env,
     });
 
     expect(result.status).toBe(1);

@@ -8,15 +8,15 @@ const adminUiOrigin = process.env.ADMIN_UI_DEV_ORIGIN || `http://127.0.0.1:${adm
 const children = [
   spawn("pnpm", ["exec", "vp", "dev", "--host", "127.0.0.1", "--port", adminUiPort, "--strictPort"], {
     env: process.env,
-    stdio: "inherit"
+    stdio: "inherit",
   }),
   spawn("pnpm", ["exec", "tsx", "watch", "src/admin-index.ts"], {
     env: {
       ...process.env,
-      ADMIN_UI_DEV_ORIGIN: adminUiOrigin
+      ADMIN_UI_DEV_ORIGIN: adminUiOrigin,
     },
-    stdio: "inherit"
-  })
+    stdio: "inherit",
+  }),
 ];
 
 let exiting = false;

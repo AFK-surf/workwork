@@ -26,7 +26,7 @@ function createRuntime(overrides: Partial<AgentRuntime>): AgentRuntime {
     rawEvents: true,
     tokenUsage: "exact",
     toolCalls: true,
-    systemPromptEcho: true
+    systemPromptEcho: true,
   } as const;
   runtime.getCapabilities = vi.fn(() => capabilities);
   runtime.start = vi.fn();
@@ -49,7 +49,7 @@ describe("SlackTurnRunner", () => {
       workspacePath: "/tmp/workspace",
       agentSessionId: "thread-old",
       createdAt: "2026-03-16T00:00:00.000Z",
-      updatedAt: "2026-03-16T00:00:00.000Z"
+      updatedAt: "2026-03-16T00:00:00.000Z",
     };
 
     const ensureSession = vi.fn(async (session: SlackSessionRecord) => {
@@ -61,7 +61,7 @@ describe("SlackTurnRunner", () => {
         id: "thread-new",
         brokerSessionKey: session.key,
         runtime: "test",
-        createdAt: "2026-03-16T00:00:01.000Z"
+        createdAt: "2026-03-16T00:00:01.000Z",
       };
     });
 
@@ -69,7 +69,7 @@ describe("SlackTurnRunner", () => {
     const setAgentSessionId = vi.fn(async (_channelId: string, _rootThreadTs: string, agentSessionId: string | undefined) => {
       currentSession = {
         ...currentSession,
-        agentSessionId
+        agentSessionId,
       };
       return currentSession;
     });
@@ -78,13 +78,13 @@ describe("SlackTurnRunner", () => {
       agentRuntime: createRuntime({ ensureSession }),
       slackApi: {
         getUserIdentity: vi.fn(),
-        downloadFileAttachment: vi.fn()
+        downloadFileAttachment: vi.fn(),
       } as never,
       sessions: {
         setActiveTurnId,
-        setAgentSessionId
+        setAgentSessionId,
       } as never,
-      inboundStore: {} as never
+      inboundStore: {} as never,
     });
 
     const result = await runner.ensureAgentSession(currentSession);
@@ -105,12 +105,12 @@ describe("SlackTurnRunner", () => {
       workspacePath: "/tmp/workspace",
       agentSessionId: "thread-1",
       createdAt: "2026-03-16T00:00:00.000Z",
-      updatedAt: "2026-03-16T00:00:00.000Z"
+      updatedAt: "2026-03-16T00:00:00.000Z",
     };
     const activeSession = {
       ...session,
       activeTurnId: "turn-1",
-      activeTurnStartedAt: "2026-03-16T00:00:01.000Z"
+      activeTurnStartedAt: "2026-03-16T00:00:01.000Z",
     };
 
     const runner = new SlackTurnRunner({
@@ -121,19 +121,19 @@ describe("SlackTurnRunner", () => {
             turnId: "turn-1",
             inputId: "input-1",
             delivery: "started_turn" as const,
-            deliveredAt: "2026-03-16T00:00:01.000Z"
+            deliveredAt: "2026-03-16T00:00:01.000Z",
           },
           completion: Promise.resolve({
             agentSessionId: "thread-1",
             turnId: "turn-1",
             finalMessage: "",
-            aborted: false
-          })
-        }))
+            aborted: false,
+          }),
+        })),
       }),
       slackApi: {
         getUserIdentity: vi.fn(),
-        downloadFileAttachment: vi.fn()
+        downloadFileAttachment: vi.fn(),
       } as never,
       sessions: {
         setActiveTurnId: vi.fn(async (_channelId: string, _rootThreadTs: string, turnId: string | undefined) => {
@@ -145,7 +145,7 @@ describe("SlackTurnRunner", () => {
           return session;
         }),
         setAgentSessionId: vi.fn(),
-        upsertAgentTurnUsage: vi.fn()
+        upsertAgentTurnUsage: vi.fn(),
       } as never,
       inboundStore: {
         markMessagesInflightByTs: vi.fn(async () => {
@@ -155,8 +155,8 @@ describe("SlackTurnRunner", () => {
           calls.push("mark-done");
           return activeSession;
         }),
-        resetTurnBatchToPending: vi.fn()
-      } as never
+        resetTurnBatchToPending: vi.fn(),
+      } as never,
     });
 
     await runner.submitInputWithRecovery({
@@ -167,10 +167,10 @@ describe("SlackTurnRunner", () => {
         {
           type: "text",
           text: "hello",
-          text_elements: []
-        }
+          text_elements: [],
+        },
       ],
-      messageTsList: ["111.223"]
+      messageTsList: ["111.223"],
     });
 
     expect(calls.slice(0, 2)).toEqual(["set-active", "mark-inflight"]);
@@ -186,21 +186,21 @@ describe("SlackTurnRunner", () => {
       workspacePath,
       agentSessionId: "thread-1",
       createdAt: "2026-03-16T00:00:00.000Z",
-      updatedAt: "2026-03-16T00:00:00.000Z"
+      updatedAt: "2026-03-16T00:00:00.000Z",
     };
     const downloadFileAttachment = vi.fn(async () => ({
       bytes: Buffer.from("<svg/>"),
-      contentType: "image/svg+xml"
+      contentType: "image/svg+xml",
     }));
 
     const runner = new SlackTurnRunner({
       agentRuntime: createRuntime({}),
       slackApi: {
         getUserIdentity: vi.fn(async () => null),
-        downloadFileAttachment
+        downloadFileAttachment,
       } as never,
       sessions: {} as never,
-      inboundStore: {} as never
+      inboundStore: {} as never,
     });
 
     const input = await runner.buildTurnInput(session, {
@@ -216,9 +216,9 @@ describe("SlackTurnRunner", () => {
           fileId: "F123",
           name: "../screen.svg",
           mimetype: "image/svg+xml",
-          url: "https://files.slack.test/screen.svg"
-        }
-      ]
+          url: "https://files.slack.test/screen.svg",
+        },
+      ],
     });
 
     expect(downloadFileAttachment).toHaveBeenCalledTimes(1);
@@ -227,7 +227,7 @@ describe("SlackTurnRunner", () => {
     expect(input.some((item) => item.type === "image")).toBe(false);
     const text = input[0]?.type === "text" ? input[0].text : "";
     const expectedPath = path.join(workspacePath, ".slack-attachments", "111.223", "F123-screen.svg");
-    expect(text).toContain("\"attachments\": [");
+    expect(text).toContain('"attachments": [');
     expect(text).toContain(`"local_path": "${expectedPath}"`);
     expect(await fs.readFile(expectedPath, "utf8")).toBe("<svg/>");
   });

@@ -1,25 +1,11 @@
 import type { AppConfig } from "../../config.js";
 import { logger } from "../../logger.js";
-import type {
-  BackgroundJobEventPayload,
-  JsonLike,
-  PersistedInboundMessage,
-  ResolvedSlackThreadMessage,
-  SlackSessionRecord,
-  SlackUserIdentity
-} from "../../types.js";
+import type { BackgroundJobEventPayload, JsonLike, PersistedInboundMessage, ResolvedSlackThreadMessage, SlackSessionRecord, SlackUserIdentity } from "../../types.js";
 import type { AgentRuntime } from "../agent-runtime/types.js";
-import type {
-  GitHubPrIdentityService,
-  GitHubPrTokenResolution
-} from "../github-pr-identity-service.js";
+import type { GitHubPrIdentityService, GitHubPrTokenResolution } from "../github-pr-identity-service.js";
 import { SessionManager } from "../session-manager.js";
 import type { SessionChannelMetadata } from "../session-manager.js";
-import {
-  type ParsedSlackEvent,
-  isSlackMessageEffectivelyEmpty,
-  parseSlackEvent
-} from "./slack-event-parser.js";
+import { type ParsedSlackEvent, isSlackMessageEffectivelyEmpty, parseSlackEvent } from "./slack-event-parser.js";
 import { SlackApi } from "./slack-api.js";
 import { SlackCoauthorService } from "./slack-coauthor-service.js";
 import { SlackConversationService } from "./slack-conversation-service.js";
@@ -42,28 +28,23 @@ export class SlackAgentBridge {
   #slackEventDrainTimer: NodeJS.Timeout | undefined;
   #slackEventRetryTimer: NodeJS.Timeout | undefined;
 
-  constructor(options: {
-    readonly config: AppConfig;
-    readonly sessions: SessionManager;
-    readonly agentRuntime: AgentRuntime;
-    readonly githubPrIdentity: GitHubPrIdentityService;
-  }) {
+  constructor(options: { readonly config: AppConfig; readonly sessions: SessionManager; readonly agentRuntime: AgentRuntime; readonly githubPrIdentity: GitHubPrIdentityService }) {
     this.#config = options.config;
     this.#sessions = options.sessions;
     this.#agentRuntime = options.agentRuntime;
     this.#slackApi = new SlackApi({
       baseUrl: this.#config.slackApiBaseUrl,
       appToken: this.#config.slackAppToken,
-      botToken: this.#config.slackBotToken
+      botToken: this.#config.slackBotToken,
     });
     this.#slackSocket = new SlackSocketModeClient({
       api: this.#slackApi,
-      socketOpenPath: this.#config.slackSocketOpenUrl
+      socketOpenPath: this.#config.slackSocketOpenUrl,
     });
     this.#coauthors = new SlackCoauthorService({
       sessions: this.#sessions,
       slackApi: this.#slackApi,
-      githubPrIdentity: options.githubPrIdentity
+      githubPrIdentity: options.githubPrIdentity,
     });
     this.#githubPrIdentity = options.githubPrIdentity;
     this.#conversations = new SlackConversationService({
@@ -73,7 +54,7 @@ export class SlackAgentBridge {
       slackApi: this.#slackApi,
       selfMessageFilter: this.#selfMessageFilter,
       coauthors: this.#coauthors,
-      githubPrIdentity: this.#githubPrIdentity
+      githubPrIdentity: this.#githubPrIdentity,
     });
   }
 
@@ -97,14 +78,14 @@ export class SlackAgentBridge {
       void this.#conversations.recoverMissedThreadMessages("socket_ready");
     });
     this.#slackSocket.on("events_api", (payload) =>
-      this.#acceptEventsApi(payload as {
-        readonly event?: Record<string, any>;
-        readonly event_id?: string;
-      })
+      this.#acceptEventsApi(
+        payload as {
+          readonly event?: Record<string, any>;
+          readonly event_id?: string;
+        },
+      ),
     );
-    this.#slackSocket.on("interactive", (payload) =>
-      this.#handleInteractive(payload as Record<string, unknown>)
-    );
+    this.#slackSocket.on("interactive", (payload) => this.#handleInteractive(payload as Record<string, unknown>));
 
     await this.#slackSocket.start();
   }
@@ -117,13 +98,7 @@ export class SlackAgentBridge {
     await this.#agentRuntime.stop();
   }
 
-  async readThreadHistory(options: {
-    readonly channelId: string;
-    readonly rootThreadTs: string;
-    readonly beforeMessageTs?: string | undefined;
-    readonly limit?: number | undefined;
-    readonly channelType?: string | undefined;
-  }): Promise<{
+  async readThreadHistory(options: { readonly channelId: string; readonly rootThreadTs: string; readonly beforeMessageTs?: string | undefined; readonly limit?: number | undefined; readonly channelType?: string | undefined }): Promise<{
     readonly messages: readonly ResolvedSlackThreadMessage[];
     readonly formattedText?: string | undefined;
     readonly hasMore: boolean;
@@ -131,11 +106,7 @@ export class SlackAgentBridge {
     return await this.#conversations.readThreadHistory(options);
   }
 
-  async replayThreadMessage(options: {
-    readonly channelId: string;
-    readonly rootThreadTs: string;
-    readonly messageTs: string;
-  }) {
+  async replayThreadMessage(options: { readonly channelId: string; readonly rootThreadTs: string; readonly messageTs: string }) {
     return await this.#conversations.replayThreadMessage(options);
   }
 
@@ -151,30 +122,15 @@ export class SlackAgentBridge {
     return await this.#conversations.deleteSession(sessionKey);
   }
 
-  async acceptBackgroundJobEvent(options: {
-    readonly channelId: string;
-    readonly rootThreadTs: string;
-    readonly payload: BackgroundJobEventPayload;
-  }): Promise<void> {
+  async acceptBackgroundJobEvent(options: { readonly channelId: string; readonly rootThreadTs: string; readonly payload: BackgroundJobEventPayload }): Promise<void> {
     await this.#conversations.acceptBackgroundJobEvent(options);
   }
 
-  async postSlackMessage(options: {
-    readonly channelId: string;
-    readonly rootThreadTs: string;
-    readonly text: string;
-    readonly kind?: "progress" | "final" | "block" | "wait" | undefined;
-    readonly reason?: string | undefined;
-  }): Promise<void> {
+  async postSlackMessage(options: { readonly channelId: string; readonly rootThreadTs: string; readonly text: string; readonly kind?: "progress" | "final" | "block" | "wait" | undefined; readonly reason?: string | undefined }): Promise<void> {
     await this.#conversations.postSlackMessage(options);
   }
 
-  async postSlackState(options: {
-    readonly channelId: string;
-    readonly rootThreadTs: string;
-    readonly kind: "wait" | "block" | "final";
-    readonly reason?: string | undefined;
-  }): Promise<void> {
+  async postSlackState(options: { readonly channelId: string; readonly rootThreadTs: string; readonly kind: "wait" | "block" | "final"; readonly reason?: string | undefined }): Promise<void> {
     await this.#conversations.postSlackState(options);
   }
 
@@ -197,48 +153,32 @@ export class SlackAgentBridge {
     return await this.#coauthors.getCommitCoauthorStatus(cwd);
   }
 
-  async configureSessionCoauthors(options: {
-    readonly cwd: string;
-    readonly coauthors?: readonly string[] | undefined;
-    readonly userIds?: readonly string[] | undefined;
-    readonly ignoreMissing?: boolean | undefined;
-    readonly mappings?: ReadonlyArray<unknown> | undefined;
-  }) {
+  async configureSessionCoauthors(options: { readonly cwd: string; readonly coauthors?: readonly string[] | undefined; readonly userIds?: readonly string[] | undefined; readonly ignoreMissing?: boolean | undefined; readonly mappings?: ReadonlyArray<unknown> | undefined }) {
     return await this.#coauthors.configureSessionCoauthors(options);
   }
 
-  async resolveCommitCoauthors(options: {
-    readonly cwd: string;
-    readonly commitMessage: string;
-    readonly primaryAuthorEmail?: string | undefined;
-  }) {
+  async resolveCommitCoauthors(options: { readonly cwd: string; readonly commitMessage: string; readonly primaryAuthorEmail?: string | undefined }) {
     return await this.#coauthors.resolveCommitCoauthors(options);
   }
 
-  async resolveGitHubPrToken(options: {
-    readonly cwd: string;
-    readonly command: readonly string[];
-  }): Promise<GitHubPrTokenResolution> {
+  async resolveGitHubPrToken(options: { readonly cwd: string; readonly command: readonly string[] }): Promise<GitHubPrTokenResolution> {
     const session = this.#sessions.findSessionByWorkspace(options.cwd);
     if (!session) {
       return {
         ok: false,
         mode: "blocked",
         reason: "session_not_found",
-        message: `No Slack session is associated with ${options.cwd}.`
+        message: `No Slack session is associated with ${options.cwd}.`,
       };
     }
 
     return await this.#githubPrIdentity.resolveTokenForSession({
       session,
-      command: options.command
+      command: options.command,
     });
   }
 
-  async #acceptEventsApi(payload: {
-    readonly event?: Record<string, any>;
-    readonly event_id?: string;
-  }): Promise<void> {
+  async #acceptEventsApi(payload: { readonly event?: Record<string, any>; readonly event_id?: string }): Promise<void> {
     if (!payload.event || !payload.event_id) {
       return;
     }
@@ -299,7 +239,7 @@ export class SlackAgentBridge {
       .catch((error) => {
         logger.error("Failed to drain persisted Slack event queue", {
           reason,
-          error: error instanceof Error ? error.message : String(error)
+          error: error instanceof Error ? error.message : String(error),
         });
         this.#scheduleSlackEventRetry();
       })
@@ -347,7 +287,7 @@ export class SlackAgentBridge {
           logger.error("Failed to process persisted Slack event", {
             reason,
             eventId: queuedEvent.eventId,
-            error: error instanceof Error ? error.message : String(error)
+            error: error instanceof Error ? error.message : String(error),
           });
         }
       }
@@ -361,7 +301,7 @@ export class SlackAgentBridge {
       logger.info("Drained persisted Slack event queue", {
         reason,
         processedCount,
-        failedCount
+        failedCount,
       });
     }
 
@@ -375,7 +315,7 @@ export class SlackAgentBridge {
       await this.#coauthors.handleInteractivePayload(payload);
     } catch (error) {
       logger.error("Failed to process Slack interactive payload", {
-        error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
       });
     }
   }
@@ -397,7 +337,7 @@ export class SlackAgentBridge {
         await this.#handleInteractiveSessionEvent(parsed, {
           createSession: true,
           preloadHistory: parsed.rootThreadTs !== parsed.messageTs,
-          channelMetadata
+          channelMetadata,
         });
         return;
       case "direct_message":
@@ -412,7 +352,7 @@ export class SlackAgentBridge {
         await this.#handleInteractiveSessionEvent(parsed, {
           createSession: true,
           preloadHistory: false,
-          channelMetadata
+          channelMetadata,
         });
         return;
       case "thread_reply": {
@@ -442,10 +382,7 @@ export class SlackAgentBridge {
     }
   }
 
-  async #getSessionWithChannelMetadata(
-    parsed: ParsedSlackEvent,
-    metadata: SessionChannelMetadata
-  ): Promise<SlackSessionRecord | undefined> {
+  async #getSessionWithChannelMetadata(parsed: ParsedSlackEvent, metadata: SessionChannelMetadata): Promise<SlackSessionRecord | undefined> {
     const session = this.#sessions.getSession(parsed.channelId, parsed.rootThreadTs);
     if (!session) {
       return undefined;
@@ -456,7 +393,7 @@ export class SlackAgentBridge {
 
   async #resolveChannelMetadata(parsed: ParsedSlackEvent): Promise<SessionChannelMetadata> {
     const fallback: SessionChannelMetadata = {
-      channelType: parsed.channelType
+      channelType: parsed.channelType,
     };
     const info = await this.#slackApi.getConversationInfo(parsed.channelId);
     if (!info) {
@@ -465,7 +402,7 @@ export class SlackAgentBridge {
 
     return {
       channelName: info.name,
-      channelType: parsed.channelType ?? info.channelType
+      channelType: parsed.channelType ?? info.channelType,
     };
   }
 
@@ -495,7 +432,7 @@ export class SlackAgentBridge {
       for (const session of sessions) {
         await this.#sessions.setChannelMetadata(session.channelId, session.rootThreadTs, {
           channelName: info.name,
-          channelType: info.channelType
+          channelType: info.channelType,
         });
         updatedCount += 1;
       }
@@ -505,7 +442,7 @@ export class SlackAgentBridge {
       logger.info("Backfilled Slack session channel metadata", {
         reason,
         updatedCount,
-        channelCount: sessionsByChannel.size
+        channelCount: sessionsByChannel.size,
       });
     }
   }
@@ -513,7 +450,7 @@ export class SlackAgentBridge {
   async #backfillInboundMentionedUsers(reason: string): Promise<void> {
     const candidates = this.#sessions.listInboundMessages({
       source: ["app_mention", "direct_message", "thread_reply"],
-      needsMentionUserBackfill: true
+      needsMentionUserBackfill: true,
     });
 
     if (!candidates.length) {
@@ -530,7 +467,7 @@ export class SlackAgentBridge {
       await this.#sessions.upsertInboundMessage({
         ...message,
         mentionedUsers,
-        updatedAt: new Date().toISOString()
+        updatedAt: new Date().toISOString(),
       });
       updatedCount += 1;
     }
@@ -538,7 +475,7 @@ export class SlackAgentBridge {
     if (updatedCount) {
       logger.info("Backfilled Slack inbound mention identities", {
         reason,
-        updatedCount
+        updatedCount,
       });
     }
   }
@@ -549,9 +486,7 @@ export class SlackAgentBridge {
       return [];
     }
 
-    const knownUsers = new Map(
-      (message.mentionedUsers ?? []).map((user) => [user.userId, user])
-    );
+    const knownUsers = new Map((message.mentionedUsers ?? []).map((user) => [user.userId, user]));
 
     for (const userId of mentionedUserIds) {
       if (knownUsers.has(userId)) {
@@ -564,9 +499,7 @@ export class SlackAgentBridge {
       }
     }
 
-    return mentionedUserIds
-      .map((userId) => knownUsers.get(userId))
-      .filter((user): user is SlackUserIdentity => Boolean(user));
+    return mentionedUserIds.map((userId) => knownUsers.get(userId)).filter((user): user is SlackUserIdentity => Boolean(user));
   }
 
   async #handleInteractiveSessionEvent(
@@ -575,7 +508,7 @@ export class SlackAgentBridge {
       readonly createSession: boolean;
       readonly preloadHistory: boolean;
       readonly channelMetadata: SessionChannelMetadata;
-    }
+    },
   ): Promise<void> {
     const existing = this.#sessions.getSession(parsed.channelId, parsed.rootThreadTs);
     let session = options.createSession
@@ -584,9 +517,9 @@ export class SlackAgentBridge {
           ...(parsed.input.senderKind === "user"
             ? {
                 initiatorUserId: parsed.input.userId,
-                initiatorMessageTs: parsed.messageTs
+                initiatorMessageTs: parsed.messageTs,
               }
-            : {})
+            : {}),
         })
       : existing;
 
@@ -608,19 +541,20 @@ export class SlackAgentBridge {
       return;
     }
 
-    const history = !existing && options.preloadHistory && parsed.messageTs
-      ? await this.#conversations.readThreadHistory({
-        channelId: parsed.channelId,
-        channelType: parsed.channelType,
-        rootThreadTs: parsed.rootThreadTs,
-        beforeMessageTs: parsed.messageTs,
-        limit: this.#config.slackInitialThreadHistoryCount
-      })
-      : undefined;
+    const history =
+      !existing && options.preloadHistory && parsed.messageTs
+        ? await this.#conversations.readThreadHistory({
+            channelId: parsed.channelId,
+            channelType: parsed.channelType,
+            rootThreadTs: parsed.rootThreadTs,
+            beforeMessageTs: parsed.messageTs,
+            limit: this.#config.slackInitialThreadHistoryCount,
+          })
+        : undefined;
 
     await this.#conversations.acceptInboundMessage(session, {
       ...parsed.input,
-      contextText: history?.formattedText
+      contextText: history?.formattedText,
     });
   }
 
@@ -629,7 +563,7 @@ export class SlackAgentBridge {
     await this.#conversations.postSlackMessage({
       channelId: session.channelId,
       rootThreadTs: session.rootThreadTs,
-      text: stopped ? "Stopped the current run." : "No active run to stop."
+      text: stopped ? "Stopped the current run." : "No active run to stop.",
     });
   }
 }

@@ -60,12 +60,7 @@ export class MockCodexAppServer {
   readonly onTurnSteerRequest: ((request: MockTurnSteerRequest) => string | undefined) | undefined;
   readonly #emitThreadTokenUsage: boolean;
 
-  constructor(options?: {
-    readonly onTurnStart?: (context: MockTurnContext) => Promise<void> | void;
-    readonly onTurnSteer?: (context: MockTurnContext) => Promise<void> | void;
-    readonly onTurnSteerRequest?: (request: MockTurnSteerRequest) => string | undefined;
-    readonly emitThreadTokenUsage?: boolean;
-  }) {
+  constructor(options?: { readonly onTurnStart?: (context: MockTurnContext) => Promise<void> | void; readonly onTurnSteer?: (context: MockTurnContext) => Promise<void> | void; readonly onTurnSteerRequest?: (request: MockTurnSteerRequest) => string | undefined; readonly emitThreadTokenUsage?: boolean }) {
     this.onTurnStart = options?.onTurnStart;
     this.onTurnSteer = options?.onTurnSteer;
     this.onTurnSteerRequest = options?.onTurnSteerRequest;
@@ -77,11 +72,14 @@ export class MockCodexAppServer {
         this.#connections.delete(socket);
       });
       socket.on("message", (data) => {
-        void this.#handleMessage(socket, JSON.parse(data.toString()) as {
-          readonly id?: string;
-          readonly method?: string;
-          readonly params?: Record<string, unknown>;
-        });
+        void this.#handleMessage(
+          socket,
+          JSON.parse(data.toString()) as {
+            readonly id?: string;
+            readonly method?: string;
+            readonly params?: Record<string, unknown>;
+          },
+        );
       });
     });
   }
@@ -125,7 +123,7 @@ export class MockCodexAppServer {
       readonly id?: string;
       readonly method?: string;
       readonly params?: Record<string, unknown>;
-    }
+    },
   ): Promise<void> {
     const method = message.method;
     const params = message.params ?? {};
@@ -137,7 +135,7 @@ export class MockCodexAppServer {
       case "account/read":
         this.#respond(socket, message.id, {
           account: { type: "apiKey" },
-          requiresOpenaiAuth: false
+          requiresOpenaiAuth: false,
         });
         return;
       case "account/rateLimits/read":
@@ -148,19 +146,19 @@ export class MockCodexAppServer {
             primary: {
               usedPercent: 12,
               windowDurationMins: 300,
-              resetsAt: 1_777_777_777
+              resetsAt: 1_777_777_777,
             },
             secondary: {
               usedPercent: 3,
               windowDurationMins: 10_080,
-              resetsAt: 1_778_888_888
+              resetsAt: 1_778_888_888,
             },
             credits: {
               hasCredits: true,
               unlimited: false,
-              balance: "42.5"
+              balance: "42.5",
             },
-            planType: "team"
+            planType: "team",
           },
           rateLimitsByLimitId: {
             codex: {
@@ -169,21 +167,21 @@ export class MockCodexAppServer {
               primary: {
                 usedPercent: 12,
                 windowDurationMins: 300,
-                resetsAt: 1_777_777_777
+                resetsAt: 1_777_777_777,
               },
               secondary: {
                 usedPercent: 3,
                 windowDurationMins: 10_080,
-                resetsAt: 1_778_888_888
+                resetsAt: 1_778_888_888,
               },
               credits: {
                 hasCredits: true,
                 unlimited: false,
-                balance: "42.5"
+                balance: "42.5",
               },
-              planType: "team"
-            }
-          }
+              planType: "team",
+            },
+          },
         });
         return;
       case "thread/start": {
@@ -192,10 +190,10 @@ export class MockCodexAppServer {
           id: threadId,
           cwd: String(params.cwd ?? ""),
           baseInstructions: typeof params.baseInstructions === "string" ? params.baseInstructions : null,
-          turns: []
+          turns: [],
         });
         this.#respond(socket, message.id, {
-          thread: { id: threadId }
+          thread: { id: threadId },
         });
         return;
       }
@@ -204,14 +202,14 @@ export class MockCodexAppServer {
         const thread = this.#threads.get(threadId);
         if (!thread) {
           this.#respond(socket, message.id, {
-            thread: { id: threadId }
+            thread: { id: threadId },
           });
           return;
         }
 
         thread.cwd = String(params.cwd ?? thread.cwd);
         this.#respond(socket, message.id, {
-          thread: { id: threadId }
+          thread: { id: threadId },
         });
         return;
       }
@@ -225,13 +223,13 @@ export class MockCodexAppServer {
           cwd: String(params.cwd ?? thread.cwd),
           input: normalizeInput(params.input),
           status: "inProgress",
-          finalMessage: ""
+          finalMessage: "",
         };
         thread.turns.push(turn);
         thread.activeTurnId = turnId;
         this.turnsStarted.push(turn);
         this.#respond(socket, message.id, {
-          turn: { id: turnId }
+          turn: { id: turnId },
         });
 
         const context = this.#createTurnContext(socket, thread, turn);
@@ -251,11 +249,7 @@ export class MockCodexAppServer {
         }
 
         if (thread.activeTurnId !== expectedTurnId) {
-          this.#error(
-            socket,
-            message.id,
-            `expected active turn id \`${expectedTurnId}\` but found \`${thread.activeTurnId}\``
-          );
+          this.#error(socket, message.id, `expected active turn id \`${expectedTurnId}\` but found \`${thread.activeTurnId}\``);
           return;
         }
 
@@ -264,7 +258,7 @@ export class MockCodexAppServer {
         const requestError = this.onTurnSteerRequest?.({
           threadId,
           expectedTurnId,
-          input
+          input,
         });
         if (requestError) {
           this.#error(socket, message.id, requestError);
@@ -274,7 +268,7 @@ export class MockCodexAppServer {
         this.steers.push({
           threadId,
           turnId: expectedTurnId,
-          input
+          input,
         });
         this.#respond(socket, message.id, { ok: true });
 
@@ -291,7 +285,7 @@ export class MockCodexAppServer {
         const turn = this.#requireTurn(thread, turnId);
         this.interrupts.push({
           threadId,
-          turnId
+          turnId,
         });
         this.#respond(socket, message.id, { ok: true });
         this.#interruptTurn(socket, thread, turn, "interrupted");
@@ -309,14 +303,14 @@ export class MockCodexAppServer {
               usage: turn.usage,
               items: turn.finalMessage
                 ? [
-                  {
-                    type: "agentMessage",
-                    text: turn.finalMessage
-                  }
-                ]
-                : []
-            }))
-          }
+                    {
+                      type: "agentMessage",
+                      text: turn.finalMessage,
+                    },
+                  ]
+                : [],
+            })),
+          },
         });
         return;
       }
@@ -342,38 +336,44 @@ export class MockCodexAppServer {
         turn.usage = this.#emitThreadTokenUsage ? undefined : usage;
         thread.activeTurnId = undefined;
         if (usage && this.#emitThreadTokenUsage) {
-          socket.send(JSON.stringify({
-            method: "thread/tokenUsage/updated",
-            params: {
-              threadId: thread.id,
-              turnId: turn.turnId,
-              tokenUsage: toThreadTokenUsage(usage)
-            }
-          }));
+          socket.send(
+            JSON.stringify({
+              method: "thread/tokenUsage/updated",
+              params: {
+                threadId: thread.id,
+                turnId: turn.turnId,
+                tokenUsage: toThreadTokenUsage(usage),
+              },
+            }),
+          );
         }
         if (message) {
-          socket.send(JSON.stringify({
-            method: "item/agentMessage/delta",
-            params: {
-              turnId: turn.turnId,
-              delta: message
-            }
-          }));
+          socket.send(
+            JSON.stringify({
+              method: "item/agentMessage/delta",
+              params: {
+                turnId: turn.turnId,
+                delta: message,
+              },
+            }),
+          );
         }
-        socket.send(JSON.stringify({
-          method: "turn/completed",
-          params: {
-            turn: {
-              id: turn.turnId,
-              usage: this.#emitThreadTokenUsage ? undefined : usage
+        socket.send(
+          JSON.stringify({
+            method: "turn/completed",
+            params: {
+              turn: {
+                id: turn.turnId,
+                usage: this.#emitThreadTokenUsage ? undefined : usage,
+              },
+              usage: this.#emitThreadTokenUsage ? undefined : usage,
             },
-            usage: this.#emitThreadTokenUsage ? undefined : usage
-          }
-        }));
+          }),
+        );
       },
       interrupt: (message = "") => {
         this.#interruptTurn(socket, thread, turn, message);
-      }
+      },
     };
   }
 
@@ -395,14 +395,16 @@ export class MockCodexAppServer {
     turn.status = "interrupted";
     turn.finalMessage = message;
     thread.activeTurnId = undefined;
-    socket.send(JSON.stringify({
-      method: "codex/event/turn_aborted",
-      params: {
-        msg: {
-          turn_id: turn.turnId
-        }
-      }
-    }));
+    socket.send(
+      JSON.stringify({
+        method: "codex/event/turn_aborted",
+        params: {
+          msg: {
+            turn_id: turn.turnId,
+          },
+        },
+      }),
+    );
   }
 
   #requireThread(threadId: string): MockThreadRecord {
@@ -422,19 +424,23 @@ export class MockCodexAppServer {
   }
 
   #respond(socket: WebSocket, id: string | undefined, result: Record<string, unknown>): void {
-    socket.send(JSON.stringify({
-      id,
-      result
-    }));
+    socket.send(
+      JSON.stringify({
+        id,
+        result,
+      }),
+    );
   }
 
   #error(socket: WebSocket, id: string | undefined, message: string): void {
-    socket.send(JSON.stringify({
-      id,
-      error: {
-        message
-      }
-    }));
+    socket.send(
+      JSON.stringify({
+        id,
+        error: {
+          message,
+        },
+      }),
+    );
   }
 }
 
@@ -450,7 +456,7 @@ function toThreadTokenUsage(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return {
       last: {},
-      total: {}
+      total: {},
     };
   }
 
@@ -462,10 +468,10 @@ function toThreadTokenUsage(value: unknown): Record<string, unknown> {
     reasoningOutputTokens: record.reasoning_tokens ?? record.reasoningTokens ?? record.reasoning_output_tokens ?? record.reasoningOutputTokens ?? 0,
     totalTokens: record.total_tokens ?? record.totalTokens ?? 0,
     model: record.model,
-    effort: record.effort
+    effort: record.effort,
   };
   return {
     last: usage,
-    total: usage
+    total: usage,
   };
 }

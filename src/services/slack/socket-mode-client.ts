@@ -26,10 +26,7 @@ export class SlackSocketModeClient extends EventEmitter {
   #heartbeatTimer: NodeJS.Timeout | undefined;
   #awaitingPong = false;
 
-  constructor(options: {
-    readonly api: SlackApi;
-    readonly socketOpenPath: string;
-  }) {
+  constructor(options: { readonly api: SlackApi; readonly socketOpenPath: string }) {
     super();
     this.#api = options.api;
     this.#socketOpenPath = options.socketOpenPath;
@@ -67,7 +64,7 @@ export class SlackSocketModeClient extends EventEmitter {
         }
 
         logger.warn("Slack Socket Mode connection failed, retrying", {
-          error: error instanceof Error ? error.message : String(error)
+          error: error instanceof Error ? error.message : String(error),
         });
         this.#scheduleReconnect();
       })
@@ -93,7 +90,7 @@ export class SlackSocketModeClient extends EventEmitter {
     socket.on("message", (buffer) => {
       void this.#handleMessage(buffer.toString()).catch((error) => {
         logger.error("Failed to handle Slack Socket Mode message", {
-          error: error instanceof Error ? error.message : String(error)
+          error: error instanceof Error ? error.message : String(error),
         });
       });
     });
@@ -103,7 +100,7 @@ export class SlackSocketModeClient extends EventEmitter {
     });
     socket.on("error", (error) => {
       logger.warn("Slack websocket error", {
-        error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
       });
     });
     socket.on("close", () => {
@@ -191,7 +188,7 @@ export class SlackSocketModeClient extends EventEmitter {
 
     if (envelope.type === "disconnect") {
       logger.warn("Slack requested disconnect", {
-        payload: envelope.payload
+        payload: envelope.payload,
       });
       if (envelope.envelope_id) {
         await this.#ack(envelope.envelope_id);
@@ -240,11 +237,7 @@ export class SlackSocketModeClient extends EventEmitter {
 function buildSlackEnvelopeMeta(envelope: SlackSocketEnvelope): Record<string, unknown> | undefined {
   const event = envelope.payload?.event;
   const channelId = typeof event?.channel === "string" ? event.channel : undefined;
-  const rootThreadTs = typeof event?.thread_ts === "string"
-    ? event.thread_ts
-    : typeof event?.ts === "string"
-      ? event.ts
-      : undefined;
+  const rootThreadTs = typeof event?.thread_ts === "string" ? event.thread_ts : typeof event?.ts === "string" ? event.ts : undefined;
 
   return {
     envelopeId: envelope.envelope_id,
@@ -252,6 +245,6 @@ function buildSlackEnvelopeMeta(envelope: SlackSocketEnvelope): Record<string, u
     eventId: envelope.payload?.event_id,
     eventType: event?.type ?? envelope.payload?.type,
     channelId,
-    rootThreadTs
+    rootThreadTs,
   };
 }
