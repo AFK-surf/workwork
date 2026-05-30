@@ -65,10 +65,11 @@ const EXPECTED_ACCEPTANCE_COMMANDS = [
   "pnpm test:e2e:feishu-mock",
   "pnpm rfc:feishu-audit -- --json",
   "pnpm rfc:feishu-test-plan -- --json",
+  "pnpm manual:codex-coding-smoke -- --json",
   "pnpm manual:feishu-smoke -- --status-file evidence/feishu-smoke/admin-status.json --setup-evidence-file evidence/feishu-smoke/feishu-setup-evidence.json --output-dir evidence/feishu-smoke --json",
 ];
 
-const EXPECTED_LAYER2_COMMANDS = EXPECTED_ACCEPTANCE_COMMANDS.filter((command) => !command.includes("manual:feishu-smoke"));
+const EXPECTED_LAYER2_COMMANDS = EXPECTED_ACCEPTANCE_COMMANDS.filter((command) => !command.startsWith("pnpm manual:"));
 
 const EXPECTED_CAPABILITIES = [
   "Runtime readiness",
@@ -78,6 +79,9 @@ const EXPECTED_CAPABILITIES = [
   "Private/direct chat",
   "Bot/self filtering",
   "Stop command",
+  "Real Codex coding task",
+  "Work status / typing",
+  "Read/unread visibility",
   "Markdown/text reply",
   "Rich/card inbound",
   "Rich/card outbound",
@@ -259,7 +263,15 @@ async function capabilityMatrixCheck(cwd: string, content: string, smokeReport: 
 }
 
 function dashboardAcceptanceCheck(content: string): Rfc0001TestPlanCheck {
-  const expected = ["Slack session rows show human channel labels", "Feishu session rows show a `飞书` platform pill", "Feishu session details do not show the Slack permalink action", "Mixed Slack + Feishu sessions keep queue state", "Admin platform health shows Slack Socket Mode and Feishu long connection"];
+  const expected = [
+    "Slack session rows show human channel labels",
+    "Feishu session rows show a `飞书` platform pill",
+    "Feishu session details do not show the Slack permalink action",
+    "Mixed Slack + Feishu sessions keep queue state",
+    "Dashboard rows/details expose work status or typing-equivalent state",
+    "Dashboard rows/details expose read/unread or broker open-inbound state",
+    "Admin platform health shows Slack Socket Mode and Feishu long connection",
+  ];
   const missing = expected.filter((snippet) => !content.includes(snippet));
   return {
     id: "testplan.dashboard_acceptance",
