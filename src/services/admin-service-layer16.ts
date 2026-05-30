@@ -174,13 +174,18 @@ export class AdminServiceLayer16 extends AdminServiceLayer15 {
     });
     return {
       key: session.key,
+      platform: session.platform ?? "slack",
+      conversationId: session.conversationId ?? session.channelId,
+      conversationKind: session.conversationKind ?? session.channelType ?? null,
+      rootMessageId: session.rootMessageId ?? session.rootThreadTs,
+      platformThreadId: session.platformThreadId ?? null,
       channelId: session.channelId,
       channelLabel: channelLabelForSession(session, related.inbound, related.channelLabels),
       channelName: session.channelName ?? null,
       channelType: session.channelType ?? related.inbound.find((message) => message.channelType)?.channelType ?? null,
       rootThreadTs: session.rootThreadTs,
       initiatorUserId: session.initiatorUserId ?? null,
-      threadUrl: buildSlackThreadUrl(session.channelId, session.rootThreadTs),
+      threadUrl: isSlackSession(session) ? buildSlackThreadUrl(session.channelId, session.rootThreadTs) : null,
       workspacePath: session.workspacePath,
       agentSessionId: session.agentSessionId ?? null,
       updatedAt: session.updatedAt,
@@ -243,13 +248,18 @@ export class AdminServiceLayer16 extends AdminServiceLayer15 {
     });
     return {
       key: session.key,
+      platform: session.platform ?? "slack",
+      conversationId: session.conversationId ?? session.channelId,
+      conversationKind: session.conversationKind ?? session.channelType ?? null,
+      rootMessageId: session.rootMessageId ?? session.rootThreadTs,
+      platformThreadId: session.platformThreadId ?? null,
       channelId: session.channelId,
       channelLabel: channelLabelForSession(session, related.inbound, related.channelLabels),
       channelName: session.channelName ?? null,
       channelType: session.channelType ?? related.inbound.find((message) => message.channelType)?.channelType ?? null,
       rootThreadTs: session.rootThreadTs,
       initiatorUserId: session.initiatorUserId ?? null,
-      threadUrl: buildSlackThreadUrl(session.channelId, session.rootThreadTs),
+      threadUrl: isSlackSession(session) ? buildSlackThreadUrl(session.channelId, session.rootThreadTs) : null,
       updatedAt: session.updatedAt,
       lastActivityAt,
       createdAt: session.createdAt,
@@ -274,6 +284,10 @@ export class AdminServiceLayer16 extends AdminServiceLayer15 {
       usage: summarizeListUsage(usage),
     };
   }
+}
+
+function isSlackSession(session: SlackSessionRecord): boolean {
+  return !session.platform || session.platform === "slack";
 }
 
 function summarizeUsageTotals(records: readonly PersistedAgentTurnUsage[]): AgentUsageTotals {

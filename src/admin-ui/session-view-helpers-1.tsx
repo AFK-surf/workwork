@@ -355,6 +355,7 @@ export function AgentSessionHero({
 
 export function SessionActions({ session, profiles, currentProfile, isPermalink }: { readonly session: SessionRecord; readonly profiles: readonly SessionRecord[]; readonly currentProfile?: SessionRecord | undefined; readonly isPermalink: boolean }): React.JSX.Element {
   const sessionKey = String(session.key || "");
+  const isSlackSession = String(session.platform || "slack") === "slack";
   const [threadBusy, setThreadBusy] = useState(false);
   const [threadError, setThreadError] = useState<string | null>(null);
 
@@ -404,16 +405,18 @@ export function SessionActions({ session, profiles, currentProfile, isPermalink 
             返回会话列表
           </a>
         )}
-        <button
-          type="button"
-          className="link-button"
-          disabled={threadBusy || !sessionKey}
-          onClick={() => {
-            void openSlackThread();
-          }}
-        >
-          {threadBusy ? "正在打开 Slack 线程" : "打开 Slack 线程"}
-        </button>
+        {isSlackSession ? (
+          <button
+            type="button"
+            className="link-button"
+            disabled={threadBusy || !sessionKey}
+            onClick={() => {
+              void openSlackThread();
+            }}
+          >
+            {threadBusy ? "正在打开 Slack 线程" : "打开 Slack 线程"}
+          </button>
+        ) : null}
       </div>
       {threadError ? <div className="summary-detail">{threadError}</div> : null}
     </div>

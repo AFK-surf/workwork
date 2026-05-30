@@ -641,7 +641,7 @@ async function createFixtureRepo(
   if (!options.omitFiles?.includes("README.md")) {
     await writeFile(path.join(root, "README.md"), fixtureContentForFile("README.md", options.omitEvidenceProbe));
   }
-  for (const file of ["architecture.md", "implementation.md", "observability.md", "permissions.md", "review-gates.md"]) {
+  for (const file of ["architecture.md", "implementation.md", "test-plan.md", "observability.md", "permissions.md", "review-gates.md"]) {
     if (file !== options.omitDeepDive) {
       await writeFile(path.join(deepDiveRoot, file), `# ${file}\n`);
     }

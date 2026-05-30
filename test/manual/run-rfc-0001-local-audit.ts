@@ -43,7 +43,7 @@ interface CliOptions extends AuditOptions {
   readonly localOnly: boolean;
 }
 
-const RFC_DEEP_DIVES = ["architecture.md", "implementation.md", "observability.md", "permissions.md", "review-gates.md"];
+const RFC_DEEP_DIVES = ["architecture.md", "implementation.md", "test-plan.md", "observability.md", "permissions.md", "review-gates.md"];
 
 const REQUIRED_PACKAGE_SCRIPTS: ReadonlyArray<{
   readonly name: string;

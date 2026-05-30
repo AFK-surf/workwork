@@ -24,6 +24,7 @@ Non-negotiables:
 | Approve direction      | This file                                                           | Non-negotiables and ship blockers are acceptable.            |
 | Review architecture    | [Architecture](0001-slack-feishu-dual-platform/architecture.md)     | Session identity, routing, content, and isolation are clear. |
 | Implement a slice      | [Implementation](0001-slack-feishu-dual-platform/implementation.md) | You have the phase, red test, and evidence target.           |
+| Plan verification      | [Test plan](0001-slack-feishu-dual-platform/test-plan.md)           | Slack baseline and Feishu parity gates are mapped.           |
 | Debug or audit logs    | [Observability](0001-slack-feishu-dual-platform/observability.md)   | Required events, fields, and leak rules are clear.           |
 | Verify Feishu setup    | [Permissions](0001-slack-feishu-dual-platform/permissions.md)       | Permission rationale and real-smoke proof are clear.         |
 | Decide whether to ship | [Review gates](0001-slack-feishu-dual-platform/review-gates.md)     | Approval, MVP, and completion checklists pass.               |
@@ -47,4 +48,4 @@ Do not claim production Feishu parity until [Review gates](0001-slack-feishu-dua
 
 ## Deep Dives
 
-Use the Progressive Reading Path above as the index: [Architecture](0001-slack-feishu-dual-platform/architecture.md), [Implementation](0001-slack-feishu-dual-platform/implementation.md), [Observability](0001-slack-feishu-dual-platform/observability.md), [Permissions](0001-slack-feishu-dual-platform/permissions.md), and [Review gates](0001-slack-feishu-dual-platform/review-gates.md).
+Use the Progressive Reading Path above as the index: [Architecture](0001-slack-feishu-dual-platform/architecture.md), [Implementation](0001-slack-feishu-dual-platform/implementation.md), [Test plan](0001-slack-feishu-dual-platform/test-plan.md), [Observability](0001-slack-feishu-dual-platform/observability.md), [Permissions](0001-slack-feishu-dual-platform/permissions.md), and [Review gates](0001-slack-feishu-dual-platform/review-gates.md).

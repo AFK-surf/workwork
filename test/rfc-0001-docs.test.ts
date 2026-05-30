@@ -20,19 +20,20 @@ describe("RFC 0001 documentation", () => {
     expect(content).toContain("## Deep Dives");
     expect(content).toContain("0001-slack-feishu-dual-platform/architecture.md");
     expect(content).toContain("0001-slack-feishu-dual-platform/implementation.md");
+    expect(content).toContain("0001-slack-feishu-dual-platform/test-plan.md");
     expect(content).toContain("0001-slack-feishu-dual-platform/observability.md");
     expect(content).toContain("0001-slack-feishu-dual-platform/permissions.md");
     expect(content).toContain("0001-slack-feishu-dual-platform/review-gates.md");
   });
 
   it("keeps all RFC deep-dive files present", async () => {
-    const expectedDeepDives = ["architecture.md", "implementation.md", "observability.md", "permissions.md", "review-gates.md"];
+    const expectedDeepDives = ["architecture.md", "implementation.md", "test-plan.md", "observability.md", "permissions.md", "review-gates.md"];
 
     await expect(Promise.all(expectedDeepDives.map((file) => fs.stat(path.join(rfcDir, file))))).resolves.toHaveLength(expectedDeepDives.length);
   });
 
   it("keeps RFC deep dives progressively disclosed", async () => {
-    const expectedDeepDives = ["architecture.md", "implementation.md", "observability.md", "permissions.md", "review-gates.md"];
+    const expectedDeepDives = ["architecture.md", "implementation.md", "test-plan.md", "observability.md", "permissions.md", "review-gates.md"];
 
     for (const file of expectedDeepDives) {
       const content = await fs.readFile(path.join(rfcDir, file), "utf8");

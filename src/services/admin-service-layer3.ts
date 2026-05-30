@@ -159,6 +159,15 @@ export class AdminServiceLayer3 extends AdminServiceLayer2 {
       };
     }
 
+    if (session.platform && session.platform !== "slack") {
+      return {
+        ok: false,
+        error: "platform_permalink_unavailable",
+        platform: session.platform,
+        sessionKey,
+      };
+    }
+
     const getPermalink = this.options.slackConversations?.getPermalink;
     if (!getPermalink) {
       return {

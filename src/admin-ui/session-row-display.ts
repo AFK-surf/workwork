@@ -45,6 +45,7 @@ export function renderSessionMeta(session: SessionRecord, authProfileByName: Rea
   const activeJobCount = activeBackgroundJobCount(session);
   const authBlockActive = sessionAuthBlockActive(session, authProfile);
   return [
+    platformPill(session),
     { key: "channel", label: resolveSessionChannelLabel(session, channelLabelById), tone: "info", title: stringOrUndefined(session.channelId || session.key) },
     authBlockActive ? { key: "auth-blocked", label: "账号待切换", tone: "danger", title: stringOrUndefined(session.authBlockReasonLabel || session.authBlockReason) } : null,
     session.authProfileName
@@ -151,6 +152,27 @@ function sessionHumanChannelLabel(session: SessionRecord): string | undefined {
   if (session.channelType === "im") return "私信";
   if (session.channelType === "mpim") return "群聊";
   return undefined;
+}
+
+function platformPill(session: SessionRecord): SessionMetaPill | null {
+  const platform = String(session.platform || "").trim();
+  if (platform === "feishu") {
+    return {
+      key: "platform",
+      label: "飞书",
+      tone: "good",
+      title: "Feishu session",
+    };
+  }
+  if (platform === "slack") {
+    return {
+      key: "platform",
+      label: "Slack",
+      tone: "info",
+      title: "Slack session",
+    };
+  }
+  return null;
 }
 
 function formatSessionTokens(value: unknown): string {

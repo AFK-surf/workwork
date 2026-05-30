@@ -1,7 +1,7 @@
 # Feishu Smoke Evidence
 
 - source: status-file:admin-status.json
-- checked_at: 2026-05-30T10:42:03.160Z
+- checked_at: 2026-05-30T10:53:04.698Z
 - status: PASS
 
 ## Checks
