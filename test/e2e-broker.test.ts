@@ -17,6 +17,7 @@ import { MockSlackServer } from "./manual/mock-slack-server.js";
 
 const brokerRoot = path.dirname(fileURLToPath(new URL("../package.json", import.meta.url)));
 const DEFAULT_E2E_TIMEOUT_MS = 30_000;
+let nextBrokerPort = 31_000 + (process.pid % 1_000);
 
 describe.sequential("slack-codex-broker e2e", () => {
   const cleanups: Array<() => Promise<void>> = [];
@@ -95,6 +96,12 @@ describe.sequential("slack-codex-broker e2e", () => {
     await waitFor(() => {
       return mockSlack.postedMessages.some((message) => message.text === "STATUS_REPLY_OK");
     }, "broker-posted Slack reply");
+    await waitFor(() => {
+      return broker.logs.join("").includes('chat.message.accepted {"platform":"slack"');
+    }, "Slack accepted log");
+    await waitFor(() => {
+      return broker.logs.join("").includes('chat.outbound.posted {"platform":"slack"');
+    }, "Slack outbound log");
     await waitFor(() => {
       return mockSlack.assistantStatusUpdates.some((update) => update.status === "");
     }, "assistant status clear");
@@ -1361,21 +1368,32 @@ async function removeTempRoot(tempRoot: string): Promise<void> {
 }
 
 async function getFreePort(): Promise<number> {
-  const server = http.createServer();
-  await new Promise<void>((resolve) => {
-    server.listen(0, "127.0.0.1", () => resolve());
-  });
-
-  const address = server.address();
-  if (!address || typeof address === "string") {
-    throw new Error("failed to allocate free port");
+  for (let attempt = 0; attempt < 2_000; attempt += 1) {
+    const port = nextBrokerPort;
+    nextBrokerPort = nextBrokerPort >= 39_999 ? 31_000 : nextBrokerPort + 1;
+    if (await canListenOnPort(port)) {
+      return port;
+    }
   }
 
-  const port = address.port;
-  await new Promise<void>((resolve) => {
-    server.close(() => resolve());
+  throw new Error("failed to allocate free broker port");
+}
+
+async function canListenOnPort(port: number): Promise<boolean> {
+  const server = http.createServer();
+  return new Promise<boolean>((resolve) => {
+    const finish = (available: boolean) => {
+      server.removeAllListeners();
+      if (server.listening) {
+        server.close(() => resolve(available));
+        return;
+      }
+      resolve(available);
+    };
+
+    server.once("error", () => finish(false));
+    server.listen(port, "127.0.0.1", () => finish(true));
   });
-  return port;
 }
 
 function collectTextInput(input: readonly CodexInputItem[]): string {

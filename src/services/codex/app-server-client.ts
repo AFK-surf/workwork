@@ -43,6 +43,13 @@ interface ActiveTurn {
   reject: (error: Error) => void;
 }
 
+interface BufferedTurn {
+  text: string;
+  result?: {
+    readonly aborted: boolean;
+  } | undefined;
+}
+
 export interface StartedTurn {
   readonly turnId: string;
   readonly completion: Promise<CodexTurnResult>;
@@ -118,6 +125,7 @@ export class AppServerClient extends EventEmitter {
   #requestCounter = 0;
   readonly #pendingRequests = new Map<string, PendingRequest>();
   readonly #activeTurns = new Map<string, ActiveTurn>();
+  readonly #bufferedTurns = new Map<string, BufferedTurn>();
   #connected = false;
   #disconnectHandled = false;
   #slackBotIdentity: SlackUserIdentity | null = null;
@@ -343,11 +351,23 @@ export class AppServerClient extends EventEmitter {
       turn: { id: string };
     };
 
+    const buffered = this.#bufferedTurns.get(result.turn.id);
+    this.#bufferedTurns.delete(result.turn.id);
     const completion = new Promise<CodexTurnResult>((resolve, reject) => {
+      if (buffered?.result) {
+        resolve({
+          threadId,
+          turnId: result.turn.id,
+          finalMessage: buffered.text.trim(),
+          aborted: buffered.result.aborted
+        });
+        return;
+      }
+
       this.#activeTurns.set(result.turn.id, {
         threadId,
         turnId: result.turn.id,
-        text: "",
+        text: buffered?.text ?? "",
         resolve,
         reject
       });
@@ -394,6 +414,7 @@ export class AppServerClient extends EventEmitter {
   }
 
   async #buildBaseInstructions(session: {
+    readonly platform?: "slack" | "feishu" | undefined;
     readonly channelId: string;
     readonly rootThreadTs: string;
     readonly workspacePath: string;
@@ -401,6 +422,7 @@ export class AppServerClient extends EventEmitter {
     const personalMemory = await this.#readPersonalMemory();
     return await buildSlackThreadBaseInstructions({
       brokerHttpBaseUrl: this.options.brokerHttpBaseUrl,
+      platform: session.platform,
       channelId: session.channelId,
       rootThreadTs: session.rootThreadTs,
       workspacePath: session.workspacePath,
@@ -562,10 +584,18 @@ export class AppServerClient extends EventEmitter {
 
   #handleTurnEvent(method: string, params: Record<string, any>): void {
     if (method === "item/agentMessage/delta") {
-      const turn = this.#activeTurns.get(params.turnId as string);
+      const turnId = params.turnId as string | undefined;
+      if (!turnId) {
+        return;
+      }
+
+      const turn = this.#activeTurns.get(turnId);
       if (turn) {
         turn.text += String(params.delta ?? "");
+        return;
       }
+
+      this.#getBufferedTurn(turnId).text += String(params.delta ?? "");
       return;
     }
 
@@ -577,6 +607,9 @@ export class AppServerClient extends EventEmitter {
 
       const turn = this.#activeTurns.get(turnId);
       if (!turn) {
+        this.#getBufferedTurn(turnId).result = {
+          aborted: false
+        };
         return;
       }
 
@@ -598,6 +631,9 @@ export class AppServerClient extends EventEmitter {
 
       const turn = this.#activeTurns.get(turnId);
       if (!turn) {
+        this.#getBufferedTurn(turnId).result = {
+          aborted: true
+        };
         return;
       }
 
@@ -609,6 +645,18 @@ export class AppServerClient extends EventEmitter {
         aborted: true
       });
     }
+  }
+
+  #getBufferedTurn(turnId: string): BufferedTurn {
+    let buffered = this.#bufferedTurns.get(turnId);
+    if (!buffered) {
+      buffered = {
+        text: ""
+      };
+      this.#bufferedTurns.set(turnId, buffered);
+    }
+
+    return buffered;
   }
 
   #handleDisconnect(error: Error): void {

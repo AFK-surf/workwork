@@ -1,7 +1,7 @@
 {
   "name": "slack-codex-broker",
   "version": "0.1.0",
-  "description": "Slack Socket Mode broker that routes Slack threads into Codex app-server sessions with isolated workspaces.",
+  "description": "Slack + China Feishu broker that routes chat sessions into Codex app-server sessions with isolated workspaces.",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -34,9 +34,15 @@
     "start:worker": "node dist/src/worker-index.js",
     "test": "vitest run",
     "test:e2e:mock": "tsx test/manual/run-mock-e2e.ts",
-    "manual:test": "tsx test/manual/run-real-codex-smoke.ts"
+    "test:e2e:feishu-mock": "vitest run test/feishu-codex-bridge.test.ts test/feishu-platform-adapter.test.ts test/feishu-fixture-replay.test.ts test/dual-platform-runtime.test.ts",
+    "manual:test": "tsx test/manual/run-real-codex-smoke.ts",
+    "manual:feishu-smoke": "tsx test/manual/run-real-feishu-smoke.ts --",
+    "manual:feishu-controlled-evidence": "tsx test/manual/write-controlled-feishu-smoke-evidence.ts",
+    "rfc:feishu-audit": "tsx test/manual/run-rfc-0001-local-audit.ts",
+    "rfc:feishu-audit:local": "tsx test/manual/run-rfc-0001-local-audit.ts -- --local-only"
   },
   "dependencies": {
+    "@larksuiteoapi/node-sdk": "^1.66.0",
     "@modelcontextprotocol/sdk": "1.27.1",
     "ws": "^8.18.3"
   },

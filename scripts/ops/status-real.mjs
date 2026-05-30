@@ -5,7 +5,8 @@ import {
   getDataRootSource,
   getPublishedPort,
   inspectContainer,
-  readDetailedStateFromHost
+  readDetailedStateFromHost,
+  summarizeOpsHostPath
 } from "./lib.mjs";
 
 function parseArgs(argv) {
@@ -128,7 +129,7 @@ console.log(
         startedAt: inspect.State?.StartedAt ?? null,
         restartCount: inspect.RestartCount ?? 0,
         hostPort,
-        dataRootSource
+        dataRootSource: summarizeOpsHostPath(dataRootSource)
       },
       health,
       ready,

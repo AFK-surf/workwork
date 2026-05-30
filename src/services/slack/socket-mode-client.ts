@@ -66,6 +66,13 @@ export class SlackSocketModeClient extends EventEmitter {
           return;
         }
 
+        logger.warn("chat.platform.degraded", {
+          platform: "slack",
+          source: "socket_mode",
+          startupRequired: true,
+          degradedReason: "connection_failed",
+          errorClass: error instanceof Error ? error.name : "Error"
+        });
         logger.warn("Slack Socket Mode connection failed, retrying", {
           error: error instanceof Error ? error.message : String(error)
         });
@@ -79,6 +86,12 @@ export class SlackSocketModeClient extends EventEmitter {
   }
 
   async #connect(): Promise<void> {
+    const startedAt = Date.now();
+    logger.info("chat.platform.starting", {
+      platform: "slack",
+      source: "socket_mode",
+      startupRequired: true
+    });
     const socketUrl = await this.#api.openSocketConnection(this.#socketOpenPath);
     const socket = new WebSocket(socketUrl);
     this.#socket = socket;
@@ -89,6 +102,11 @@ export class SlackSocketModeClient extends EventEmitter {
     });
 
     logger.info("Connected to Slack Socket Mode");
+    logger.info("chat.platform.ready", {
+      platform: "slack",
+      source: "socket_mode",
+      durationMs: Date.now() - startedAt
+    });
     this.#startHeartbeat(socket);
     socket.on("message", (buffer) => {
       void this.#handleMessage(buffer.toString()).catch((error) => {
@@ -116,6 +134,12 @@ export class SlackSocketModeClient extends EventEmitter {
         return;
       }
 
+      logger.warn("chat.platform.degraded", {
+        platform: "slack",
+        source: "socket_mode",
+        startupRequired: true,
+        degradedReason: "connection_closed"
+      });
       logger.warn("Slack websocket closed, reconnecting");
       this.#scheduleReconnect();
     });
@@ -200,6 +224,11 @@ export class SlackSocketModeClient extends EventEmitter {
 
     if (envelope.type === "events_api" && envelope.payload) {
       this.emit("events_api", envelope.payload);
+      return;
+    }
+
+    if (envelope.type === "interactive" && envelope.payload) {
+      this.emit("interactive", envelope.payload);
     }
   }
 
@@ -230,7 +259,7 @@ function buildSlackEnvelopeMeta(envelope: SlackSocketEnvelope): Record<string, u
     envelopeId: envelope.envelope_id,
     envelopeType: envelope.type,
     eventId: envelope.payload?.event_id,
-    eventType: event?.type,
+    eventType: event?.type ?? envelope.payload?.type,
     channelId,
     rootThreadTs
   };

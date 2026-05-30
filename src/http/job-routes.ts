@@ -4,12 +4,20 @@ import { URL } from "node:url";
 import type { JobManager } from "../services/job-manager.js";
 import { logger } from "../logger.js";
 import {
-  parseJsonLike,
+  parseJsonLikeRequestField,
   readBoolean,
   readJsonBody,
   readString,
   respondJson
 } from "./common.js";
+import { redactHttpRequestBody } from "./request-log-redaction.js";
+import { CHAT_PLATFORM_VALUES, type ChatPlatform } from "../services/chat/chat-types.js";
+
+const CHAT_JOB_COORDINATE_REQUIRED_FIELDS = [
+  "platform",
+  "conversationId (alias: conversation_id)",
+  "rootMessageId (alias: root_message_id)"
+];
 
 export async function handleJobRequest(
   method: string,
@@ -55,28 +63,50 @@ async function handleJobRegisterRequest(
   logger.raw("http-requests", {
     method: "POST",
     path: "/jobs/register",
-    body
+    body: redactHttpRequestBody(body)
   }, {
     channelId: readString(body.channel_id),
-    rootThreadTs: readString(body.thread_ts)
+    rootThreadTs: readString(body.thread_ts),
+    platform: readPlatform(body.platform),
+    conversationId: readString(body.conversation_id) ?? readString(body.conversationId),
+    rootMessageId: readString(body.root_message_id) ?? readString(body.rootMessageId)
   });
 
+  const platform = readPlatform(body.platform);
+  const conversationId = readString(body.conversation_id) ?? readString(body.conversationId);
+  const rootMessageId = readString(body.root_message_id) ?? readString(body.rootMessageId);
   const channelId = readString(body.channel_id);
   const rootThreadTs = readString(body.thread_ts);
   const kind = readString(body.kind);
   const script = readString(body.script);
+  const hasGenericCoordinates = Boolean(platform && conversationId && rootMessageId);
+  const acceptsLegacySlackCoordinates = !body.platform || platform === "slack";
+  const hasLegacySlackCoordinates = acceptsLegacySlackCoordinates && Boolean(channelId && rootThreadTs);
 
-  if (!channelId || !rootThreadTs || !kind || !script) {
+  if (isInvalidPlatformValue(body.platform)) {
+    respondJson(response, 400, {
+      ok: false,
+      error: "invalid_platform",
+      allowed: CHAT_PLATFORM_VALUES
+    });
+    return;
+  }
+
+  if ((!hasGenericCoordinates && !hasLegacySlackCoordinates) || !kind || !script) {
     respondJson(response, 400, {
       ok: false,
       error: "missing_required_body",
-      required: ["channel_id", "thread_ts", "kind", "script"]
+      required: [...CHAT_JOB_COORDINATE_REQUIRED_FIELDS, "kind", "script"],
+      legacyAliases: ["channel_id", "thread_ts"]
     });
     return;
   }
 
   try {
     const job = await options.jobManager.registerJob({
+      platform,
+      conversationId,
+      rootMessageId,
       channelId,
       rootThreadTs,
       kind,
@@ -96,6 +126,9 @@ async function handleJobRegisterRequest(
         shell: job.shell,
         scriptPath: job.scriptPath,
         restartOnBoot: job.restartOnBoot,
+        platform: job.platform,
+        conversationId: job.conversationId,
+        rootMessageId: job.rootMessageId,
         channelId: job.channelId,
         rootThreadTs: job.rootThreadTs,
         createdAt: job.createdAt
@@ -134,7 +167,7 @@ async function handleJobActionRequest(
   logger.raw("http-requests", {
     method: "POST",
     path: `/jobs/${action.jobId}/${action.action}`,
-    body
+    body: redactHttpRequestBody(body)
   }, {
     jobId: action.jobId
   });
@@ -158,33 +191,78 @@ async function handleJobActionRequest(
         if (!readString(body.event_kind) || !readString(body.summary)) {
           throw new Error("missing_required_body:event_kind,summary");
         }
-        job = await options.jobManager.emitJobEvent(action.jobId, token, {
-          eventKind: readString(body.event_kind)!,
-          summary: readString(body.summary)!,
-          detailsText: readString(body.details_text) || undefined,
-          detailsJson: parseJsonLike(body.details_json)
-        });
+        {
+          const detailsJsonResult = parseJsonLikeRequestField(
+            body.details_json ?? body.detailsJson,
+            "detailsJson (alias: details_json)"
+          );
+          if (!detailsJsonResult.ok) {
+            respondJson(response, 400, {
+              ok: false,
+              error: "invalid_json_field",
+              field: detailsJsonResult.field
+            });
+            return;
+          }
+
+          job = await options.jobManager.emitJobEvent(action.jobId, token, {
+            eventKind: readString(body.event_kind)!,
+            summary: readString(body.summary)!,
+            detailsText: readString(body.details_text) || undefined,
+            detailsJson: detailsJsonResult.value
+          });
+        }
         break;
       case "complete":
         if (!token) {
           throw new Error("missing_job_token");
         }
-        job = await options.jobManager.completeJob(action.jobId, token, {
-          summary: readString(body.summary) || undefined,
-          detailsText: readString(body.details_text) || undefined,
-          detailsJson: parseJsonLike(body.details_json)
-        });
+        {
+          const detailsJsonResult = parseJsonLikeRequestField(
+            body.details_json ?? body.detailsJson,
+            "detailsJson (alias: details_json)"
+          );
+          if (!detailsJsonResult.ok) {
+            respondJson(response, 400, {
+              ok: false,
+              error: "invalid_json_field",
+              field: detailsJsonResult.field
+            });
+            return;
+          }
+
+          job = await options.jobManager.completeJob(action.jobId, token, {
+            summary: readString(body.summary) || undefined,
+            detailsText: readString(body.details_text) || undefined,
+            detailsJson: detailsJsonResult.value
+          });
+        }
         break;
       case "fail":
         if (!token) {
           throw new Error("missing_job_token");
         }
-        job = await options.jobManager.failJob(action.jobId, token, {
-          summary: readString(body.summary) || undefined,
-          error: readString(body.error) || undefined,
-          detailsText: readString(body.details_text) || undefined,
-          detailsJson: parseJsonLike(body.details_json)
-        });
+        {
+          const detailsJsonResult = parseJsonLikeRequestField(
+            body.details_json ?? body.detailsJson,
+            "detailsJson (alias: details_json)"
+          );
+          if (!detailsJsonResult.ok) {
+            respondJson(response, 400, {
+              ok: false,
+              error: "invalid_json_field",
+              field: detailsJsonResult.field
+            });
+            return;
+          }
+
+          job = await options.jobManager.failJob(action.jobId, token, {
+            summary: readString(body.summary) || undefined,
+            error: readString(body.error) || undefined,
+            detailsText: readString(body.details_text) || undefined,
+            detailsJson: detailsJsonResult.value
+          });
+        }
         break;
       case "cancel":
         if (!token) {
@@ -205,6 +283,14 @@ async function handleJobActionRequest(
       error: message
     });
   }
+}
+
+function readPlatform(value: unknown): ChatPlatform | undefined {
+  return value === "slack" || value === "feishu" ? value : undefined;
+}
+
+function isInvalidPlatformValue(value: unknown): boolean {
+  return value != null && value !== "" && !readPlatform(value);
 }
 
 function matchJobAction(pathname: string): {

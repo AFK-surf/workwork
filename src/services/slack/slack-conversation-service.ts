@@ -3,6 +3,11 @@ import path from "node:path";
 
 import type { AppConfig } from "../../config.js";
 import { logger } from "../../logger.js";
+import {
+  CHAT_FILE_SOURCE_REQUIREMENT_MESSAGE,
+  CHAT_INLINE_FILE_CONTENT_REQUIREMENT_MESSAGE,
+  CHAT_INLINE_FILE_FILENAME_REQUIREMENT_MESSAGE
+} from "../chat/chat-types.js";
 import { SessionManager } from "../session-manager.js";
 import type {
   BackgroundJobEventPayload,
@@ -48,6 +53,7 @@ import {
 } from "./slack-message-format.js";
 import { markdownishToMrkdwn } from "./slack-mrkdwn.js";
 import { SlackSelfMessageFilter } from "./slack-self-filter.js";
+import { SlackCoauthorService } from "./slack-coauthor-service.js";
 import { SlackTurnReconciler } from "./slack-turn-reconciler.js";
 import { SlackTurnRunner } from "./slack-turn-runner.js";
 
@@ -76,6 +82,12 @@ export class SlackConversationService {
   readonly #codex: CodexBroker;
   readonly #slackApi: SlackApi;
   readonly #selfMessageFilter: SlackSelfMessageFilter;
+  readonly #coauthors: {
+    readonly noteIncomingSlackInput: (
+      session: SlackSessionRecord,
+      item: SlackInputMessage
+    ) => Promise<SlackSessionRecord>;
+  };
   readonly #runtimeSessions = new Map<string, RuntimeSessionState>();
   readonly #statusControllers = new Map<string, SlackAssistantStatusController>();
   readonly #inboundStore: SlackInboundStore;
@@ -84,6 +96,7 @@ export class SlackConversationService {
   readonly #codexNotificationHandler: (method: string, params: Record<string, unknown> | undefined) => void;
   #botUserId = "";
   #activeTurnReconcileTimer: NodeJS.Timeout | undefined;
+  #activeTurnReconcileRunning = false;
   #catchUpPromise: Promise<void> | undefined;
   #lastMissedThreadRecoveryAtMs = 0;
 
@@ -93,12 +106,16 @@ export class SlackConversationService {
     readonly codex: CodexBroker;
     readonly slackApi: SlackApi;
     readonly selfMessageFilter: SlackSelfMessageFilter;
+    readonly coauthors?: SlackCoauthorService | undefined;
   }) {
     this.#config = options.config;
     this.#sessions = options.sessions;
     this.#codex = options.codex;
     this.#slackApi = options.slackApi;
     this.#selfMessageFilter = options.selfMessageFilter;
+    this.#coauthors = options.coauthors ?? {
+      noteIncomingSlackInput: async (session) => session
+    };
     this.#inboundStore = new SlackInboundStore({
       sessions: this.#sessions,
       slackApi: this.#slackApi
@@ -406,7 +423,7 @@ export class SlackConversationService {
     const hasInlineContent = Boolean(options.contentBase64?.trim());
 
     if (hasFilePath === hasInlineContent) {
-      throw new Error("Provide exactly one of file_path or content_base64");
+      throw new Error(CHAT_FILE_SOURCE_REQUIREMENT_MESSAGE);
     }
 
     let filename = options.filename?.trim() || undefined;
@@ -419,10 +436,10 @@ export class SlackConversationService {
     } else {
       const decoded = Buffer.from(options.contentBase64!.trim(), "base64");
       if (decoded.byteLength === 0) {
-        throw new Error("Decoded content_base64 was empty");
+        throw new Error(CHAT_INLINE_FILE_CONTENT_REQUIREMENT_MESSAGE);
       }
       if (!filename) {
-        throw new Error("filename is required when using content_base64");
+        throw new Error(CHAT_INLINE_FILE_FILENAME_REQUIREMENT_MESSAGE);
       }
       bytes = decoded;
     }
@@ -554,7 +571,20 @@ export class SlackConversationService {
     }
 
     this.#clearDispatchFailureBlock(session.key);
-    const recordedSession = await this.#inboundStore.recordInboundMessage(session, item);
+    const coauthoredSession = await this.#coauthors.noteIncomingSlackInput(session, item);
+    const recordedSession = await this.#inboundStore.recordInboundMessage(coauthoredSession, item);
+    logger.info("chat.message.accepted", {
+      platform: "slack",
+      sessionKey: recordedSession.key,
+      conversationId: item.channelId,
+      conversationKind: slackConversationKind(item.channelType),
+      rootMessageId: item.rootThreadTs,
+      messageId: item.messageTs,
+      eventId: item.messageTs,
+      senderKind: item.senderKind ?? "unknown",
+      msgType: (item.images?.length ?? 0) > 0 ? "image" : "text",
+      route: item.source
+    });
     this.#setAssistantThinking(recordedSession);
     await this.#dispatchPersistedMessage(recordedSession, item.messageTs);
   }
@@ -608,30 +638,40 @@ export class SlackConversationService {
   }
 
   async #reconcileLiveActiveTurns(): Promise<void> {
-    const sessions = this.#sessions
-      .listSessions()
-      .filter((session) => session.activeTurnId)
-      .sort((left, right) => compareIsoTimestamp(right.updatedAt, left.updatedAt));
-
-    for (const session of sessions) {
-      try {
-        const outcome = await this.#reconcileSingleActiveTurn(session);
-        if (outcome === "retained") {
-          await this.#maybeRemindSilentActiveTurn(this.#findSessionByKey(session.key));
-        }
-      } catch (error) {
-        logger.warn("Failed to reconcile live Codex turn state", {
-          sessionKey: session.key,
-          turnId: session.activeTurnId ?? null,
-          error: error instanceof Error ? error.message : String(error)
-        });
-      }
+    if (this.#activeTurnReconcileRunning) {
+      logger.debug("Skipping overlapping Slack active-turn reconciliation tick");
+      return;
     }
 
-    await this.#recoverDormantPendingSessions();
+    this.#activeTurnReconcileRunning = true;
+    try {
+      const sessions = this.#sessions
+        .listSessions()
+        .filter((session) => session.activeTurnId)
+        .sort((left, right) => compareIsoTimestamp(right.updatedAt, left.updatedAt));
 
-    if (this.#shouldRunPeriodicMissedThreadRecovery()) {
-      await this.recoverMissedThreadMessages("periodic");
+      for (const session of sessions) {
+        try {
+          const outcome = await this.#reconcileSingleActiveTurn(session);
+          if (outcome === "retained") {
+            await this.#maybeRemindSilentActiveTurn(this.#findSessionByKey(session.key));
+          }
+        } catch (error) {
+          logger.warn("Failed to reconcile live Codex turn state", {
+            sessionKey: session.key,
+            turnId: session.activeTurnId ?? null,
+            error: error instanceof Error ? error.message : String(error)
+          });
+        }
+      }
+
+      await this.#recoverDormantPendingSessions();
+
+      if (this.#shouldRunPeriodicMissedThreadRecovery()) {
+        await this.recoverMissedThreadMessages("periodic");
+      }
+    } finally {
+      this.#activeTurnReconcileRunning = false;
     }
   }
 
@@ -727,11 +767,22 @@ export class SlackConversationService {
   ): Promise<string | undefined> {
     this.#clearAssistantStatus(channelId, rootThreadTs);
     const formattedText = options?.alreadyFormatted ? text : markdownishToMrkdwn(text);
+    const startedAt = Date.now();
     const ts = await this.#slackApi.postThreadMessage(channelId, rootThreadTs, formattedText);
     if (ts) {
       this.#selfMessageFilter.rememberPostedMessageTs(ts);
       const occurredAt = new Date().toISOString();
       const session = await this.#sessions.setLastSlackReplyAt(channelId, rootThreadTs, occurredAt);
+      logger.info("chat.outbound.posted", {
+        platform: "slack",
+        sessionKey: session.key,
+        conversationId: channelId,
+        conversationKind: slackConversationKind(session.conversationKind),
+        rootMessageId: rootThreadTs,
+        messageId: ts,
+        format: "text",
+        durationMs: Date.now() - startedAt
+      });
       if (options?.turnSignal?.kind) {
         await this.#sessions.recordTurnSignal(channelId, rootThreadTs, {
           turnId: this.#resolveTurnIdForSignal(session),
@@ -1458,6 +1509,16 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
   }
 
   return value as Record<string, unknown>;
+}
+
+function slackConversationKind(value: string | undefined): "channel" | "group" | "direct" | "thread" | "unknown" {
+  if (value === "channel" || value === "group" || value === "direct" || value === "thread") {
+    return value;
+  }
+  if (value === "im" || value === "mpim") {
+    return "direct";
+  }
+  return "unknown";
 }
 
 function normalizeCodexTurnId(params: Record<string, unknown>): string | undefined {

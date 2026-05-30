@@ -3,11 +3,20 @@ import { URL } from "node:url";
 
 import type { AppConfig } from "../config.js";
 import { logger } from "../logger.js";
+import {
+  CHAT_FILE_SOURCE_FIELD_DESCRIPTIONS,
+  CHAT_INLINE_FILE_CONTENT_REQUIREMENT_MESSAGE,
+  CHAT_INLINE_FILE_FILENAME_REQUIREMENT_MESSAGE,
+  isNonEmptyBase64Content
+} from "../services/chat/chat-types.js";
 import type { SlackCodexBridge } from "../services/slack/slack-codex-bridge.js";
 import {
+  readJsonBody,
   readFormBody,
+  readPositiveIntegerQueryParam,
   respondJson
 } from "./common.js";
+import { redactHttpRequestBody } from "./request-log-redaction.js";
 
 export async function handleSlackRequest(
   method: string,
@@ -49,6 +58,11 @@ export async function handleSlackRequest(
     return true;
   }
 
+  if (method === "POST" && url.pathname === "/slack/git-coauthors/resolve-commit-message") {
+    await handleResolveCommitCoauthorsRequest(request, response, options);
+    return true;
+  }
+
   return false;
 }
 
@@ -73,22 +87,37 @@ async function handleSlackThreadHistoryRequest(
   }
 
   const limitParam = url.searchParams.get("limit");
-  const parsedLimit = limitParam == null ? undefined : Number(limitParam);
+  const parsedLimit = readPositiveIntegerQueryParam(limitParam);
+  const formatParam = url.searchParams.get("format");
+  const responseFormat = readHistoryResponseFormat(formatParam);
 
-  if (limitParam != null && !Number.isFinite(parsedLimit)) {
-    respondJson(response, 400, { ok: false, error: "invalid_limit" });
+  if (limitParam != null && parsedLimit == null) {
+    respondJson(response, 400, {
+      ok: false,
+      error: "invalid_limit",
+      message: "limit must be a positive integer"
+    });
+    return;
+  }
+
+  if (formatParam != null && !responseFormat) {
+    respondJson(response, 400, {
+      ok: false,
+      error: "invalid_format",
+      allowed: ["json", "text"]
+    });
     return;
   }
 
   try {
-    const result = await options.bridge.readThreadHistory({
-      channelId,
-      rootThreadTs,
-      beforeMessageTs: url.searchParams.get("before_ts") ?? undefined,
+    const result = await options.bridge.readChatThreadHistory({
+      platform: "slack",
+      conversationId: channelId,
+      rootMessageId: rootThreadTs,
+      beforeMessageId: url.searchParams.get("before_ts") ?? undefined,
       channelType: url.searchParams.get("channel_type") ?? undefined,
       limit: parsedLimit
     });
-    const responseFormat = url.searchParams.get("format") ?? "json";
 
     if (responseFormat === "text") {
       response.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
@@ -183,7 +212,7 @@ async function handleSlackPostMessageRequest(
   logger.raw("http-requests", {
     method: "POST",
     path: "/slack/post-message",
-    body
+    body: redactHttpRequestBody(body)
   }, {
     channelId: body.channel_id,
     rootThreadTs: body.thread_ts
@@ -223,9 +252,10 @@ async function handleSlackPostMessageRequest(
   }
 
   try {
-    await options.bridge.postSlackMessage({
-      channelId,
-      rootThreadTs,
+    await options.bridge.postChatMessage({
+      platform: "slack",
+      conversationId: channelId,
+      rootMessageId: rootThreadTs,
       text,
       kind: kind as "progress" | "final" | "block" | "wait" | undefined,
       reason
@@ -261,7 +291,7 @@ async function handleSlackPostStateRequest(
   logger.raw("http-requests", {
     method: "POST",
     path: "/slack/post-state",
-    body
+    body: redactHttpRequestBody(body)
   }, {
     channelId: body.channel_id,
     rootThreadTs: body.thread_ts
@@ -300,9 +330,10 @@ async function handleSlackPostStateRequest(
   }
 
   try {
-    await options.bridge.postSlackState({
-      channelId,
-      rootThreadTs,
+    await options.bridge.postChatState({
+      platform: "slack",
+      conversationId: channelId,
+      rootMessageId: rootThreadTs,
       kind: kind as "wait" | "block" | "final",
       reason
     });
@@ -404,10 +435,7 @@ async function handleSlackPostFileRequest(
   logger.raw("http-requests", {
     method: "POST",
     path: "/slack/post-file",
-    body: {
-      ...body,
-      content_base64: body.content_base64 ? `[base64:${body.content_base64.length}]` : undefined
-    }
+    body: redactHttpRequestBody(body)
   }, {
     channelId: body.channel_id,
     rootThreadTs: body.thread_ts
@@ -420,19 +448,49 @@ async function handleSlackPostFileRequest(
   const filename = body.filename?.trim() || undefined;
   const initialComment = (body.initial_comment ?? body.text)?.trim() || undefined;
 
-  if (!channelId || !rootThreadTs || (!filePath && !contentBase64)) {
+  if (!channelId || !rootThreadTs) {
     respondJson(response, 400, {
       ok: false,
       error: "missing_required_body",
-      required: ["channel_id", "thread_ts", "file_path|content_base64"]
+      required: ["channel_id", "thread_ts", ...CHAT_FILE_SOURCE_FIELD_DESCRIPTIONS]
+    });
+    return;
+  }
+
+  if (Boolean(filePath) === Boolean(contentBase64)) {
+    respondJson(response, 400, {
+      ok: false,
+      error: "provide_exactly_one_file_source",
+      required: CHAT_FILE_SOURCE_FIELD_DESCRIPTIONS
+    });
+    return;
+  }
+
+  if (contentBase64 && !filename) {
+    respondJson(response, 400, {
+      ok: false,
+      error: "missing_required_body",
+      message: CHAT_INLINE_FILE_FILENAME_REQUIREMENT_MESSAGE,
+      required: ["filename"]
+    });
+    return;
+  }
+
+  if (contentBase64 && !isNonEmptyBase64Content(contentBase64)) {
+    respondJson(response, 400, {
+      ok: false,
+      error: "invalid_content_base64",
+      message: CHAT_INLINE_FILE_CONTENT_REQUIREMENT_MESSAGE,
+      required: ["contentBase64 (alias: content_base64)"]
     });
     return;
   }
 
   try {
-    const uploaded = await options.bridge.postSlackFile({
-      channelId,
-      rootThreadTs,
+    const uploaded = await options.bridge.postChatFile({
+      platform: "slack",
+      conversationId: channelId,
+      rootMessageId: rootThreadTs,
       filePath,
       contentBase64,
       filename,
@@ -452,4 +510,63 @@ async function handleSlackPostFileRequest(
       error: error instanceof Error ? error.message : String(error)
     });
   }
+}
+
+async function handleResolveCommitCoauthorsRequest(
+  request: http.IncomingMessage,
+  response: http.ServerResponse,
+  options: {
+    readonly bridge: SlackCodexBridge;
+  }
+): Promise<void> {
+  try {
+    const body = await readJsonBody(request);
+    const cwd = typeof body.cwd === "string" ? body.cwd.trim() : "";
+    const commitMessage = typeof body.commit_message === "string" ? body.commit_message : "";
+    const primaryAuthorEmail =
+      typeof body.primary_author_email === "string" ? body.primary_author_email.trim() : undefined;
+
+    if (!cwd || !commitMessage) {
+      respondJson(response, 400, {
+        ok: false,
+        error: "missing_required_body",
+        required: ["cwd", "commit_message"]
+      });
+      return;
+    }
+
+    const result = await options.bridge.resolveCommitCoauthors({
+      cwd,
+      commitMessage,
+      primaryAuthorEmail
+    });
+
+    if (result.status === "blocked") {
+      respondJson(response, 409, {
+        ok: false,
+        error: result.errorCode ?? "coauthor_resolution_blocked",
+        message: result.message,
+        sessionKey: result.sessionKey
+      });
+      return;
+    }
+
+    respondJson(response, 200, {
+      ok: true,
+      ...result
+    });
+  } catch (error) {
+    respondJson(response, 500, {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error)
+    });
+  }
+}
+
+function readHistoryResponseFormat(value: string | null): "json" | "text" | undefined {
+  if (value == null) {
+    return "json";
+  }
+
+  return value === "json" || value === "text" ? value : undefined;
 }

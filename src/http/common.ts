@@ -2,6 +2,10 @@ import http from "node:http";
 
 import type { JsonLike } from "../types.js";
 
+export type JsonLikeRequestFieldResult =
+  | { readonly ok: true; readonly value: JsonLike | undefined }
+  | { readonly ok: false; readonly field: string };
+
 export async function readFormBody(request: http.IncomingMessage): Promise<Record<string, string>> {
   const body = await readBodyAsText(request);
   const rawContentType = request.headers["content-type"];
@@ -62,6 +66,15 @@ export function readBoolean(value: unknown, fallback: boolean): boolean {
   return fallback;
 }
 
+export function readPositiveIntegerQueryParam(value: string | null): number | undefined {
+  if (value == null) {
+    return undefined;
+  }
+
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
 export function parseJsonLike(value: unknown): JsonLike | undefined {
   if (value == null) {
     return undefined;
@@ -77,6 +90,20 @@ export function parseJsonLike(value: unknown): JsonLike | undefined {
   }
 
   return value as JsonLike;
+}
+
+export function parseJsonLikeRequestField(value: unknown, field: string): JsonLikeRequestFieldResult {
+  try {
+    return {
+      ok: true,
+      value: parseJsonLike(value)
+    };
+  } catch {
+    return {
+      ok: false,
+      field
+    };
+  }
 }
 
 export function respondJson(

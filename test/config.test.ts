@@ -27,8 +27,22 @@ describe("loadConfig", () => {
     expect(config.slackActiveTurnReconcileIntervalMs).toBe(15_000);
     expect(config.slackProgressReminderAfterMs).toBe(120_000);
     expect(config.slackProgressReminderRepeatMs).toBe(120_000);
+    expect(config.feishuEnabled).toBe(false);
+    expect(config.feishuAppId).toBeUndefined();
+    expect(config.feishuAppSecret).toBeUndefined();
+    expect(config.feishuBotOpenId).toBeUndefined();
+    expect(config.feishuBotUserId).toBeUndefined();
+    expect(config.feishuBotUnionId).toBeUndefined();
+    expect(config.feishuApiBaseUrl).toBe("https://open.feishu.cn/open-apis");
+    expect(config.feishuDomain).toBe("feishu");
+    expect(config.feishuInitialThreadHistoryCount).toBe(8);
+    expect(config.feishuHistoryApiMaxLimit).toBe(50);
+    expect(config.feishuGroupMessageMode).toBe("all");
+    expect(config.feishuAllMessageDeliveryVerified).toBe(false);
+    expect(config.feishuStartupRequired).toBe(true);
     expect(config.logLevel).toBe("info");
     expect(config.logRawSlackEvents).toBe(true);
+    expect(config.logRawFeishuEvents).toBe(false);
     expect(config.logRawCodexRpc).toBe(true);
     expect(config.logRawHttpRequests).toBe(true);
     expect(config.brokerAdminToken).toBeUndefined();
@@ -49,6 +63,101 @@ describe("loadConfig", () => {
         PORT: "nope"
       } as NodeJS.ProcessEnv)
     ).toThrowError("Invalid numeric environment variable: PORT");
+  });
+
+  it("requires Feishu credentials only when Feishu is enabled", () => {
+    expect(() =>
+      loadConfig({
+        SLACK_APP_TOKEN: "xapp-test",
+        SLACK_BOT_TOKEN: "xoxb-test",
+        FEISHU_ENABLED: "true",
+        FEISHU_APP_ID: "cli-test"
+      } as NodeJS.ProcessEnv)
+    ).toThrowError("Missing required environment variable: FEISHU_APP_SECRET");
+
+    expect(() =>
+      loadConfig({
+        SLACK_APP_TOKEN: "xapp-test",
+        SLACK_BOT_TOKEN: "xoxb-test",
+        FEISHU_ENABLED: "true",
+        FEISHU_APP_ID: "cli-test",
+        FEISHU_APP_SECRET: "secret-test"
+      } as NodeJS.ProcessEnv)
+    ).toThrowError(
+      "Missing required environment variable: one of FEISHU_BOT_OPEN_ID, FEISHU_BOT_USER_ID, FEISHU_BOT_UNION_ID"
+    );
+  });
+
+  it("loads China Feishu configuration", () => {
+    const config = loadConfig({
+      SLACK_APP_TOKEN: "xapp-test",
+      SLACK_BOT_TOKEN: "xoxb-test",
+      FEISHU_ENABLED: "true",
+      FEISHU_APP_ID: "cli-test",
+      FEISHU_APP_SECRET: "secret-test",
+      FEISHU_BOT_OPEN_ID: "ou_bot",
+      FEISHU_INITIAL_THREAD_HISTORY_COUNT: "12",
+      FEISHU_HISTORY_API_MAX_LIMIT: "40",
+      FEISHU_GROUP_MESSAGE_MODE: "at_only",
+      FEISHU_ALL_MESSAGE_DELIVERY_VERIFIED: "true",
+      FEISHU_STARTUP_REQUIRED: "false"
+    } as NodeJS.ProcessEnv);
+
+    expect(config.feishuEnabled).toBe(true);
+    expect(config.feishuAppId).toBe("cli-test");
+    expect(config.feishuAppSecret).toBe("secret-test");
+    expect(config.feishuBotOpenId).toBe("ou_bot");
+    expect(config.feishuBotUserId).toBeUndefined();
+    expect(config.feishuBotUnionId).toBeUndefined();
+    expect(config.feishuDomain).toBe("feishu");
+    expect(config.feishuInitialThreadHistoryCount).toBe(12);
+    expect(config.feishuHistoryApiMaxLimit).toBe(40);
+    expect(config.feishuGroupMessageMode).toBe("at_only");
+    expect(config.feishuAllMessageDeliveryVerified).toBe(true);
+    expect(config.feishuStartupRequired).toBe(false);
+  });
+
+  it("rejects non-China Feishu domains for the first implementation", () => {
+    expect(() =>
+      loadConfig({
+        SLACK_APP_TOKEN: "xapp-test",
+        SLACK_BOT_TOKEN: "xoxb-test",
+        FEISHU_DOMAIN: "lark"
+      } as NodeJS.ProcessEnv)
+    ).toThrowError("Invalid FEISHU_DOMAIN: expected feishu");
+  });
+
+  it("validates Feishu API base URL shape", () => {
+    const baseEnv = {
+      SLACK_APP_TOKEN: "xapp-test",
+      SLACK_BOT_TOKEN: "xoxb-test"
+    };
+
+    expect(loadConfig({
+      ...baseEnv,
+      FEISHU_API_BASE_URL: "https://open.feishu.cn/"
+    } as NodeJS.ProcessEnv).feishuApiBaseUrl).toBe("https://open.feishu.cn");
+
+    expect(() =>
+      loadConfig({
+        ...baseEnv,
+        FEISHU_API_BASE_URL: "https://open.feishu.cn/open-apis/im/v1"
+      } as NodeJS.ProcessEnv)
+    ).toThrowError("Invalid FEISHU_API_BASE_URL: expected origin or /open-apis path");
+
+    expect(() =>
+      loadConfig({
+        ...baseEnv,
+        FEISHU_API_BASE_URL: "https://open.larksuite.com/open-apis"
+      } as NodeJS.ProcessEnv)
+    ).toThrowError("Invalid FEISHU_API_BASE_URL: expected https://open.feishu.cn");
+
+    expect(() =>
+      loadConfig({
+        ...baseEnv,
+        FEISHU_API_BASE_URL: "not-a-url"
+      } as NodeJS.ProcessEnv)
+    ).toThrowError("Invalid FEISHU_API_BASE_URL: expected an absolute URL");
   });
 
   it("loads an explicit host codex home path", () => {
@@ -105,12 +214,14 @@ describe("loadConfig", () => {
       SLACK_BOT_TOKEN: "xoxb-test",
       LOG_LEVEL: "debug",
       LOG_RAW_SLACK_EVENTS: "false",
+      LOG_RAW_FEISHU_EVENTS: "true",
       LOG_RAW_CODEX_RPC: "false",
       LOG_RAW_HTTP_REQUESTS: "true"
     } as NodeJS.ProcessEnv);
 
     expect(config.logLevel).toBe("debug");
     expect(config.logRawSlackEvents).toBe(false);
+    expect(config.logRawFeishuEvents).toBe(true);
     expect(config.logRawCodexRpc).toBe(false);
     expect(config.logRawHttpRequests).toBe(true);
   });

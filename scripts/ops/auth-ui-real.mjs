@@ -492,7 +492,7 @@ function renderPage(options) {
       } else {
         parts.push(
           '<table><thead><tr><th>Session</th><th>Turn</th><th>Updated</th><th>Workspace</th></tr></thead><tbody>' +
-            active.map((session) => '<tr><td class="mono">' + esc(session.sessionKey ?? "—") + '</td><td class="mono">' + esc(session.activeTurnId ?? "—") + '</td><td>' + esc(formatTime(session.updatedAt)) + '</td><td class="mono">' + esc(session.workspacePath ?? "—") + "</td></tr>").join("") +
+            active.map((session) => '<tr><td class="mono">' + esc(session.sessionKey ?? "—") + '</td><td class="mono">' + esc(session.activeTurnId ?? "—") + '</td><td>' + esc(formatTime(session.updatedAt)) + '</td><td class="mono">' + esc(session.workspacePathBasename ?? "—") + "</td></tr>").join("") +
           "</tbody></table>"
         );
       }

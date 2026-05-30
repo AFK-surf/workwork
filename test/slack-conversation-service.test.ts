@@ -3,6 +3,11 @@ import { EventEmitter } from "node:events";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { AppConfig } from "../src/config.js";
+import {
+  CHAT_FILE_SOURCE_REQUIREMENT_MESSAGE,
+  CHAT_INLINE_FILE_CONTENT_REQUIREMENT_MESSAGE,
+  CHAT_INLINE_FILE_FILENAME_REQUIREMENT_MESSAGE
+} from "../src/services/chat/chat-types.js";
 import { SlackConversationService } from "../src/services/slack/slack-conversation-service.js";
 import type { SlackSessionRecord } from "../src/types.js";
 
@@ -142,6 +147,101 @@ describe("SlackConversationService", () => {
       })
     );
     expect(setLastSlackReplyAt).toHaveBeenCalledTimes(1);
+
+    await service.stop();
+  });
+
+  it("describes canonical and alias file source names when Slack file source is ambiguous", async () => {
+    const codex = new EventEmitter();
+    const uploadThreadFile = vi.fn(async () => ({
+      fileId: "F123"
+    }));
+
+    const service = new SlackConversationService({
+      config: TEST_CONFIG,
+      sessions: {} as never,
+      codex: codex as never,
+      slackApi: {
+        uploadThreadFile,
+        setAssistantThreadStatus: vi.fn(),
+        addReaction: vi.fn(),
+        removeReaction: vi.fn()
+      } as never,
+      selfMessageFilter: {} as never
+    });
+
+    await expect(service.postSlackFile({
+      channelId: "C123",
+      rootThreadTs: "111.222"
+    })).rejects.toThrow(CHAT_FILE_SOURCE_REQUIREMENT_MESSAGE);
+    await expect(service.postSlackFile({
+      channelId: "C123",
+      rootThreadTs: "111.222",
+      filePath: "/tmp/report.txt",
+      contentBase64: Buffer.from("hello").toString("base64"),
+      filename: "report.txt"
+    })).rejects.toThrow(CHAT_FILE_SOURCE_REQUIREMENT_MESSAGE);
+
+    expect(uploadThreadFile).not.toHaveBeenCalled();
+
+    await service.stop();
+  });
+
+  it("describes canonical inline content names when Slack inline file filename is missing", async () => {
+    const codex = new EventEmitter();
+    const uploadThreadFile = vi.fn(async () => ({
+      fileId: "F123"
+    }));
+
+    const service = new SlackConversationService({
+      config: TEST_CONFIG,
+      sessions: {} as never,
+      codex: codex as never,
+      slackApi: {
+        uploadThreadFile,
+        setAssistantThreadStatus: vi.fn(),
+        addReaction: vi.fn(),
+        removeReaction: vi.fn()
+      } as never,
+      selfMessageFilter: {} as never
+    });
+
+    await expect(service.postSlackFile({
+      channelId: "C123",
+      rootThreadTs: "111.222",
+      contentBase64: Buffer.from("hello").toString("base64")
+    })).rejects.toThrow(CHAT_INLINE_FILE_FILENAME_REQUIREMENT_MESSAGE);
+    expect(uploadThreadFile).not.toHaveBeenCalled();
+
+    await service.stop();
+  });
+
+  it("describes canonical inline content names when Slack inline file content is invalid", async () => {
+    const codex = new EventEmitter();
+    const uploadThreadFile = vi.fn(async () => ({
+      fileId: "F123"
+    }));
+
+    const service = new SlackConversationService({
+      config: TEST_CONFIG,
+      sessions: {} as never,
+      codex: codex as never,
+      slackApi: {
+        uploadThreadFile,
+        setAssistantThreadStatus: vi.fn(),
+        addReaction: vi.fn(),
+        removeReaction: vi.fn()
+      } as never,
+      selfMessageFilter: {} as never
+    });
+
+    await expect(service.postSlackFile({
+      channelId: "C123",
+      rootThreadTs: "111.222",
+      contentBase64: "!!!!",
+      filename: "report.pdf"
+    })).rejects.toThrow(CHAT_INLINE_FILE_CONTENT_REQUIREMENT_MESSAGE);
+    expect(uploadThreadFile).not.toHaveBeenCalled();
 
     await service.stop();
   });

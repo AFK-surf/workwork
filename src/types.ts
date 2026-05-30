@@ -1,5 +1,10 @@
 export interface SlackSessionRecord {
   readonly key: string;
+  readonly platform?: "slack" | "feishu" | undefined;
+  readonly conversationId?: string | undefined;
+  readonly conversationKind?: "channel" | "group" | "direct" | "thread" | "unknown" | undefined;
+  readonly rootMessageId?: string | undefined;
+  readonly platformThreadId?: string | undefined;
   readonly channelId: string;
   readonly rootThreadTs: string;
   readonly workspacePath: string;
@@ -16,6 +21,12 @@ export interface SlackSessionRecord {
   readonly lastTurnSignalKind?: SlackTurnSignalKind | undefined;
   readonly lastTurnSignalReason?: string | undefined;
   readonly lastTurnSignalAt?: string | undefined;
+  readonly coAuthorCandidateUserIds?: readonly string[] | undefined;
+  readonly coAuthorCandidateRevision?: number | undefined;
+  readonly coAuthorConfirmedUserIds?: readonly string[] | undefined;
+  readonly coAuthorConfirmedRevision?: number | undefined;
+  readonly coAuthorPromptRevision?: number | undefined;
+  readonly coAuthorPromptedAt?: string | undefined;
 }
 
 export type JsonLike =
@@ -91,6 +102,9 @@ export interface PersistedBackgroundJob {
   readonly id: string;
   readonly token: string;
   readonly sessionKey: string;
+  readonly platform?: "slack" | "feishu" | undefined;
+  readonly conversationId?: string | undefined;
+  readonly rootMessageId?: string | undefined;
   readonly channelId: string;
   readonly rootThreadTs: string;
   readonly kind: string;
@@ -141,6 +155,31 @@ export interface SlackUserIdentity {
   readonly username?: string | undefined;
   readonly displayName?: string | undefined;
   readonly realName?: string | undefined;
+  readonly email?: string | undefined;
+}
+
+export type GitHubAuthorMappingSource = "manual" | "slack_inferred";
+export type GitHubAuthorMappingPlatform = "slack" | "feishu";
+
+export interface GitHubAuthorMappingIdentity {
+  readonly platform: GitHubAuthorMappingPlatform;
+  readonly userId: string;
+  readonly mention: string;
+  readonly username?: string | undefined;
+  readonly displayName?: string | undefined;
+  readonly realName?: string | undefined;
+  readonly email?: string | undefined;
+}
+
+export interface GitHubAuthorMappingRecord {
+  readonly platform: GitHubAuthorMappingPlatform;
+  readonly userId: string;
+  readonly slackUserId: string;
+  readonly githubAuthor: string;
+  readonly source: GitHubAuthorMappingSource;
+  readonly identity: GitHubAuthorMappingIdentity;
+  readonly slackIdentity: SlackUserIdentity;
+  readonly updatedAt: string;
 }
 
 export interface SlackBatchInputMessage {

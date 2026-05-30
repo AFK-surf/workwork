@@ -157,4 +157,146 @@ describe("integration routes", () => {
       }
     ]);
   });
+
+  it("accepts MCP call arguments as a JSON string", async () => {
+    const toolCalls: Array<{ server: string; name: string; arguments?: Record<string, unknown> | undefined }> = [];
+    const server = http.createServer(
+      createHttpHandler({
+        adminService: {} as never,
+        bridge: {} as never,
+        isolatedMcp: {
+          listTools: async () => [],
+          callTool: async (input: {
+            server: string;
+            name: string;
+            arguments?: Record<string, unknown> | undefined;
+          }) => {
+            toolCalls.push(input);
+            return {
+              content: [{ type: "text", text: "ok:linear" }],
+              isError: false
+            };
+          }
+        } as never,
+        jobManager: {} as never,
+        config: {
+          serviceName: "test-broker"
+        } as never
+      })
+    );
+
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    cleanups.push(
+      () =>
+        new Promise<void>((resolve, reject) => {
+          server.close((error) => {
+            if (error) {
+              reject(error);
+              return;
+            }
+
+            resolve();
+          });
+        })
+    );
+
+    const address = server.address();
+    if (!address || typeof address === "string") {
+      throw new Error("failed to bind integration route test server");
+    }
+
+    const response = await fetch(`http://127.0.0.1:${address.port}/integrations/mcp-call`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        server: "linear",
+        name: "search",
+        arguments: JSON.stringify({
+          query: "RFC 0001"
+        })
+      })
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      server: "linear",
+      name: "search"
+    });
+    expect(toolCalls).toEqual([
+      {
+        server: "linear",
+        name: "search",
+        arguments: {
+          query: "RFC 0001"
+        }
+      }
+    ]);
+  });
+
+  it("rejects invalid MCP call arguments JSON before delegation", async () => {
+    const toolCalls: unknown[] = [];
+    const server = http.createServer(
+      createHttpHandler({
+        adminService: {} as never,
+        bridge: {} as never,
+        isolatedMcp: {
+          listTools: async () => [],
+          callTool: async (input: unknown) => {
+            toolCalls.push(input);
+            return {
+              content: [{ type: "text", text: "unexpected" }],
+              isError: false
+            };
+          }
+        } as never,
+        jobManager: {} as never,
+        config: {
+          serviceName: "test-broker"
+        } as never
+      })
+    );
+
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    cleanups.push(
+      () =>
+        new Promise<void>((resolve, reject) => {
+          server.close((error) => {
+            if (error) {
+              reject(error);
+              return;
+            }
+
+            resolve();
+          });
+        })
+    );
+
+    const address = server.address();
+    if (!address || typeof address === "string") {
+      throw new Error("failed to bind integration route test server");
+    }
+
+    const response = await fetch(`http://127.0.0.1:${address.port}/integrations/mcp-call`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        server: "notion",
+        name: "search",
+        arguments: "{not json"
+      })
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      ok: false,
+      error: "invalid_json_field",
+      field: "arguments"
+    });
+    expect(toolCalls).toEqual([]);
+  });
 });

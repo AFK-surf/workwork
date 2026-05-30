@@ -59,6 +59,7 @@ async function replaceWithCopy(targetPath: string, sourcePath: string, isDirecto
   if (isDirectory) {
     await fs.cp(sourcePath, targetPath, {
       dereference: true,
+      filter: shouldCopyMirroredPath,
       force: true,
       recursive: true
     });
@@ -66,6 +67,24 @@ async function replaceWithCopy(targetPath: string, sourcePath: string, isDirecto
   }
 
   await fs.copyFile(sourcePath, targetPath);
+}
+
+async function shouldCopyMirroredPath(sourcePath: string): Promise<boolean> {
+  if (path.basename(sourcePath) === ".git") {
+    return false;
+  }
+
+  const stat = await fs.lstat(sourcePath).catch(() => undefined);
+  if (!stat) {
+    return false;
+  }
+
+  return !(
+    stat.isBlockDevice() ||
+    stat.isCharacterDevice() ||
+    stat.isFIFO() ||
+    stat.isSocket()
+  );
 }
 
 async function replaceWithSymlink(targetPath: string, sourcePath: string): Promise<void> {

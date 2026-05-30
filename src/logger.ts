@@ -4,12 +4,13 @@ import path from "node:path";
 import { ensureDir } from "./utils/fs.js";
 
 type LogLevel = "debug" | "info" | "warn" | "error";
-type RawStream = "slack-events" | "codex-rpc" | "http-requests";
+type RawStream = "slack-events" | "feishu-events" | "codex-rpc" | "http-requests";
 
 interface LoggerConfig {
   readonly logDir?: string | undefined;
   readonly level: LogLevel;
   readonly rawSlackEvents: boolean;
+  readonly rawFeishuEvents: boolean;
   readonly rawCodexRpc: boolean;
   readonly rawHttpRequests: boolean;
 }
@@ -25,6 +26,7 @@ let currentConfig: LoggerConfig = {
   logDir: undefined,
   level: process.env.DEBUG ? "debug" : "info",
   rawSlackEvents: false,
+  rawFeishuEvents: false,
   rawCodexRpc: false,
   rawHttpRequests: false
 };
@@ -33,6 +35,10 @@ const writeChains = new Map<string, Promise<void>>();
 
 export function configureLogger(config: LoggerConfig): void {
   currentConfig = config;
+}
+
+export async function flushLogger(): Promise<void> {
+  await Promise.all([...writeChains.values()]);
 }
 
 export const logger = {
@@ -154,6 +160,8 @@ function isRawStreamEnabled(stream: RawStream): boolean {
   switch (stream) {
     case "slack-events":
       return currentConfig.rawSlackEvents;
+    case "feishu-events":
+      return currentConfig.rawFeishuEvents;
     case "codex-rpc":
       return currentConfig.rawCodexRpc;
     case "http-requests":

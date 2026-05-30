@@ -12,6 +12,19 @@ export interface AppConfig {
   readonly slackMissedThreadRecoveryIntervalMs: number;
   readonly slackProgressReminderAfterMs: number;
   readonly slackProgressReminderRepeatMs: number;
+  readonly feishuEnabled: boolean;
+  readonly feishuAppId?: string | undefined;
+  readonly feishuAppSecret?: string | undefined;
+  readonly feishuBotOpenId?: string | undefined;
+  readonly feishuBotUserId?: string | undefined;
+  readonly feishuBotUnionId?: string | undefined;
+  readonly feishuApiBaseUrl: string;
+  readonly feishuDomain: FeishuDomain;
+  readonly feishuInitialThreadHistoryCount: number;
+  readonly feishuHistoryApiMaxLimit: number;
+  readonly feishuGroupMessageMode: FeishuGroupMessageMode;
+  readonly feishuAllMessageDeliveryVerified: boolean;
+  readonly feishuStartupRequired: boolean;
   readonly stateDir: string;
   readonly jobsRoot: string;
   readonly sessionsRoot: string;
@@ -48,11 +61,16 @@ export interface AppConfig {
   readonly logDir: string;
   readonly logLevel: "debug" | "info" | "warn" | "error";
   readonly logRawSlackEvents: boolean;
+  readonly logRawFeishuEvents: boolean;
   readonly logRawCodexRpc: boolean;
   readonly logRawHttpRequests: boolean;
 }
 
+export type FeishuDomain = "feishu";
+export type FeishuGroupMessageMode = "all" | "at_only";
+
 const ALL_CODEX_MCP_SERVERS = "*";
+const CHINA_FEISHU_OPEN_PLATFORM_ORIGIN = "https://open.feishu.cn";
 
 function getRequired(env: NodeJS.ProcessEnv, name: string): string {
   const value = env[name];
@@ -133,6 +151,59 @@ function getLogLevel(env: NodeJS.ProcessEnv, name: string, fallback: AppConfig["
   throw new Error(`Invalid log level environment variable: ${name}`);
 }
 
+function getFeishuDomain(env: NodeJS.ProcessEnv): FeishuDomain {
+  const value = env.FEISHU_DOMAIN;
+  if (!value) {
+    return "feishu";
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "feishu") {
+    return normalized;
+  }
+
+  throw new Error("Invalid FEISHU_DOMAIN: expected feishu");
+}
+
+function getFeishuGroupMessageMode(env: NodeJS.ProcessEnv): FeishuGroupMessageMode {
+  const value = env.FEISHU_GROUP_MESSAGE_MODE;
+  if (!value) {
+    return "all";
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "all" || normalized === "at_only") {
+    return normalized;
+  }
+
+  throw new Error("Invalid FEISHU_GROUP_MESSAGE_MODE: expected all or at_only");
+}
+
+function getFeishuApiBaseUrl(env: NodeJS.ProcessEnv): string {
+  const value = env.FEISHU_API_BASE_URL ?? "https://open.feishu.cn/open-apis";
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error("Invalid FEISHU_API_BASE_URL: expected an absolute URL");
+  }
+
+  const pathname = url.pathname.replace(/\/+$/u, "");
+  if (pathname && pathname !== "/open-apis") {
+    throw new Error("Invalid FEISHU_API_BASE_URL: expected origin or /open-apis path");
+  }
+
+  if (url.origin !== CHINA_FEISHU_OPEN_PLATFORM_ORIGIN) {
+    throw new Error("Invalid FEISHU_API_BASE_URL: expected https://open.feishu.cn");
+  }
+
+  if (url.search || url.hash) {
+    throw new Error("Invalid FEISHU_API_BASE_URL: query and hash are not supported");
+  }
+
+  return pathname === "/open-apis" ? `${url.origin}/open-apis` : url.origin;
+}
+
 export function loadConfig(env = process.env): AppConfig {
   const serviceRoot = env.SERVICE_ROOT ? path.resolve(env.SERVICE_ROOT) : undefined;
   const dataRoot = env.DATA_ROOT ? path.resolve(env.DATA_ROOT) : path.resolve(".data");
@@ -145,6 +216,26 @@ export function loadConfig(env = process.env): AppConfig {
   const port = getNumber(env, "PORT", 3000);
   const workerPort = getNumber(env, "WORKER_PORT", port);
   const workerBindHost = env.WORKER_BIND_HOST?.trim() || "127.0.0.1";
+  const feishuEnabled = getBoolean(env, "FEISHU_ENABLED", false);
+  const feishuAppId = getOptional(env, "FEISHU_APP_ID");
+  const feishuAppSecret = getOptional(env, "FEISHU_APP_SECRET");
+  const feishuBotOpenId = getOptional(env, "FEISHU_BOT_OPEN_ID");
+  const feishuBotUserId = getOptional(env, "FEISHU_BOT_USER_ID");
+  const feishuBotUnionId = getOptional(env, "FEISHU_BOT_UNION_ID");
+
+  if (feishuEnabled && !feishuAppId) {
+    throw new Error("Missing required environment variable: FEISHU_APP_ID");
+  }
+
+  if (feishuEnabled && !feishuAppSecret) {
+    throw new Error("Missing required environment variable: FEISHU_APP_SECRET");
+  }
+
+  if (feishuEnabled && !feishuBotOpenId && !feishuBotUserId && !feishuBotUnionId) {
+    throw new Error(
+      "Missing required environment variable: one of FEISHU_BOT_OPEN_ID, FEISHU_BOT_USER_ID, FEISHU_BOT_UNION_ID"
+    );
+  }
 
   const isolatedMcpServers = getCsvList(env, "ISOLATED_MCP_SERVERS");
   const effectiveIsolatedMcpServers =
@@ -171,6 +262,19 @@ export function loadConfig(env = process.env): AppConfig {
     ),
     slackProgressReminderAfterMs: getNumber(env, "SLACK_PROGRESS_REMINDER_AFTER_MS", 120_000),
     slackProgressReminderRepeatMs: getNumber(env, "SLACK_PROGRESS_REMINDER_REPEAT_MS", 120_000),
+    feishuEnabled,
+    feishuAppId,
+    feishuAppSecret,
+    feishuBotOpenId,
+    feishuBotUserId,
+    feishuBotUnionId,
+    feishuApiBaseUrl: getFeishuApiBaseUrl(env),
+    feishuDomain: getFeishuDomain(env),
+    feishuInitialThreadHistoryCount: getNumber(env, "FEISHU_INITIAL_THREAD_HISTORY_COUNT", 8),
+    feishuHistoryApiMaxLimit: getNumber(env, "FEISHU_HISTORY_API_MAX_LIMIT", 50),
+    feishuGroupMessageMode: getFeishuGroupMessageMode(env),
+    feishuAllMessageDeliveryVerified: getBoolean(env, "FEISHU_ALL_MESSAGE_DELIVERY_VERIFIED", false),
+    feishuStartupRequired: getBoolean(env, "FEISHU_STARTUP_REQUIRED", true),
     stateDir,
     jobsRoot,
     sessionsRoot,
@@ -207,6 +311,7 @@ export function loadConfig(env = process.env): AppConfig {
     logDir,
     logLevel: getLogLevel(env, "LOG_LEVEL", "info"),
     logRawSlackEvents: getBoolean(env, "LOG_RAW_SLACK_EVENTS", true),
+    logRawFeishuEvents: getBoolean(env, "LOG_RAW_FEISHU_EVENTS", false),
     logRawCodexRpc: getBoolean(env, "LOG_RAW_CODEX_RPC", true),
     logRawHttpRequests: getBoolean(env, "LOG_RAW_HTTP_REQUESTS", true)
   };

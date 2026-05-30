@@ -1,14 +1,15 @@
 # slack-codex-broker
 
-Minimal Slack-to-Codex bridge for multi-repository workflows.
+Slack + China Feishu bridge for routing chat sessions into Codex app-server workflows.
 
-It connects to Slack over Socket Mode, starts or resumes one Codex app-server thread per Slack thread, and gives each Slack session an isolated workspace directory. The Codex session always starts in that neutral workspace instead of being pinned to a specific repository. If code work is needed, the agent is expected to use a shared `repos/` cache for canonical clones and create any task-specific git worktrees under the current session workspace. Normal thread replies continue the same Codex thread. Sending `-stop` in the thread interrupts the current Codex turn.
+It connects to Slack over Socket Mode and, when `FEISHU_ENABLED=true`, to China Feishu over long connection in the same broker process. Each Slack thread or Feishu group session starts or resumes one Codex app-server thread and gets an isolated workspace directory. The Codex session always starts in that neutral workspace instead of being pinned to a specific repository. If code work is needed, the agent is expected to use a shared `repos/` cache for canonical clones and create any task-specific git worktrees under the current session workspace. Normal thread or group follow-up replies continue the same Codex thread when the platform supports that context. Sending `-stop` in the active session interrupts the current Codex turn.
 
-On the first `@bot` inside an existing Slack thread, the broker backfills a bounded slice of earlier thread history into Codex. If Codex needs older context than the initial backfill, it can query the broker's local thread-history HTTP API from inside its shell.
+On the first `@bot` inside an existing Slack thread, the broker backfills a bounded slice of earlier thread history into Codex. Feishu group sessions use bounded history and recovery when the needed permissions/cursors are available, and surface degraded context when they are not. If Codex needs older context than the initial backfill, it can query the broker's local chat-history HTTP API from inside its shell.
 
 ## What It Expects
 
 - A Slack app using Socket Mode
+- Optional China Feishu self-built app for dual-platform rollout
 - Codex authentication via either:
   - `OPENAI_API_KEY`
   - a mounted `auth.json` plus `CODEX_AUTH_JSON_PATH`
@@ -18,6 +19,7 @@ On the first `@bot` inside an existing Slack thread, the broker backfills a boun
 Create a Slack app with:
 
 - Socket Mode enabled
+- Interactivity enabled
 - App-level token with `connections:write`
 - Bot token scopes:
   - `app_mentions:read`
@@ -26,6 +28,7 @@ Create a Slack app with:
   - `files:read` if you want Codex to receive image attachments from Slack messages
   - `files:write` if you want Codex to upload images/files back into Slack threads
   - `users:read` if you want Codex to see Slack display names instead of only raw user IDs
+  - `users:read.email` if you want the broker to infer GitHub co-author mappings from Slack profile email
 
 Event subscriptions needed for the current broker flow:
 
@@ -35,21 +38,47 @@ Event subscriptions needed for the current broker flow:
 
 If you want to support private channels or DMs, add the corresponding `groups:history`, `im:history`, or `mpim:history` scopes plus matching message events.
 
+The broker's Slack co-author flow uses Socket Mode interactive envelopes, thread ephemerals, and modals. With Socket Mode enabled, you do not need a separate public interactivity Request URL for this flow.
+
+## Feishu Setup
+
+China Feishu support is feature-flagged and runs beside Slack in the same broker process. Use [docs/feishu-setup.md](docs/feishu-setup.md) for the app setup, permission request, environment variables, and real smoke checklist.
+
 ## Environment
 
 Copy `.env.example` to `.env` and fill in:
+
+Slack:
 
 - `SLACK_APP_TOKEN`
 - `SLACK_BOT_TOKEN`
 - optional `SLACK_INITIAL_THREAD_HISTORY_COUNT`
 - optional `SLACK_HISTORY_API_MAX_LIMIT`
+
+Feishu rollout:
+
+- `FEISHU_ENABLED=true` when enabling the China Feishu long-connection bridge
+- `FEISHU_APP_ID`
+- `FEISHU_APP_SECRET`
+- at least one Feishu bot identity: `FEISHU_BOT_OPEN_ID`, `FEISHU_BOT_USER_ID`, or `FEISHU_BOT_UNION_ID`
+- `FEISHU_GROUP_MESSAGE_MODE=all` for production parity; `at_only` is degraded
+- `FEISHU_ALL_MESSAGE_DELIVERY_VERIFIED=true` only after the real non-@ follow-up smoke passes
+- optional `FEISHU_INITIAL_THREAD_HISTORY_COUNT`
+- optional `FEISHU_HISTORY_API_MAX_LIMIT`
+
+Service storage and logging:
+
 - optional `SESSIONS_ROOT`
 - optional `REPOS_ROOT`
 - optional `LOG_DIR`
 - optional `LOG_LEVEL`
 - optional `LOG_RAW_SLACK_EVENTS`
+- keep `LOG_RAW_FEISHU_EVENTS=false` unless collecting a focused, redacted fixture
 - optional `LOG_RAW_CODEX_RPC`
 - optional `LOG_RAW_HTTP_REQUESTS`
+
+Codex runtime:
+
 - one Codex auth mode
 - optional host Codex home mount if you want the container to inherit your global `~/.codex` memory/instructions
 
@@ -141,12 +170,17 @@ pnpm ops:auth:profiles use backup-account
 pnpm ops:ui:real
 ```
 
-`ops:rollout:real` reuses the current `slack-codex-broker-real` container's env vars and bind mounts, refuses to restart while active turns exist unless you pass `--allow-active`, rebuilds the image, recreates the container, and then runs the fixed post-update checks. Each rollout also writes sanitized metadata plus pre-rollout logs under `.backups/rollouts/`.
-`ops:status:real` prints a structured runtime snapshot for the live container, including health, active sessions, open inbound messages, background jobs, and recent broker logs. Use `--open-inbound-limit` and `--log-lines` to tune output volume.
-`ops:auth:real status` prints the live container's Codex auth files, runtime account identity, any quota/usage fields exposed by `account/read`, plus the current session state snapshot.
-`ops:auth:profiles` manages a local auth-profile directory under the live data root. The host auth is kept as a reference copy, while the docker auth points at a selectable `active` profile. Use `bootstrap` once, then `import-host --name <profile>` or `import --name <profile> --from <path>` to add more docker-side auth profiles, and `use <profile>` to switch the live container.
+`ops:rollout:real` reuses the current `slack-codex-broker-real` container's env vars and bind mounts, refuses to restart while active turns exist unless you pass `--allow-active`, rebuilds the image, recreates the container, and then runs the fixed post-update checks. When the inspected container has `FEISHU_ENABLED=true`, rollout also runs Feishu preflight for credentials, bot identity, China Feishu mode, and logging posture, then writes `feishu-preflight-report.json` plus `feishu-preflight-summary.md` under the rollout backup directory; use `--skip-feishu-preflight` only for a non-parity emergency rollout. Each rollout also writes sanitized metadata plus a sanitized pre-rollout log snapshot under `.backups/rollouts/`; metadata recursively redacts unsafe string fields while preserving safe posture text such as `FEISHU_APP_SECRET=missing`, and the log snapshot allowlists structured event/meta fields and redacts non-structured lines instead of copying raw Docker log text. Rollout JSON and metadata use repo-relative backup coordinates instead of full host filesystem paths.
+`ops:check:real` verifies the live container health endpoints, embedded Codex readiness, runtime paths, startup log markers, and a sanitized `/admin/api/status` platform-health summary for Slack and Feishu.
+`ops:status:real` prints a structured runtime snapshot for the live container, including health plus sanitized active sessions, open inbound message summaries, background jobs, and allowlisted recent broker logs. Raw message bodies, job tokens/scripts, malformed log lines, and non-allowlisted log metadata are not echoed; use `--open-inbound-limit` and `--log-lines` to tune output volume.
+`ops:auth:real status` prints the live container's Codex auth files, runtime account identity, any quota/usage fields exposed by `account/read`, plus the current session state snapshot. Operator-facing auth status and replacement output summarize filesystem paths instead of echoing full host paths.
+`ops:auth:profiles` manages a local auth-profile directory under the live data root. The host auth is kept as a reference copy, while the docker auth points at a selectable `active` profile. Use `bootstrap` once, then `import-host --name <profile>` or `import --name <profile> --from <path>` to add more docker-side auth profiles, and `use <profile>` to switch the live container. Profile command output also summarizes auth/profile paths without full host filesystem paths.
 `ops:ui:real` starts a local-only admin page on `127.0.0.1` so you can inspect sessions/account state and upload a replacement `auth.json` without using CLI flags directly.
 `ops:resume:real` manually re-queues a stuck Slack session that still has pending inbound backlog but no active Codex turn. Use it as an operator fallback while debugging a broken thread.
+
+## Local Verification
+
+Use `pnpm test` for the full local suite. RFC 0001's Feishu mock e2e gate is exposed as `pnpm test:e2e:feishu-mock`; it runs the Feishu bridge, Feishu long-connection adapter, fixture replay, and dual-platform runtime mock tests that prove group @ start/resume, non-@ follow-up, private/self ignore, stop, history recovery, text/rich/card/file behavior, co-author card callbacks, and Slack+Feishu same-process readiness without requiring a real tenant. Run `pnpm rfc:feishu-audit` to summarize local RFC assets, implementation surfaces, test slices, behavior evidence probes, package-script gates, preflight readiness, and the remaining real-tenant evidence gaps without sending Feishu messages. `pnpm rfc:feishu-audit:local` exits on the local gate only for CI/local readiness; its JSON still keeps `ok=false` until real tenant gates pass. Run `pnpm manual:feishu-smoke -- --preflight --env-file .env` before rollout when credentials live in a local env file; the `--` keeps Node's own `--env-file` flag from intercepting the smoke-checker argument, value flags also accept `--flag=value`, missing values fail before another flag is swallowed, and the checker reports secret-bearing values only as set/missing. Real tenant parity still requires `pnpm manual:feishu-smoke` after the Feishu app setup actions are performed.
 
 ## Run On a macOS VM
 
@@ -232,10 +266,12 @@ Because old releases stay on disk, rollback is a pointer switch instead of a reb
 
 ```text
 GET /admin
-GET /admin/api/status
+GET /admin/api/status?platform=slack|feishu
 POST /admin/api/auth-profiles
 POST /admin/api/auth-profiles/:name/activate
 DELETE /admin/api/auth-profiles/:name
+POST /admin/api/github-authors
+DELETE /admin/api/github-authors/:userId?platform=slack|feishu
 POST /admin/api/deploy
 POST /admin/api/rollback
 ```
@@ -247,6 +283,8 @@ Typical first-run flow:
 3. Activate the profile you want the worker to use.
 4. Later, deploy a commit / branch / tag from the Deploy panel.
 5. Roll back from the same panel when needed.
+
+The same admin page also exposes a `GitHub Authors` panel for manually maintaining platform-aware `Slack/Feishu user -> GitHub author` mappings. Manual Slack entries override Slack-inferred mappings; Feishu mappings are manual and keyed by the Feishu user identity used in that session. `GET /admin/api/status?platform=...` filters sessions, jobs, and GitHub author mappings to that platform while still returning independent Slack/Feishu platform health; allowlisted `recentBrokerLogs` remain cross-platform so Feishu smoke can prove same-runtime Slack readiness and reply evidence. Platform query/body values must be `slack` or `feishu`; invalid values return 400 `invalid_platform` instead of falling back to Slack.
 
 If `BROKER_ADMIN_TOKEN` is set, `/admin/api/*` requires that token via `x-admin-token` or `Authorization: Bearer ...`. If it is unset, the admin API is still enabled, so only expose the broker port in environments you trust.
 
@@ -300,34 +338,44 @@ Default layout under `LOG_DIR`:
   Per-background-job fan-out log.
 - `raw/slack-events.jsonl`
   Raw Socket Mode envelopes from Slack.
+- `raw/feishu-events.jsonl`
+  Raw Feishu event envelopes. Disabled by default; enable only for focused
+  fixture capture/debugging because normal structured logs must not become
+  message archives.
 - `raw/codex-rpc.jsonl`
   Raw Codex app-server RPC requests, responses, and notifications.
 - `raw/http-requests.jsonl`
-  Raw local broker HTTP traffic for `/slack/*` and `/jobs/*`.
+  Raw local broker HTTP traffic for `/slack/*`, `/chat/*`, `/jobs/*`, and `/integrations/*`.
 
 Supported environment knobs:
 
 - `LOG_LEVEL=debug|info|warn|error`
 - `LOG_RAW_SLACK_EVENTS=true|false`
+- `LOG_RAW_FEISHU_EVENTS=true|false`
 - `LOG_RAW_CODEX_RPC=true|false`
 - `LOG_RAW_HTTP_REQUESTS=true|false`
 
 Notes:
 
 - Raw logs are intentionally verbose and can grow quickly during long sessions.
-- `/slack/post-file` request logging redacts inline `content_base64` payloads into a size marker instead of writing the full blob.
+- `/slack/*` and `/chat/*` request logging redact message text, state reasons, file comments/alt text, rich/card payloads, and inline `content_base64` payloads into size markers instead of writing chat bodies or blobs.
+- `/jobs/*` request logging redacts job scripts, callback tokens, summaries, details, and errors before writing raw HTTP JSONL.
+- `/integrations/*` request logging redacts MCP call `arguments` before writing raw HTTP JSONL.
 - Session and job log files are written independently, so one noisy thread no longer forces the entire broker state or log history into one giant file.
 
 ## Current Interaction Model
 
-- First `@bot ...` in a thread: create or resume the session, ensure the session workspace exists, send the message to Codex
-- First `@bot ...` inside an already active human thread: also backfill the most recent earlier thread messages before that mention
-- Later plain thread replies: continue the same Codex thread
-- Direct message root message: create a session keyed by that DM thread and send it to Codex
-- `-stop`: interrupt the current Codex turn
+- Slack first `@bot ...` in a thread: create or resume the session, ensure the session workspace exists, send the message to Codex
+- Slack first `@bot ...` inside an already active human thread: also backfill the most recent earlier thread messages before that mention
+- Slack later plain thread replies: continue the same Codex thread
+- Slack direct message root message: create a session keyed by that DM thread and send it to Codex
+- Feishu group `@bot ...`: create or resume a group session; private chats are ignored
+- Feishu non-@ group follow-ups: continue an active group session only in `FEISHU_GROUP_MESSAGE_MODE=all`; `at_only` is a visible degraded mode
+- Feishu rich text, cards, images, and files: keep structured/raw payload references and visible transfer status; image/file transfer is bounded by the Feishu limits in [docs/feishu-setup.md](docs/feishu-setup.md)
+- `-stop`: interrupt the current Codex turn for the active platform session
 - If the task needs code, Codex should use `/app/.data/repos` for canonical clones and create any worktrees or task directories inside the current session workspace
 
-## Slack Thread History API
+## Thread History APIs
 
 The broker exposes a local-only helper endpoint on the same port as the health check:
 
@@ -340,17 +388,28 @@ Query params:
 - `channel_id` (required)
 - `thread_ts` (required)
 - `before_ts` (optional, exclusive upper bound)
-- `limit` (optional, clamped by `SLACK_HISTORY_API_MAX_LIMIT`)
+- `limit` (optional positive integer, clamped by `SLACK_HISTORY_API_MAX_LIMIT`; invalid values return 400 `invalid_limit`)
 - `channel_type` (optional)
-- `format=text|json` (default `json`)
+- `format=text|json` (default `json`; invalid values return 400 `invalid_format`)
 
 This is meant for Codex itself to pull older Slack context when the initial backfill window is not enough.
 
-## Slack Post APIs
+The generic chat-history endpoint uses platform coordinates and also supports Feishu bounded history:
 
-The broker exposes two local-only delivery endpoints for Codex:
+```bash
+curl "http://127.0.0.1:3000/chat/thread-history?platform=feishu&conversation_id=oc_xxx&root_message_id=om_xxx&before_cursor=page_token&limit=20&format=json"
+```
 
-### Post text
+For Feishu, `before_cursor` is passed to the Open Platform history API as `page_token`; JSON responses include `hasMore` and `nextCursor` when another bounded page is available.
+Generic chat history `limit` uses the same positive-integer validation and is clamped by the target platform's max history limit. Generic chat history `format` uses the same `text|json` validation before broker delegation.
+
+## Post APIs
+
+The broker exposes Slack compatibility endpoints and generic platform-aware chat endpoints for Codex. Prefer `/chat/*` when the session already has platform coordinates; `/slack/*` remains available for Slack compatibility.
+
+Generic `/chat/*` JSON/query contracts use canonical `conversationId` and `rootMessageId` fields. The broker also accepts `conversation_id` and `root_message_id` aliases for curl-friendly examples. Invalid `platform` values return 400 `invalid_platform` with allowed values `slack` and `feishu`, rather than being reported as missing coordinates. Generic file uploads use canonical `filePath` or `contentBase64`, with `file_path` and `content_base64` aliases accepted and named in validation errors. Inline `contentBase64`/`content_base64` uploads require `filename` and must decode to non-empty file content before Slack or Feishu upload is attempted.
+
+### Post Slack text
 
 ```bash
 curl -sS -X POST http://127.0.0.1:3000/slack/post-message \
@@ -360,7 +419,17 @@ curl -sS -X POST http://127.0.0.1:3000/slack/post-message \
 
 `text` accepts normal Markdown/markdownish input. The broker converts it to Slack `mrkdwn` before posting.
 
-### Upload a local image or file
+### Post platform-aware chat text
+
+```bash
+curl -sS -X POST http://127.0.0.1:3000/chat/post-message \
+  -H 'content-type: application/json' \
+  -d '{"platform":"feishu","conversation_id":"oc_xxx","root_message_id":"om_xxx","format":"markdown","text":"working on it"}'
+```
+
+For Slack, `/chat/post-message` delegates to the Slack delivery path. For Feishu, `format=markdown` or `format=rich_text` is rendered as a Feishu `post`; `format=card` sends an interactive card when `card` JSON is supplied, with safe text fallback handled by the bridge. `richText`/`rich_text` and `card` can be structured JSON values or JSON strings; invalid JSON strings return 400 with only the field name, not the raw payload.
+
+### Upload a local image or file to Slack
 
 ```bash
 curl -sS -X POST http://127.0.0.1:3000/slack/post-file \
@@ -371,7 +440,7 @@ curl -sS -X POST http://127.0.0.1:3000/slack/post-file \
 `/slack/post-file` accepts either:
 
 - `file_path` pointing at a local file visible to the broker process
-- or `content_base64` plus `filename`
+- or non-empty `content_base64` plus `filename`
 
 Optional fields:
 
@@ -382,6 +451,30 @@ Optional fields:
 - `content_type`
 
 `initial_comment` accepts normal Markdown/markdownish input and is converted to Slack `mrkdwn` before upload completion.
+
+### Upload a platform-aware chat file
+
+```bash
+curl -sS -X POST http://127.0.0.1:3000/chat/post-file \
+  -H 'content-type: application/json' \
+  -d '{"platform":"feishu","conversation_id":"oc_xxx","root_message_id":"om_xxx","content_base64":"...","filename":"report.pdf","content_type":"application/pdf","initial_comment":"latest report"}'
+```
+
+For Feishu, outbound message images up to 10 MB are uploaded as image messages. Larger outbound images fall back to file upload when still within the 30 MB file/resource limit; larger transfers are rejected locally before posting or uploading.
+
+## Background Job API
+
+Long-running watcher jobs can be registered against generic chat coordinates:
+
+```bash
+curl -sS -X POST http://127.0.0.1:3000/jobs/register \
+  -H 'content-type: application/json' \
+  -d '{"platform":"feishu","conversation_id":"oc_xxx","root_message_id":"om_xxx","kind":"watch_ci","cwd":".","script":"node \"$BROKER_JOB_HELPER\" event --kind state_changed --summary ready"}'
+```
+
+`/jobs/register` also accepts legacy Slack `channel_id` and `thread_ts` aliases only for Slack compatibility when `platform` is omitted or set to `slack`; Feishu jobs must use generic `conversationId`/`rootMessageId` coordinates. Invalid generic job `platform` values return 400 `invalid_platform` before coordinate validation. Registered jobs receive `CHAT_PLATFORM`, `CHAT_CONVERSATION_ID`, and `CHAT_ROOT_MESSAGE_ID`; Slack jobs also receive `SLACK_CHANNEL_ID` and `SLACK_THREAD_TS` for compatibility.
+
+Job callback `detailsJson`/`details_json` fields and `/integrations/mcp-call` `arguments` can be structured JSON values or JSON strings. Invalid JSON strings return 400 with only the field name, not the raw payload.
 
 ## Slack Recovery API
 

@@ -392,17 +392,25 @@ export class StateStore {
   }
 
   #normalizeSession(session: Partial<SlackSessionRecord>): SlackSessionRecord {
+    const platform = normalizePlatform(session.platform);
+    const channelId = String(session.channelId ?? session.conversationId);
+    const rootThreadTs = String(session.rootThreadTs ?? session.rootMessageId);
     const workspacePath = session.workspacePath
       ? String(session.workspacePath)
       : path.join(
         this.#sessionsRoot,
-        normalizeSessionDirectoryName(String(session.channelId), String(session.rootThreadTs)),
+        normalizeSessionDirectoryName(channelId, rootThreadTs),
         "workspace"
       );
     return {
       key: String(session.key),
-      channelId: String(session.channelId),
-      rootThreadTs: String(session.rootThreadTs),
+      platform,
+      conversationId: typeof session.conversationId === "string" ? session.conversationId : channelId,
+      conversationKind: normalizeConversationKind(session.conversationKind),
+      rootMessageId: typeof session.rootMessageId === "string" ? session.rootMessageId : rootThreadTs,
+      platformThreadId: typeof session.platformThreadId === "string" ? session.platformThreadId : undefined,
+      channelId,
+      rootThreadTs,
       workspacePath,
       createdAt: String(session.createdAt),
       updatedAt: String(session.updatedAt),
@@ -416,7 +424,14 @@ export class StateStore {
       lastTurnSignalTurnId: session.lastTurnSignalTurnId,
       lastTurnSignalKind: session.lastTurnSignalKind,
       lastTurnSignalReason: session.lastTurnSignalReason,
-      lastTurnSignalAt: session.lastTurnSignalAt
+      lastTurnSignalAt: session.lastTurnSignalAt,
+      coAuthorCandidateUserIds: normalizeStringArray(session.coAuthorCandidateUserIds),
+      coAuthorCandidateRevision: normalizeFiniteNumber(session.coAuthorCandidateRevision),
+      coAuthorConfirmedUserIds: normalizeStringArray(session.coAuthorConfirmedUserIds),
+      coAuthorConfirmedRevision: normalizeFiniteNumber(session.coAuthorConfirmedRevision),
+      coAuthorPromptRevision: normalizeFiniteNumber(session.coAuthorPromptRevision),
+      coAuthorPromptedAt:
+        typeof session.coAuthorPromptedAt === "string" ? session.coAuthorPromptedAt : undefined
     };
   }
 
@@ -473,6 +488,9 @@ export class StateStore {
       id: String(raw.id),
       token: String(raw.token),
       sessionKey: String(raw.sessionKey),
+      platform: normalizePlatform(raw.platform),
+      conversationId: String(raw.conversationId ?? raw.channelId),
+      rootMessageId: String(raw.rootMessageId ?? raw.rootThreadTs),
       channelId: String(raw.channelId),
       rootThreadTs: String(raw.rootThreadTs),
       kind: String(raw.kind),
@@ -504,6 +522,52 @@ function normalizeSessionDirectoryName(channelId: string, rootThreadTs: string):
   return `${channelId}-${rootThreadTs}`.replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 }
 
+function normalizePlatform(value: unknown): "slack" | "feishu" {
+  return value === "feishu" ? "feishu" : "slack";
+}
+
+function normalizeConversationKind(
+  value: unknown
+): "channel" | "group" | "direct" | "thread" | "unknown" | undefined {
+  if (
+    value === "channel" ||
+    value === "group" ||
+    value === "direct" ||
+    value === "thread" ||
+    value === "unknown"
+  ) {
+    return value;
+  }
+
+  return undefined;
+}
+
 function encodeKey(value: string): string {
   return Buffer.from(value, "utf8").toString("base64url");
+}
+
+function normalizeStringArray(value: unknown): readonly string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const normalized = value
+    .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+    .filter(Boolean);
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function normalizeFiniteNumber(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+
+  return undefined;
 }

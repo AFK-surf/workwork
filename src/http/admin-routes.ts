@@ -2,6 +2,7 @@ import http from "node:http";
 import { URL } from "node:url";
 
 import type { AppConfig } from "../config.js";
+import { CHAT_PLATFORM_VALUES, type ChatPlatform } from "../services/chat/chat-types.js";
 import type { AdminService } from "../services/admin-service.js";
 import { readJsonBody, readString, respondJson } from "./common.js";
 
@@ -36,7 +37,18 @@ export async function handleAdminRequest(
   }
 
   if (method === "GET" && url.pathname === "/admin/api/status") {
-    respondJson(response, 200, await options.adminService.getStatus());
+    const platformParam = url.searchParams.get("platform");
+    const platform = readAdminPlatform(platformParam);
+    if (isInvalidAdminPlatformValue(platformParam)) {
+      respondJson(response, 400, {
+        ok: false,
+        error: "invalid_platform",
+        allowed: CHAT_PLATFORM_VALUES
+      });
+      return true;
+    }
+
+    respondJson(response, 200, await options.adminService.getStatus(platform ? { platform } : undefined));
     return true;
   }
 
@@ -61,6 +73,44 @@ export async function handleAdminRequest(
       options.adminService.addAuthProfile({
         name,
         authJsonContent
+      })
+    );
+    return true;
+  }
+
+  if (method === "POST" && url.pathname === "/admin/api/github-authors") {
+    const body = await readAdminBody(request, response);
+    if (!body) {
+      return true;
+    }
+
+    const platform = readAdminPlatform(body.platform);
+    if (isInvalidAdminPlatformValue(body.platform)) {
+      respondJson(response, 400, {
+        ok: false,
+        error: "invalid_platform",
+        allowed: CHAT_PLATFORM_VALUES
+      });
+      return true;
+    }
+
+    const userId = readString(body.user_id) ?? readString(body.slack_user_id);
+    const githubAuthor = readString(body.github_author);
+    if (!userId || !githubAuthor) {
+      respondJson(response, 400, {
+        ok: false,
+        error: "missing_required_body",
+        required: ["user_id or slack_user_id", "github_author"]
+      });
+      return true;
+    }
+
+    await runAdminOperation(response, () =>
+      options.adminService.upsertGitHubAuthorMapping({
+        ...(platform ? { platform } : {}),
+        ...(readString(body.user_id) ? { userId } : {}),
+        slackUserId: userId,
+        githubAuthor
       })
     );
     return true;
@@ -136,6 +186,32 @@ export async function handleAdminRequest(
     return true;
   }
 
+  if (method === "DELETE" && url.pathname.startsWith("/admin/api/github-authors/")) {
+    const platformParam = url.searchParams.get("platform");
+    const platform = readAdminPlatform(platformParam);
+    const userId = decodeURIComponent(url.pathname.slice("/admin/api/github-authors/".length));
+    if (!userId || userId.includes("/")) {
+      return false;
+    }
+
+    if (isInvalidAdminPlatformValue(platformParam)) {
+      respondJson(response, 400, {
+        ok: false,
+        error: "invalid_platform",
+        allowed: CHAT_PLATFORM_VALUES
+      });
+      return true;
+    }
+
+    await runAdminOperation(response, () =>
+      options.adminService.deleteGitHubAuthorMapping({
+        ...(platform ? { platform } : {}),
+        slackUserId: userId
+      })
+    );
+    return true;
+  }
+
   return false;
 }
 
@@ -184,6 +260,14 @@ function isAuthorizedAdminRequest(request: http.IncomingMessage, config: AppConf
   }
 
   return false;
+}
+
+function readAdminPlatform(value: unknown): ChatPlatform | undefined {
+  return value === "slack" || value === "feishu" ? value : undefined;
+}
+
+function isInvalidAdminPlatformValue(value: unknown): boolean {
+  return value != null && value !== "" && !readAdminPlatform(value);
 }
 
 function renderAdminPage(options: {
@@ -455,6 +539,8 @@ function renderAdminPage(options: {
             <input id="session-search" type="search" placeholder="FILTER SESSIONS..." />
             <select id="session-filter">
               <option value="all">ALL</option>
+              <option value="platform:slack">SLACK</option>
+              <option value="platform:feishu">FEISHU</option>
               <option value="active">ACTIVE</option>
               <option value="inbound">INBOUND</option>
               <option value="jobs">JOBS</option>
@@ -463,7 +549,7 @@ function renderAdminPage(options: {
           </div>
           <div class="session-table-header">
             <div>Session Key / Channel</div>
-            <div>Status / Slack</div>
+            <div>Status / Platform</div>
             <div>Inbound / Jobs</div>
             <div>Current Lead</div>
             <div>Action</div>
@@ -487,6 +573,18 @@ function renderAdminPage(options: {
           </div>
           <div id="auth-profiles-panel" style="padding:12px; display:grid; gap:8px;"></div>
           <div id="replace-status" style="padding:8px; font-size:10px;"></div>
+        </section>
+
+        <section>
+          <div class="section-head">
+            <div class="section-title">GitHub Authors</div>
+            <button id="open-github-author-dialog">ADD</button>
+          </div>
+          <div class="toolbar" style="border-bottom:none;">
+            <input id="github-author-search" type="search" placeholder="FILTER AUTHORS..." />
+          </div>
+          <div id="github-authors-panel" style="padding:12px; display:grid; gap:8px;"></div>
+          <div id="github-authors-status" style="padding:8px; font-size:10px;"></div>
         </section>
 
         <section>
@@ -525,14 +623,32 @@ function renderAdminPage(options: {
     <div id="add-profile-status" style="font-size:10px;"></div>
   </div></dialog>
 
+  <dialog id="github-author-dialog"><div class="modal-content">
+    <div class="section-title">GitHub author mapping</div>
+    <select id="github-author-platform">
+      <option value="slack">SLACK</option>
+      <option value="feishu">FEISHU</option>
+    </select>
+    <input id="github-author-slack-user-id" type="text" placeholder="USER ID (U123 / ou_...)" />
+    <input id="github-author-value" type="text" placeholder="Name <email@example.com>" />
+    <div style="display:flex; gap:8px; justify-content:flex-end;">
+      <button id="close-github-author-dialog" class="secondary">CANCEL</button>
+      <button id="submit-github-author-dialog">SAVE</button>
+    </div>
+    <div id="github-author-dialog-status" style="font-size:10px;"></div>
+  </div></dialog>
+
   <script>
     const refreshButton = document.getElementById("refresh-button");
     const replaceStatus = document.getElementById("replace-status");
     const deployStatus = document.getElementById("deploy-status");
+    const githubAuthorsStatus = document.getElementById("github-authors-status");
     const lastRefresh = document.getElementById("last-refresh");
     const sessionSearch = document.getElementById("session-search");
     const sessionFilter = document.getElementById("session-filter");
+    const githubAuthorSearch = document.getElementById("github-author-search");
     const addProfileDialog = document.getElementById("add-profile-dialog");
+    const githubAuthorDialog = document.getElementById("github-author-dialog");
     const deployRefInput = document.getElementById("deploy-ref-input");
     let latestStatus = null;
 
@@ -756,6 +872,88 @@ function renderAdminPage(options: {
       });
     }
 
+    function renderGitHubAuthors(data) {
+      const mappings = [...(data.githubAuthorMappings?.mappings || [])];
+      const panel = document.getElementById("github-authors-panel");
+      const query = String(githubAuthorSearch.value || "").toLowerCase();
+      const filtered = mappings.filter((mapping) => {
+        if (!query) {
+          return true;
+        }
+
+        return [
+          mapping.platform,
+          mapping.userId,
+          mapping.slackUserId,
+          mapping.githubAuthor,
+          mapping.identity?.displayName,
+          mapping.identity?.realName,
+          mapping.identity?.username,
+          mapping.identity?.email,
+          mapping.slackIdentity?.displayName,
+          mapping.slackIdentity?.realName,
+          mapping.slackIdentity?.username,
+          mapping.slackIdentity?.email
+        ].some((value) => String(value || "").toLowerCase().includes(query));
+      });
+
+      if (!filtered.length) {
+        panel.innerHTML = '<div class="summary-detail" style="padding-top:12px;">NO GITHUB AUTHOR MAPPINGS</div>';
+        return;
+      }
+
+      panel.innerHTML = filtered.map((mapping) => {
+        const platform = mapping.platform || "slack";
+        const userId = mapping.userId || mapping.slackUserId;
+        const identity = mapping.identity || mapping.slackIdentity || {};
+        const label = identity.realName || identity.displayName || identity.username || userId;
+        const detail = [String(platform).toUpperCase(), userId, identity.email].filter(Boolean).join(" · ");
+        return '<div class="profile-row">' +
+                 '<div class="profile-line">' +
+                   '<span class="profile-account">' + esc(label) + "</span>" +
+                   '<span class="profile-plan">' + esc(detail || userId) + "</span>" +
+                   renderBadge(platform, "") +
+                   renderBadge(mapping.source === "manual" ? "manual" : "auto", mapping.source === "manual" ? "good" : "warn") +
+                 "</div>" +
+                 '<div class="summary-detail">' + esc(mapping.githubAuthor) + "</div>" +
+                 '<div class="summary-detail">UPDATED: ' + esc(new Date(mapping.updatedAt).toLocaleString()) + "</div>" +
+                 '<div class="profile-actions">' +
+                   '<button class="secondary" data-edit-github-author="' + esc(userId) + '"' +
+                     ' data-edit-github-author-platform="' + esc(platform) + '"' +
+                     ' data-edit-github-author-value="' + esc(mapping.githubAuthor) + '">EDIT</button>' +
+                   '<button class="danger" data-delete-github-author="' + esc(userId) + '"' +
+                     ' data-delete-github-author-platform="' + esc(platform) + '">DELETE</button>' +
+                 "</div>" +
+               "</div>";
+      }).join("");
+
+      document.querySelectorAll("[data-edit-github-author]").forEach((button) => {
+        button.addEventListener("click", () => {
+          document.getElementById("github-author-dialog-status").textContent = "";
+          document.getElementById("github-author-platform").value = button.getAttribute("data-edit-github-author-platform") || "slack";
+          document.getElementById("github-author-slack-user-id").value = button.getAttribute("data-edit-github-author") || "";
+          document.getElementById("github-author-value").value = button.getAttribute("data-edit-github-author-value") || "";
+          githubAuthorDialog.showModal();
+        });
+      });
+
+      document.querySelectorAll("[data-delete-github-author]").forEach((button) => {
+        button.addEventListener("click", async () => {
+          const platform = button.getAttribute("data-delete-github-author-platform") || "slack";
+          const userId = button.getAttribute("data-delete-github-author");
+          if (!userId) {
+            return;
+          }
+
+          if (!window.confirm("DELETE GITHUB AUTHOR MAPPING FOR " + platform.toUpperCase() + " " + userId + "?")) {
+            return;
+          }
+
+          await deleteGitHubAuthorMapping(platform, userId);
+        });
+      });
+    }
+
     function summarizeSessionLead(s) {
       if (s.openInbound?.length) return s.openInbound[0].textPreview || "NEW MSG";
       if (s.backgroundJobs?.length) {
@@ -772,12 +970,14 @@ function renderAdminPage(options: {
       const mode = sessionFilter.value;
       
       const filtered = list.filter(s => {
-        if (mode === "active" && !s.activeTurnId) return false;
-        if (mode === "inbound" && !s.openInboundCount) return false;
+         if (mode === "active" && !s.activeTurnId) return false;
+         if (mode === "platform:slack" && s.platform !== "slack") return false;
+         if (mode === "platform:feishu" && s.platform !== "feishu") return false;
+         if (mode === "inbound" && !s.openInboundCount) return false;
         if (mode === "jobs" && !s.runningBackgroundJobCount) return false;
         if (mode === "issues" && !s.failedBackgroundJobCount) return false;
         if (!query) return true;
-        return [s.key, s.channelId, s.workspacePath].some(v => String(v).toLowerCase().includes(query));
+         return [s.key, s.platform, s.channelId, s.conversationId, s.rootMessageId, s.workspacePath].some(v => String(v).toLowerCase().includes(query));
       });
 
       if (!filtered.length) {
@@ -790,14 +990,15 @@ function renderAdminPage(options: {
         const isActive = !!s.activeTurnId;
         return '<details class="session-row">' +
           '<summary class="session-summary">' +
-            '<div class="session-key">' + esc(s.key) + '<div style="font-size:10px; font-weight:normal; color:var(--muted)">' + esc(s.channelId) + '</div></div>' +
-            '<div>' + renderBadge(isActive ? "ACTIVE" : "IDLE", isActive ? "good" : "warn") + '<div style="font-size:10px; color:var(--muted)">UP: ' + fmtTime(s.updatedAt) + '</div></div>' +
+             '<div class="session-key">' + esc(s.key) + '<div style="font-size:10px; font-weight:normal; color:var(--muted)">' + esc(s.conversationId || s.channelId) + '</div></div>' +
+             '<div>' + renderBadge(isActive ? "ACTIVE" : "IDLE", isActive ? "good" : "warn") + ' ' + renderBadge(s.platform || "slack", "") + '<div style="font-size:10px; color:var(--muted)">UP: ' + fmtTime(s.updatedAt) + '</div></div>' +
             '<div>MSG: ' + (s.openInboundCount || 0) + ' / JOB: ' + (s.runningBackgroundJobCount || 0) + '</div>' +
             '<div style="font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="' + esc(lead) + '">' + esc(lead) + '</div>' +
             '<div><span style="color:var(--accent); font-size:10px;">EXPAND</span></div>' +
           '</summary>' +
           '<div class="session-body">' +
-            '<div style="margin-bottom:12px; font-size:11px; color:var(--muted)">CWD: ' + esc(s.workspacePath) + '</div>' +
+             '<div style="margin-bottom:12px; font-size:11px; color:var(--muted)">PLATFORM: ' + esc(s.platform || "slack") + ' · CONVERSATION: ' + esc(s.conversationId || s.channelId) + ' · ROOT: ' + esc(s.rootMessageId || s.rootThreadTs) + '</div>' +
+             '<div style="margin-bottom:12px; font-size:11px; color:var(--muted)">CWD: ' + esc(s.workspacePath) + '</div>' +
             '<div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">' +
               '<div><div class="summary-label">INBOUND</div>' + renderInboundTable(s.openInbound) + '</div>' +
               '<div><div class="summary-label">JOBS</div>' + renderJobsTable(s.backgroundJobs) + '</div>' +
@@ -839,6 +1040,7 @@ function renderAdminPage(options: {
       renderSummary(data);
       renderService(data);
       renderAuthProfiles(data);
+      renderGitHubAuthors(data);
       renderDeployment(data);
       renderSessions(data);
       renderLogs(data);
@@ -982,20 +1184,86 @@ function renderAdminPage(options: {
       finally { refreshButton.disabled = false; }
     }
 
+    async function submitGitHubAuthorMapping() {
+      const platform = document.getElementById("github-author-platform").value || "slack";
+      const userId = document.getElementById("github-author-slack-user-id").value.trim();
+      const githubAuthor = document.getElementById("github-author-value").value.trim();
+      const status = document.getElementById("github-author-dialog-status");
+      const submitButton = document.getElementById("submit-github-author-dialog");
+      status.textContent = "SAVING...";
+      submitButton.disabled = true;
+
+      try {
+        if (!userId || !githubAuthor) {
+          throw new Error("USER ID AND GITHUB AUTHOR ARE REQUIRED");
+        }
+
+        const response = await fetch("/admin/api/github-authors", {
+          method: "POST",
+          headers: authHeaders({ "content-type": "application/json" }),
+          body: JSON.stringify({
+            platform,
+            user_id: userId,
+            slack_user_id: platform === "slack" ? userId : undefined,
+            github_author: githubAuthor
+          })
+        });
+        const payload = await parseResponse(response);
+        render(payload.status);
+        githubAuthorsStatus.innerHTML = '<span style="color:var(--good)">MAPPING SAVED</span>';
+        status.innerHTML = '<span style="color:var(--good)">MAPPING SAVED</span>';
+        githubAuthorDialog.close();
+      } catch (error) {
+        status.innerHTML = '<span style="color:var(--danger)">' + esc(error instanceof Error ? error.message : String(error)) + "</span>";
+      } finally {
+        submitButton.disabled = false;
+      }
+    }
+
+    async function deleteGitHubAuthorMapping(platform, userId) {
+      githubAuthorsStatus.textContent = "DELETING MAPPING...";
+      try {
+        const response = await fetch("/admin/api/github-authors/" + encodeURIComponent(userId) + "?platform=" + encodeURIComponent(platform), {
+          method: "DELETE",
+          headers: authHeaders()
+        });
+        const payload = await parseResponse(response);
+        render(payload.status);
+        githubAuthorsStatus.innerHTML = '<span style="color:var(--good)">MAPPING DELETED</span>';
+      } catch (error) {
+        githubAuthorsStatus.innerHTML = '<span style="color:var(--danger)">' + esc(error instanceof Error ? error.message : String(error)) + "</span>";
+      }
+    }
+
     refreshButton.onclick = refresh;
     sessionSearch.oninput = () => { if (latestStatus) renderSessions(latestStatus); };
     sessionFilter.onchange = () => { if (latestStatus) renderSessions(latestStatus); };
+    githubAuthorSearch.oninput = () => { if (latestStatus) renderGitHubAuthors(latestStatus); };
     document.getElementById("open-add-profile-dialog").onclick = () => {
       document.getElementById("add-profile-status").textContent = "";
       addProfileDialog.showModal();
     };
+    document.getElementById("open-github-author-dialog").onclick = () => {
+      document.getElementById("github-author-dialog-status").textContent = "";
+      document.getElementById("github-author-platform").value = "slack";
+      document.getElementById("github-author-slack-user-id").value = "";
+      document.getElementById("github-author-value").value = "";
+      githubAuthorDialog.showModal();
+    };
     document.getElementById("deploy-release-button").onclick = deployRelease;
     document.getElementById("rollback-release-button").onclick = rollbackRelease;
     document.getElementById("close-add-profile-dialog").onclick = () => addProfileDialog.close();
+    document.getElementById("close-github-author-dialog").onclick = () => githubAuthorDialog.close();
     document.getElementById("submit-add-profile-dialog").onclick = submitAddProfile;
+    document.getElementById("submit-github-author-dialog").onclick = submitGitHubAuthorMapping;
     addProfileDialog.onclick = (event) => {
       if (event.target === addProfileDialog) {
         addProfileDialog.close();
+      }
+    };
+    githubAuthorDialog.onclick = (event) => {
+      if (event.target === githubAuthorDialog) {
+        githubAuthorDialog.close();
       }
     };
 

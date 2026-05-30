@@ -1,7 +1,7 @@
 import http from "node:http";
 import { randomUUID } from "node:crypto";
 
-import { WebSocketServer, type WebSocket } from "ws";
+import { WebSocket, WebSocketServer } from "ws";
 
 import type { CodexInputItem } from "../../src/services/codex/app-server-client.js";
 
@@ -64,6 +64,8 @@ export class MockCodexAppServer {
           readonly id?: string;
           readonly method?: string;
           readonly params?: Record<string, unknown>;
+        }).catch((error) => {
+          this.#error(socket, undefined, error instanceof Error ? error.message : String(error));
         });
       });
     });
@@ -220,10 +222,13 @@ export class MockCodexAppServer {
         const context = this.#createTurnContext(socket, thread, turn);
         try {
           await this.onTurnStart?.(context);
-        } finally {
-          if (turn.status === "inProgress") {
-            context.complete("");
-          }
+        } catch (error) {
+          this.#failTurn(socket, thread, turn, error);
+          return;
+        }
+
+        if (turn.status === "inProgress") {
+          context.complete("");
         }
         return;
       }
@@ -247,7 +252,11 @@ export class MockCodexAppServer {
         this.#respond(socket, message.id, { ok: true });
 
         const context = this.#createTurnContext(socket, thread, turn);
-        await this.onTurnSteer?.(context);
+        try {
+          await this.onTurnSteer?.(context);
+        } catch (error) {
+          this.#failTurn(socket, thread, turn, error);
+        }
         return;
       }
       case "turn/interrupt": {
@@ -302,22 +311,22 @@ export class MockCodexAppServer {
         turn.finalMessage = message;
         thread.activeTurnId = undefined;
         if (message) {
-          socket.send(JSON.stringify({
+          this.#send(socket, {
             method: "item/agentMessage/delta",
             params: {
               turnId: turn.turnId,
               delta: message
             }
-          }));
+          });
         }
-        socket.send(JSON.stringify({
+        this.#send(socket, {
           method: "turn/completed",
           params: {
             turn: {
               id: turn.turnId
             }
           }
-        }));
+        });
       },
       interrupt: (message = "") => {
         this.#interruptTurn(socket, thread, turn, message);
@@ -333,14 +342,31 @@ export class MockCodexAppServer {
     turn.status = "interrupted";
     turn.finalMessage = message;
     thread.activeTurnId = undefined;
-    socket.send(JSON.stringify({
+    this.#send(socket, {
       method: "codex/event/turn_aborted",
       params: {
         msg: {
           turn_id: turn.turnId
         }
       }
-    }));
+    });
+  }
+
+  #failTurn(socket: WebSocket, thread: MockThreadRecord, turn: MockTurnRecord, error: unknown): void {
+    if (turn.status !== "inProgress") {
+      return;
+    }
+
+    turn.status = "failed";
+    turn.errorMessage = error instanceof Error ? error.message : String(error);
+    thread.activeTurnId = undefined;
+    this.#send(socket, {
+      method: "codex/event/error",
+      params: {
+        turnId: turn.turnId,
+        message: turn.errorMessage
+      }
+    });
   }
 
   #requireThread(threadId: string): MockThreadRecord {
@@ -360,19 +386,27 @@ export class MockCodexAppServer {
   }
 
   #respond(socket: WebSocket, id: string | undefined, result: Record<string, unknown>): void {
-    socket.send(JSON.stringify({
+    this.#send(socket, {
       id,
       result
-    }));
+    });
   }
 
   #error(socket: WebSocket, id: string | undefined, message: string): void {
-    socket.send(JSON.stringify({
+    this.#send(socket, {
       id,
       error: {
         message
       }
-    }));
+    });
+  }
+
+  #send(socket: WebSocket, payload: Record<string, unknown>): void {
+    if (socket.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    socket.send(JSON.stringify(payload));
   }
 }
 

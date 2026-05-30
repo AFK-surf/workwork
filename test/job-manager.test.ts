@@ -70,6 +70,84 @@ describe("JobManager", () => {
     await jobs.stop();
   });
 
+  it("registers platform-aware Feishu jobs and forwards events to chat coordinates", async () => {
+    const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "feishu-codex-state-"));
+    const jobsRoot = await fs.mkdtemp(path.join(os.tmpdir(), "feishu-codex-jobs-"));
+    const sessionsRoot = await fs.mkdtemp(path.join(os.tmpdir(), "feishu-codex-sessions-"));
+    const reposRoot = await fs.mkdtemp(path.join(os.tmpdir(), "feishu-codex-repos-"));
+    const store = new StateStore(stateDir, sessionsRoot);
+    const sessions = new SessionManager({
+      stateStore: store,
+      sessionsRoot
+    });
+    await sessions.load();
+    const session = await sessions.ensureChatSession({
+      platform: "feishu",
+      conversationId: "oc_group",
+      rootMessageId: "om_root"
+    }, {
+      conversationKind: "group"
+    });
+    await fs.mkdir(session.workspacePath, { recursive: true });
+
+    const capturePath = path.join(session.workspacePath, "job-env.txt");
+    const seenEvents: Array<{
+      platform: string;
+      conversationId: string;
+      rootMessageId: string;
+      summary: string;
+    }> = [];
+    const jobs = new JobManager({
+      sessions,
+      jobsRoot,
+      reposRoot,
+      brokerHttpBaseUrl: "http://127.0.0.1:3000",
+      onEvent: async (event) => {
+        seenEvents.push({
+          platform: event.platform,
+          conversationId: event.conversationId,
+          rootMessageId: event.rootMessageId,
+          summary: event.payload.summary
+        });
+      }
+    });
+
+    const job = await jobs.registerJob({
+      platform: "feishu",
+      conversationId: "oc_group",
+      rootMessageId: "om_root",
+      kind: "watch_ci",
+      script: `#!/usr/bin/env bash\nprintf '%s' "$CHAT_PLATFORM|$CHAT_CONVERSATION_ID|$CHAT_ROOT_MESSAGE_ID|\${SLACK_CHANNEL_ID-unset}|\${SLACK_THREAD_TS-unset}" > ${shellQuote(capturePath)}\nsleep 30`
+    });
+
+    expect(job).toMatchObject({
+      platform: "feishu",
+      conversationId: "oc_group",
+      rootMessageId: "om_root",
+      channelId: "oc_group",
+      rootThreadTs: "om_root",
+      status: "running"
+    });
+    await expect(waitForFileContents(capturePath)).resolves.toBe("feishu|oc_group|om_root|unset|unset");
+
+    await jobs.emitJobEvent(job.id, job.token, {
+      eventKind: "state_changed",
+      summary: "Feishu watcher changed state."
+    });
+
+    expect(seenEvents).toEqual([
+      {
+        platform: "feishu",
+        conversationId: "oc_group",
+        rootMessageId: "om_root",
+        summary: "Feishu watcher changed state."
+      }
+    ]);
+
+    await jobs.cancelJob(job.id, job.token);
+    await jobs.stop();
+  });
+
   it("does not cancel restartable jobs during broker shutdown", async () => {
     const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "slack-codex-state-"));
     const jobsRoot = await fs.mkdtemp(path.join(os.tmpdir(), "slack-codex-jobs-"));

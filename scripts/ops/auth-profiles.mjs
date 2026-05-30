@@ -4,7 +4,12 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { getDataRootSource, inspectContainer, runCommand } from "./lib.mjs";
+import {
+  getDataRootSource,
+  inspectContainer,
+  runCommand,
+  summarizeOpsDisplayPath
+} from "./lib.mjs";
 
 const DEFAULT_CONTAINER_NAME = "slack-codex-broker-real";
 const DEFAULT_PROFILE_NAME = "primary";
@@ -96,7 +101,7 @@ async function pathInfo(filePath) {
   try {
     const stat = await fs.lstat(filePath);
     const base = {
-      path: filePath,
+      path: summarizeOpsDisplayPath(filePath),
       exists: true,
       isSymlink: stat.isSymbolicLink()
     };
@@ -106,8 +111,8 @@ async function pathInfo(filePath) {
       const targetStat = await fs.stat(filePath);
       return {
         ...base,
-        linkTarget,
-        resolvedTarget,
+        linkTarget: path.basename(linkTarget),
+        resolvedTarget: summarizeOpsDisplayPath(resolvedTarget),
         size: targetStat.size,
         mtime: targetStat.mtime.toISOString()
       };
@@ -121,7 +126,7 @@ async function pathInfo(filePath) {
   } catch (error) {
     if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
       return {
-        path: filePath,
+        path: summarizeOpsDisplayPath(filePath),
         exists: false
       };
     }
@@ -207,6 +212,15 @@ function dockerProfilePath(paths, profileName) {
   return path.join(paths.dockerProfilesRoot, `${sanitizeProfileName(profileName)}.json`);
 }
 
+function summarizeAuthProfilePaths(paths) {
+  return Object.fromEntries(
+    Object.entries(paths).map(([key, value]) => [
+      key,
+      typeof value === "string" && key !== "containerName" ? summarizeOpsDisplayPath(value) : value
+    ])
+  );
+}
+
 async function ensureHostManagedCopy(paths, refreshHost) {
   await ensureDir(path.dirname(paths.hostManagedAuthPath));
   if (!refreshHost && (await fileExists(paths.hostManagedAuthPath))) {
@@ -277,12 +291,12 @@ async function bootstrapProfiles(options) {
 
   return {
     ok: true,
-    paths,
+    paths: summarizeAuthProfilePaths(paths),
     copiedHost,
     initialProfileName,
-    initialProfilePath,
-    hostBackup,
-    dockerBackup
+    initialProfilePath: summarizeOpsDisplayPath(initialProfilePath),
+    hostBackup: hostBackup ? summarizeOpsDisplayPath(hostBackup) : null,
+    dockerBackup: dockerBackup ? summarizeOpsDisplayPath(dockerBackup) : null
   };
 }
 
@@ -310,7 +324,7 @@ async function listProfiles(options) {
 
   return {
     containerName: options.containerName,
-    managedRoot: paths.managedRoot,
+    managedRoot: summarizeOpsDisplayPath(paths.managedRoot),
     activeProfile,
     profiles
   };
@@ -335,8 +349,8 @@ async function importProfile(options) {
   return {
     ok: true,
     profileName,
-    sourcePath,
-    targetPath,
+    sourcePath: summarizeOpsDisplayPath(sourcePath),
+    targetPath: summarizeOpsDisplayPath(targetPath),
     activated: options.activate,
     restartAction
   };
@@ -361,7 +375,7 @@ async function useProfile(profileName, options) {
   return {
     ok: true,
     profileName: normalizedName,
-    targetPath,
+    targetPath: summarizeOpsDisplayPath(targetPath),
     restartAction
   };
 }
@@ -380,8 +394,8 @@ async function getStatus(options) {
 
   return {
     containerName: options.containerName,
-    dataRootSource: paths.dataRootSource,
-    managedRoot: paths.managedRoot,
+    dataRootSource: summarizeOpsDisplayPath(paths.dataRootSource),
+    managedRoot: summarizeOpsDisplayPath(paths.managedRoot),
     activeDockerProfile: activeProfile,
     hostAuth: await pathInfo(paths.hostAuthPath),
     dockerAuth: await pathInfo(paths.dockerAuthPath),

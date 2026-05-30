@@ -7,6 +7,7 @@ import type { IsolatedMcpService } from "../services/codex/isolated-mcp-service.
 import type { JobManager } from "../services/job-manager.js";
 import type { SlackCodexBridge } from "../services/slack/slack-codex-bridge.js";
 import { handleAdminRequest } from "./admin-routes.js";
+import { handleChatRequest } from "./chat-routes.js";
 import { handleIntegrationRequest } from "./integration-routes.js";
 import { handleJobRequest } from "./job-routes.js";
 import { handleSlackRequest } from "./slack-routes.js";
@@ -36,6 +37,16 @@ async function handleHttpRequest(
 ): Promise<void> {
   const method = request.method ?? "GET";
   const url = new URL(request.url ?? "/", "http://127.0.0.1");
+
+  if (
+    options.bridge &&
+    (await handleChatRequest(method, url, request, response, {
+      bridge: options.bridge,
+      config: options.config
+    }))
+  ) {
+    return;
+  }
 
   if (
     options.bridge &&

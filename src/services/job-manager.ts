@@ -13,6 +13,13 @@ import type {
 import { ensureDir } from "../utils/fs.js";
 import { resolveRuntimeToolPath } from "../utils/runtime-paths.js";
 import { SessionManager } from "./session-manager.js";
+import type { ChatPlatform } from "./chat/chat-types.js";
+
+interface BackgroundJobCoordinates {
+  readonly platform: ChatPlatform;
+  readonly conversationId: string;
+  readonly rootMessageId: string;
+}
 
 interface RuntimeBackgroundJob {
   readonly process: ChildProcessByStdio<null, Readable, Readable>;
@@ -27,8 +34,9 @@ export class JobManager {
   readonly #brokerHttpBaseUrl: string;
   readonly #runtimeJobs = new Map<string, RuntimeBackgroundJob>();
   readonly #onEvent: (event: {
-    readonly channelId: string;
-    readonly rootThreadTs: string;
+    readonly platform: ChatPlatform;
+    readonly conversationId: string;
+    readonly rootMessageId: string;
     readonly payload: BackgroundJobEventPayload;
   }) => Promise<void>;
 
@@ -38,8 +46,9 @@ export class JobManager {
     readonly reposRoot: string;
     readonly brokerHttpBaseUrl: string;
     readonly onEvent: (event: {
-      readonly channelId: string;
-      readonly rootThreadTs: string;
+      readonly platform: ChatPlatform;
+      readonly conversationId: string;
+      readonly rootMessageId: string;
       readonly payload: BackgroundJobEventPayload;
     }) => Promise<void>;
   }) {
@@ -75,17 +84,21 @@ export class JobManager {
   }
 
   async registerJob(options: {
-    readonly channelId: string;
-    readonly rootThreadTs: string;
+    readonly platform?: ChatPlatform | undefined;
+    readonly conversationId?: string | undefined;
+    readonly rootMessageId?: string | undefined;
+    readonly channelId?: string | undefined;
+    readonly rootThreadTs?: string | undefined;
     readonly kind: string;
     readonly script: string;
     readonly cwd?: string | undefined;
     readonly shell?: string | undefined;
     readonly restartOnBoot?: boolean | undefined;
   }): Promise<PersistedBackgroundJob> {
-    const session = this.#sessions.getSession(options.channelId, options.rootThreadTs);
+    const coordinates = resolveBackgroundJobCoordinates(options);
+    const session = this.#sessions.getChatSession(coordinates);
     if (!session) {
-      throw new Error(`Unknown session: ${options.channelId}:${options.rootThreadTs}`);
+      throw new Error(`Unknown session: ${coordinates.platform}:${coordinates.conversationId}:${coordinates.rootMessageId}`);
     }
 
     const id = randomUUID();
@@ -107,6 +120,9 @@ export class JobManager {
       id,
       token,
       sessionKey: session.key,
+      platform: coordinates.platform,
+      conversationId: coordinates.conversationId,
+      rootMessageId: coordinates.rootMessageId,
       channelId: session.channelId,
       rootThreadTs: session.rootThreadTs,
       kind: options.kind.trim(),
@@ -273,18 +289,23 @@ export class JobManager {
     }
 
     await ensureDir(path.dirname(job.scriptPath));
+    const coordinates = coordinatesForJob(job);
+    const session = this.#sessions.getSessionByKey(job.sessionKey);
     const env: NodeJS.ProcessEnv = {
       ...process.env,
       BROKER_JOB_ID: job.id,
       BROKER_JOB_TOKEN: job.token,
       BROKER_API_BASE: this.#brokerHttpBaseUrl,
       BROKER_JOB_HELPER: process.env.BROKER_JOB_HELPER?.trim() || resolveRuntimeToolPath("job-callback.js"),
-      SLACK_CHANNEL_ID: job.channelId,
-      SLACK_THREAD_TS: job.rootThreadTs,
+      CHAT_PLATFORM: coordinates.platform,
+      CHAT_CONVERSATION_ID: coordinates.conversationId,
+      CHAT_ROOT_MESSAGE_ID: coordinates.rootMessageId,
+      SLACK_CHANNEL_ID: coordinates.platform === "slack" ? coordinates.conversationId : undefined,
+      SLACK_THREAD_TS: coordinates.platform === "slack" ? coordinates.rootMessageId : undefined,
       SESSION_KEY: job.sessionKey,
-      SESSION_WORKSPACE: this.#sessions.getSession(job.channelId, job.rootThreadTs)?.workspacePath ?? job.cwd,
+      SESSION_WORKSPACE: session?.workspacePath ?? job.cwd,
       REPOS_ROOT: this.#reposRoot,
-      WORKTREE_PATH: this.#sessions.getSession(job.channelId, job.rootThreadTs)?.workspacePath ?? job.cwd,
+      WORKTREE_PATH: session?.workspacePath ?? job.cwd,
       BACKGROUND_JOB_KIND: job.kind
     };
 
@@ -445,9 +466,11 @@ export class JobManager {
     job: PersistedBackgroundJob,
     payload: BackgroundJobEventPayload
   ): Promise<void> {
+    const coordinates = coordinatesForJob(job);
     await this.#onEvent({
-      channelId: job.channelId,
-      rootThreadTs: job.rootThreadTs,
+      platform: coordinates.platform,
+      conversationId: coordinates.conversationId,
+      rootMessageId: coordinates.rootMessageId,
       payload
     });
   }
@@ -480,13 +503,43 @@ export class JobManager {
   }
 
   #shouldSuppressEventForFinalizedSession(job: PersistedBackgroundJob): boolean {
-    const session = this.#sessions.getSession(job.channelId, job.rootThreadTs);
+    const session = this.#sessions.getSessionByKey(job.sessionKey);
     if (!session || session.lastTurnSignalKind !== "final" || !session.lastTurnSignalAt) {
       return false;
     }
 
     return isIsoOnOrBefore(job.createdAt, session.lastTurnSignalAt);
   }
+}
+
+function resolveBackgroundJobCoordinates(options: {
+  readonly platform?: ChatPlatform | undefined;
+  readonly conversationId?: string | undefined;
+  readonly rootMessageId?: string | undefined;
+  readonly channelId?: string | undefined;
+  readonly rootThreadTs?: string | undefined;
+}): BackgroundJobCoordinates {
+  const platform = options.platform ?? "slack";
+  const conversationId = options.conversationId ?? (platform === "slack" ? options.channelId : undefined);
+  const rootMessageId = options.rootMessageId ?? (platform === "slack" ? options.rootThreadTs : undefined);
+
+  if (!conversationId || !rootMessageId) {
+    throw new Error("missing_required_body:platform,conversationId,rootMessageId");
+  }
+
+  return {
+    platform,
+    conversationId,
+    rootMessageId
+  };
+}
+
+function coordinatesForJob(job: PersistedBackgroundJob): BackgroundJobCoordinates {
+  return {
+    platform: job.platform ?? "slack",
+    conversationId: job.conversationId ?? job.channelId,
+    rootMessageId: job.rootMessageId ?? job.rootThreadTs
+  };
 }
 
 function normalizeScript(script: string, shell: string): string {
