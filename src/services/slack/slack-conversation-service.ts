@@ -1,13 +1,10 @@
+import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
+import { buildAdminSessionUrl } from "../../admin-session-url.js";
 import type { AppConfig } from "../../config.js";
 import { logger } from "../../logger.js";
-import {
-  CHAT_FILE_SOURCE_REQUIREMENT_MESSAGE,
-  CHAT_INLINE_FILE_CONTENT_REQUIREMENT_MESSAGE,
-  CHAT_INLINE_FILE_FILENAME_REQUIREMENT_MESSAGE
-} from "../chat/chat-types.js";
 import { SessionManager } from "../session-manager.js";
 import type {
   BackgroundJobEventPayload,
@@ -18,9 +15,16 @@ import type {
   SlackThreadMessage,
   SlackTurnSignalKind
 } from "../../types.js";
-import { CodexBroker } from "../codex/codex-broker.js";
+import type { AgentRuntime, AgentRuntimeEvent } from "../agent-runtime/types.js";
+import {
+  isAuthProfileUnavailableError,
+  type AuthProfileUnavailableError
+} from "../agent-runtime/session-auth-profile-runtime.js";
+import { isAuthProfileProbeFailureReason } from "../session-auth-profile-selector.js";
+import { AgentTraceRecorder } from "../agent-runtime/agent-trace-recorder.js";
 import {
   SlackApi,
+  isSlackRateLimitError,
   type SlackUploadedFile
 } from "./slack-api.js";
 import { SlackAssistantStatusController } from "./slack-assistant-status.js";
@@ -33,27 +37,30 @@ import {
   chunkSlackMessage,
   clampHistoryLimit,
   compareIsoTimestamp,
+  createSyntheticMessageTs,
   createSlackFailureFingerprint,
   formatSlackRunFailureMessage,
   isBeforeSlackTs,
-  isMissingCodexThreadError,
-  isRecoverableCodexTurnFailure,
+  isMissingAgentSessionError,
+  isRecoverableAgentTurnFailure,
   parseActiveTurnMismatch,
-  isMissingActiveTurnSteerError,
+  isMissingActiveTurnInputError,
   isSlackMessageAfterCursor,
-  isStopExplainingTurnSignalKind,
-  isUnexpectedTurnStopMessage,
+  shouldResetConflictingActiveTurnMismatch,
+  shouldForceResetStaleIdleRuntime,
   shouldPostSlackRunFailure,
   shouldNotifySlackFailure,
   shouldAutoRecoverSession
 } from "./slack-conversation-utils.js";
 import { SlackInboundStore } from "./slack-inbound-store.js";
 import {
-  formatSlackHistoryContextForCodex
+  formatSlackHistoryContextForAgent
 } from "./slack-message-format.js";
 import { markdownishToMrkdwn } from "./slack-mrkdwn.js";
 import { SlackSelfMessageFilter } from "./slack-self-filter.js";
 import { SlackCoauthorService } from "./slack-coauthor-service.js";
+import type { GitHubPrIdentityService } from "../github-pr-identity-service.js";
+import { planCompletedTurnDisposition } from "./slack-turn-disposition.js";
 import { SlackTurnReconciler } from "./slack-turn-reconciler.js";
 import { SlackTurnRunner } from "./slack-turn-runner.js";
 
@@ -75,11 +82,14 @@ interface PendingDispatchRequest {
 
 const AUTO_RESUME_AFTER_FAILURE_MS = 5_000;
 const NONRECOVERABLE_DISPATCH_RETRY_COOLDOWN_MS = 5 * 60 * 1_000;
+const MISSED_THREAD_RECOVERY_RATE_LIMIT_MIN_BACKOFF_MS = 60_000;
+const MISSED_THREAD_RECOVERY_RATE_LIMIT_MAX_BACKOFF_MS = 10 * 60_000;
 
 export class SlackConversationService {
   readonly #config: AppConfig;
   readonly #sessions: SessionManager;
-  readonly #codex: CodexBroker;
+  readonly #agentRuntime: AgentRuntime;
+  readonly #traceRecorder: AgentTraceRecorder;
   readonly #slackApi: SlackApi;
   readonly #selfMessageFilter: SlackSelfMessageFilter;
   readonly #coauthors: {
@@ -88,40 +98,51 @@ export class SlackConversationService {
       item: SlackInputMessage
     ) => Promise<SlackSessionRecord>;
   };
+  readonly #githubPrIdentity: GitHubPrIdentityService | undefined;
   readonly #runtimeSessions = new Map<string, RuntimeSessionState>();
   readonly #statusControllers = new Map<string, SlackAssistantStatusController>();
   readonly #inboundStore: SlackInboundStore;
   readonly #turnRunner: SlackTurnRunner;
   readonly #turnReconciler: SlackTurnReconciler;
-  readonly #codexNotificationHandler: (method: string, params: Record<string, unknown> | undefined) => void;
+  readonly #agentRuntimeEventHandler: (event: AgentRuntimeEvent) => void;
+  readonly #sessionPageLinkPosts = new Map<string, Promise<SlackSessionRecord>>();
   #botUserId = "";
   #activeTurnReconcileTimer: NodeJS.Timeout | undefined;
-  #activeTurnReconcileRunning = false;
+  #activeTurnReconcilePromise: Promise<void> | undefined;
+  #startupRecoveryPromise: Promise<void> | undefined;
+  #stopped = true;
   #catchUpPromise: Promise<void> | undefined;
   #lastMissedThreadRecoveryAtMs = 0;
+  #missedThreadRecoveryRateLimitBackoffMs = 0;
+  #missedThreadRecoveryRateLimitUntilMs = 0;
 
   constructor(options: {
     readonly config: AppConfig;
     readonly sessions: SessionManager;
-    readonly codex: CodexBroker;
+    readonly agentRuntime: AgentRuntime;
     readonly slackApi: SlackApi;
     readonly selfMessageFilter: SlackSelfMessageFilter;
     readonly coauthors?: SlackCoauthorService | undefined;
+    readonly githubPrIdentity?: GitHubPrIdentityService | undefined;
   }) {
     this.#config = options.config;
     this.#sessions = options.sessions;
-    this.#codex = options.codex;
+    this.#agentRuntime = options.agentRuntime;
     this.#slackApi = options.slackApi;
     this.#selfMessageFilter = options.selfMessageFilter;
     this.#coauthors = options.coauthors ?? {
       noteIncomingSlackInput: async (session) => session
     };
+    this.#githubPrIdentity = options.githubPrIdentity;
     this.#inboundStore = new SlackInboundStore({
       sessions: this.#sessions,
       slackApi: this.#slackApi
     });
+    this.#traceRecorder = new AgentTraceRecorder({
+      sessions: this.#sessions
+    });
     this.#turnRunner = new SlackTurnRunner({
-      codex: options.codex,
+      agentRuntime: this.#agentRuntime,
       slackApi: this.#slackApi,
       sessions: this.#sessions,
       inboundStore: this.#inboundStore
@@ -131,10 +152,10 @@ export class SlackConversationService {
       turnRunner: this.#turnRunner,
       inboundStore: this.#inboundStore
     });
-    this.#codexNotificationHandler = (method: string, params: Record<string, unknown> | undefined) => {
-      this.#handleCodexNotification(method, params ?? {});
+    this.#agentRuntimeEventHandler = (event) => {
+      this.#handleAgentRuntimeEvent(event);
     };
-    this.#codex.on("notification", this.#codexNotificationHandler);
+    this.#agentRuntime.on("event", this.#agentRuntimeEventHandler);
   }
 
   setBotUserId(botUserId: string): void {
@@ -142,15 +163,15 @@ export class SlackConversationService {
   }
 
   async start(): Promise<void> {
-    await this.#reconcilePersistedActiveTurns();
-    await this.#recoverPendingSessionsOnBoot();
-    await this.#recoverPendingSyntheticMessages();
-    this.#startActiveTurnReconciler();
+    this.#stopped = false;
+    this.#startupRecoveryPromise = this.#runStartupRecovery();
+    void this.#startupRecoveryPromise;
   }
 
   async stop(): Promise<void> {
+    this.#stopped = true;
     this.#stopActiveTurnReconciler();
-    this.#codex.off("notification", this.#codexNotificationHandler);
+    this.#agentRuntime.off("event", this.#agentRuntimeEventHandler);
     for (const runtime of this.#runtimeSessions.values()) {
       if (!runtime.autoResumeTimer) {
         continue;
@@ -163,12 +184,30 @@ export class SlackConversationService {
     await Promise.all(stopPromises);
   }
 
+  async #runStartupRecovery(): Promise<void> {
+    try {
+      await this.#reconcilePersistedActiveTurns();
+      await this.recoverMissedThreadMessages("socket_ready");
+      await this.#recoverPendingSessionsOnBoot();
+      await this.#recoverPendingSyntheticMessages();
+    } catch (error) {
+      logger.error("Failed to finish Slack startup recovery", {
+        error: error instanceof Error ? error.message : String(error)
+      });
+    } finally {
+      this.#startupRecoveryPromise = undefined;
+      if (!this.#stopped) {
+        this.#startActiveTurnReconciler();
+      }
+    }
+  }
+
   isAlreadyHandled(session: SlackSessionRecord, messageTs?: string | undefined): boolean {
     return this.#inboundStore.isAlreadyHandled(session, messageTs);
   }
 
-  async ensureCodexThread(session: SlackSessionRecord): Promise<SlackSessionRecord> {
-    return await this.#turnRunner.ensureCodexThread(session);
+  async ensureAgentSession(session: SlackSessionRecord): Promise<SlackSessionRecord> {
+    return await this.#turnRunner.ensureAgentSession(session);
   }
 
   async readThreadHistory(options: {
@@ -224,7 +263,7 @@ export class SlackConversationService {
 
     return {
       messages: resolvedMessages,
-      formattedText: formatSlackHistoryContextForCodex(resolvedMessages),
+      formattedText: formatSlackHistoryContextForAgent(resolvedMessages),
       hasMore: filteredMessages.length > boundedMessages.length
     };
   }
@@ -262,28 +301,175 @@ export class SlackConversationService {
     return input;
   }
 
-  async resumePendingSession(options: {
-    readonly channelId: string;
-    readonly rootThreadTs: string;
-    readonly forceReset?: boolean | undefined;
-  }): Promise<{
-    readonly sessionKey: string;
-    readonly pendingCount: number;
-    readonly resumed: boolean;
-  } | null> {
-    const session = this.#sessions.getSession(options.channelId, options.rootThreadTs);
-    if (!session) {
-      return null;
+  async resumePendingSession(sessionKey: string): Promise<number> {
+    const session = this.#findSessionByKey(sessionKey);
+    if (session.authBlockedAt) {
+      throw new Error(`Session auth is still blocked: ${sessionKey}`);
     }
 
-    const pendingCount = await this.#resumePendingDispatch(session.key, {
-      forceReset: options.forceReset ?? true
+    return await this.#resumePendingDispatch(sessionKey, {
+      forceReset: true
+    });
+  }
+
+  async resetSession(sessionKey: string): Promise<{
+    readonly clearedInboundCount: number;
+    readonly resetMessageTs: string;
+    readonly resumedCount: number;
+    readonly interruptedActiveTurn: boolean;
+    readonly previousAgentSessionId: string | null;
+    readonly previousActiveTurnId: string | null;
+    readonly historyMessageCount: number;
+    readonly authBlocked: boolean;
+  }> {
+    const session = this.#findSessionByKey(sessionKey);
+    const history = await this.readThreadHistory({
+      channelId: session.channelId,
+      rootThreadTs: session.rootThreadTs,
+      channelType: session.channelType,
+      limit: this.#config.slackHistoryApiMaxLimit
+    });
+    const previousAgentSessionId = session.agentSessionId ?? null;
+    const previousActiveTurnId = session.activeTurnId ?? null;
+    let interruptedActiveTurn = false;
+
+    this.#resetRuntimeForManualSessionReset(session.key);
+
+    if (session.activeTurnId && session.agentSessionId) {
+      try {
+        await this.#turnRunner.interrupt(session);
+        interruptedActiveTurn = true;
+      } catch (error) {
+        logger.warn("Failed to interrupt active turn during manual session reset", {
+          sessionKey: session.key,
+          agentSessionId: session.agentSessionId,
+          turnId: session.activeTurnId,
+          error: error instanceof Error ? error.message : String(error)
+        });
+      }
+    }
+
+    const openMessages = this.#sessions.listInboundMessages({
+      channelId: session.channelId,
+      rootThreadTs: session.rootThreadTs,
+      status: ["pending", "inflight"]
+    });
+    if (openMessages.length > 0) {
+      await this.#sessions.updateInboundMessagesForBatch(
+        session.channelId,
+        session.rootThreadTs,
+        openMessages.map((message) => message.messageTs),
+        {
+          status: "done",
+          batchId: undefined
+        }
+      );
+    }
+
+    let resetSession = await this.#sessions.resetSessionRuntimeState(session.key);
+    this.#clearAssistantStatus(resetSession.channelId, resetSession.rootThreadTs);
+
+    const resetMessageTs = createSyntheticMessageTs();
+    await this.#inboundStore.recordInboundMessage(resetSession, {
+      source: "admin_session_reset",
+      channelId: resetSession.channelId,
+      channelType: resetSession.channelType,
+      rootThreadTs: resetSession.rootThreadTs,
+      messageTs: resetMessageTs,
+      userId: this.#botUserId || "BROKER_ADMIN",
+      senderKind: "app",
+      text: "管理员已重置这个 session，丢弃旧 agent history 并从当前 Slack thread 重新开始。",
+      contextText: history.formattedText
+    });
+    await this.#appendSessionResetTrace(resetSession, {
+      previousAgentSessionId,
+      previousActiveTurnId,
+      clearedInboundCount: openMessages.length,
+      resetMessageTs,
+      historyMessageCount: history.messages.length
     });
 
+    resetSession = this.#findSessionByKey(resetSession.key);
+    const authBlocked = Boolean(resetSession.authBlockedAt);
+    const resumedCount = authBlocked
+      ? 0
+      : await this.#resumePendingDispatch(resetSession.key, {
+          forceReset: true
+        });
+
     return {
-      sessionKey: session.key,
-      pendingCount,
-      resumed: pendingCount > 0
+      clearedInboundCount: openMessages.length,
+      resetMessageTs,
+      resumedCount,
+      interruptedActiveTurn,
+      previousAgentSessionId,
+      previousActiveTurnId,
+      historyMessageCount: history.messages.length,
+      authBlocked
+    };
+  }
+
+  async deleteSession(sessionKey: string): Promise<{
+    readonly deleted: boolean;
+    readonly interruptedActiveTurn: boolean;
+    readonly previousAgentSessionId: string | null;
+    readonly previousActiveTurnId: string | null;
+    readonly clearedInboundCount: number;
+    readonly interruptError?: string | undefined;
+  }> {
+    const session = this.#findSessionByKey(sessionKey);
+    const previousAgentSessionId = session.agentSessionId ?? null;
+    const previousActiveTurnId = session.activeTurnId ?? null;
+    let interruptedActiveTurn = false;
+    let interruptError: string | undefined;
+
+    this.#resetRuntimeForManualSessionReset(session.key);
+
+    if (session.activeTurnId && session.agentSessionId) {
+      try {
+        await this.#turnRunner.interrupt(session);
+        interruptedActiveTurn = true;
+      } catch (error) {
+        interruptError = error instanceof Error ? error.message : String(error);
+        logger.warn("Failed to interrupt active turn during session delete", {
+          sessionKey: session.key,
+          agentSessionId: session.agentSessionId,
+          turnId: session.activeTurnId,
+          error: interruptError
+        });
+      }
+    }
+
+    const openMessages = this.#sessions.listInboundMessages({
+      channelId: session.channelId,
+      rootThreadTs: session.rootThreadTs,
+      status: ["pending", "inflight"]
+    });
+    if (openMessages.length > 0) {
+      await this.#sessions.updateInboundMessagesForBatch(
+        session.channelId,
+        session.rootThreadTs,
+        openMessages.map((message) => message.messageTs),
+        {
+          status: "done",
+          batchId: undefined
+        }
+      );
+    }
+
+    this.#clearAssistantStatus(session.channelId, session.rootThreadTs);
+    await this.#statusControllers.get(session.key)?.stop();
+    this.#statusControllers.delete(session.key);
+    this.#runtimeSessions.delete(session.key);
+
+    const deleted = await this.#sessions.deleteSessionByKey(session.key);
+    return {
+      deleted,
+      interruptedActiveTurn,
+      previousAgentSessionId,
+      previousActiveTurnId,
+      clearedInboundCount: openMessages.length,
+      interruptError
     };
   }
 
@@ -398,13 +584,11 @@ export class SlackConversationService {
       throw new Error(`Unknown session for Slack state update: ${options.channelId}:${options.rootThreadTs}`);
     }
 
-    await this.#sessions.recordTurnSignal(options.channelId, options.rootThreadTs, {
-      turnId: this.#resolveTurnIdForSignal(session),
+    await this.#recordStopSignal(session, {
       kind: options.kind,
       reason: options.reason,
       occurredAt: new Date().toISOString()
     });
-    this.#clearAssistantStatus(options.channelId, options.rootThreadTs);
   }
 
   async postSlackFile(options: {
@@ -423,7 +607,7 @@ export class SlackConversationService {
     const hasInlineContent = Boolean(options.contentBase64?.trim());
 
     if (hasFilePath === hasInlineContent) {
-      throw new Error(CHAT_FILE_SOURCE_REQUIREMENT_MESSAGE);
+      throw new Error("Provide exactly one of file_path or content_base64");
     }
 
     let filename = options.filename?.trim() || undefined;
@@ -436,10 +620,10 @@ export class SlackConversationService {
     } else {
       const decoded = Buffer.from(options.contentBase64!.trim(), "base64");
       if (decoded.byteLength === 0) {
-        throw new Error(CHAT_INLINE_FILE_CONTENT_REQUIREMENT_MESSAGE);
+        throw new Error("Decoded content_base64 was empty");
       }
       if (!filename) {
-        throw new Error(CHAT_INLINE_FILE_FILENAME_REQUIREMENT_MESSAGE);
+        throw new Error("filename is required when using content_base64");
       }
       bytes = decoded;
     }
@@ -478,32 +662,26 @@ export class SlackConversationService {
       return session;
     }
 
-    if (dispatchMessages.length > 0 && dispatchMessages.every((message) => isUnexpectedTurnStopMessage(message))) {
-      return session;
+    const latestSession = this.#findSessionByKey(session.key);
+    const disposition = planCompletedTurnDisposition({
+      latestSession,
+      turnId,
+      dispatchMessages,
+      aborted: false,
+      hasRunningBackgroundJob: this.#hasRunningBackgroundJob(latestSession),
+      hasPendingUnexpectedStopNudge: this.#hasPendingUnexpectedStopNudge(latestSession, turnId)
+    });
+    if (disposition.kind === "none") {
+      return latestSession;
     }
-
-    const signalKind = session.lastTurnSignalTurnId === turnId ? session.lastTurnSignalKind : undefined;
-    if (isStopExplainingTurnSignalKind(signalKind)) {
-      if (signalKind !== "wait" || this.#hasRunningBackgroundJob(session)) {
-        return session;
-      }
-    }
-
-    if (this.#hasPendingUnexpectedStopNudge(session, turnId)) {
-      return session;
-    }
-
-    const reason = signalKind === "wait"
-      ? "The previous run said it was waiting, but there is no running broker-managed async job attached to this session. Either resume the work, declare a block that clearly names the human/external blocker, or register the async job and then declare wait."
-      : "The previous run ended without an explicit final, block, or wait state. Either continue the work, send a final Slack update, declare a block that clearly names the human/external blocker, or declare a wait state backed by a running broker-managed async job.";
 
     await this.acceptUnexpectedTurnStop({
-      session,
+      session: latestSession,
       previousTurnId: turnId,
-      reason
+      reason: disposition.reason
     });
 
-    return this.#findSessionByKey(session.key);
+    return this.#findSessionByKey(latestSession.key);
   }
 
   #hasRunningBackgroundJob(session: SlackSessionRecord): boolean {
@@ -548,11 +726,11 @@ export class SlackConversationService {
     const runtime = this.#getRuntimeSession(session.key);
     runtime.queue.length = 0;
 
-    if (!session.activeTurnId || !session.codexThreadId) {
+    if (!session.activeTurnId || !session.agentSessionId) {
       return false;
     }
 
-    await this.#turnRunner.ensureCodexThread(session);
+    await this.#turnRunner.ensureAgentSession(session);
     await this.#turnRunner.interrupt(session);
     await this.#inboundStore.markTurnBatchDone(session, session.activeTurnId);
     await this.#sessions.setActiveTurnId(session.channelId, session.rootThreadTs, undefined);
@@ -573,18 +751,6 @@ export class SlackConversationService {
     this.#clearDispatchFailureBlock(session.key);
     const coauthoredSession = await this.#coauthors.noteIncomingSlackInput(session, item);
     const recordedSession = await this.#inboundStore.recordInboundMessage(coauthoredSession, item);
-    logger.info("chat.message.accepted", {
-      platform: "slack",
-      sessionKey: recordedSession.key,
-      conversationId: item.channelId,
-      conversationKind: slackConversationKind(item.channelType),
-      rootMessageId: item.rootThreadTs,
-      messageId: item.messageTs,
-      eventId: item.messageTs,
-      senderKind: item.senderKind ?? "unknown",
-      msgType: (item.images?.length ?? 0) > 0 ? "image" : "text",
-      route: item.source
-    });
     this.#setAssistantThinking(recordedSession);
     await this.#dispatchPersistedMessage(recordedSession, item.messageTs);
   }
@@ -607,7 +773,10 @@ export class SlackConversationService {
     let retainedCount = 0;
 
     for (const session of sessions) {
-      const outcome = await this.#reconcileSingleActiveTurn(session);
+      const outcome = await this.#reconcileSingleActiveTurn(session, {
+        treatMissingAsStale: true,
+        resumePending: false
+      });
       if (outcome === "retained") {
         retainedCount += 1;
       } else {
@@ -624,7 +793,7 @@ export class SlackConversationService {
   #startActiveTurnReconciler(): void {
     this.#stopActiveTurnReconciler();
     this.#activeTurnReconcileTimer = setInterval(() => {
-      void this.#reconcileLiveActiveTurns();
+      this.#runLiveActiveTurnReconcileOnce();
     }, this.#config.slackActiveTurnReconcileIntervalMs);
   }
 
@@ -637,60 +806,80 @@ export class SlackConversationService {
     this.#activeTurnReconcileTimer = undefined;
   }
 
-  async #reconcileLiveActiveTurns(): Promise<void> {
-    if (this.#activeTurnReconcileRunning) {
-      logger.debug("Skipping overlapping Slack active-turn reconciliation tick");
+  #runLiveActiveTurnReconcileOnce(): void {
+    if (this.#activeTurnReconcilePromise) {
+      logger.debug("Skipping duplicate active-turn reconcile tick while previous pass is still running");
       return;
     }
 
-    this.#activeTurnReconcileRunning = true;
-    try {
-      const sessions = this.#sessions
-        .listSessions()
-        .filter((session) => session.activeTurnId)
-        .sort((left, right) => compareIsoTimestamp(right.updatedAt, left.updatedAt));
+    this.#activeTurnReconcilePromise = this.#reconcileLiveActiveTurns()
+      .catch((error: unknown) => {
+        logger.warn("Failed to finish live active-turn reconciliation pass", {
+          error: error instanceof Error ? error.message : String(error)
+        });
+      })
+      .finally(() => {
+        this.#activeTurnReconcilePromise = undefined;
+      });
+  }
 
-      for (const session of sessions) {
-        try {
-          const outcome = await this.#reconcileSingleActiveTurn(session);
-          if (outcome === "retained") {
-            await this.#maybeRemindSilentActiveTurn(this.#findSessionByKey(session.key));
-          }
-        } catch (error) {
-          logger.warn("Failed to reconcile live Codex turn state", {
-            sessionKey: session.key,
-            turnId: session.activeTurnId ?? null,
-            error: error instanceof Error ? error.message : String(error)
-          });
-        }
+  async #reconcileLiveActiveTurns(): Promise<void> {
+    const sessions = this.#sessions
+      .listSessions()
+      .filter((session) => session.activeTurnId)
+      .sort((left, right) => compareIsoTimestamp(right.updatedAt, left.updatedAt));
+
+    for (const session of sessions) {
+      try {
+        await this.#reconcileSingleActiveTurn(session);
+      } catch (error) {
+        logger.warn("Failed to reconcile live agent turn state", {
+          sessionKey: session.key,
+          turnId: session.activeTurnId ?? null,
+          error: error instanceof Error ? error.message : String(error)
+        });
       }
+    }
 
-      await this.#recoverDormantPendingSessions();
+    await this.#recoverDormantPendingSessions();
 
-      if (this.#shouldRunPeriodicMissedThreadRecovery()) {
-        await this.recoverMissedThreadMessages("periodic");
-      }
-    } finally {
-      this.#activeTurnReconcileRunning = false;
+    if (this.#shouldRunPeriodicMissedThreadRecovery()) {
+      await this.recoverMissedThreadMessages("periodic");
     }
   }
 
-  async #reconcileSingleActiveTurn(session: SlackSessionRecord): Promise<"cleared" | "retained"> {
-    const outcome = await this.#turnReconciler.reconcileSingleActiveTurn(session);
+  async #reconcileSingleActiveTurn(
+    session: SlackSessionRecord,
+    options?: {
+      readonly treatMissingAsStale?: boolean | undefined;
+      readonly resumePending?: boolean | undefined;
+    }
+  ): Promise<"cleared" | "retained"> {
+    const outcome = await this.#turnReconciler.reconcileSingleActiveTurn(session, options);
 
     if (outcome === "cleared") {
       this.#resetRuntimeProcessing(session.key);
       const latestSession = this.#findSessionByKey(session.key);
       this.#clearAssistantStatus(latestSession.channelId, latestSession.rootThreadTs);
-      await this.#resumePendingDispatch(session.key);
+      if (options?.resumePending ?? true) {
+        await this.#resumePendingDispatch(session.key);
+      }
     }
 
     return outcome;
   }
 
   async #runMissedThreadRecovery(reason: "socket_ready" | "periodic"): Promise<void> {
-    this.#lastMissedThreadRecoveryAtMs = Date.now();
     const now = Date.now();
+    this.#lastMissedThreadRecoveryAtMs = now;
+    if (now < this.#missedThreadRecoveryRateLimitUntilMs) {
+      logger.info("Skipping Slack missed-message recovery during rate-limit backoff", {
+        reason,
+        retryInMs: this.#missedThreadRecoveryRateLimitUntilMs - now
+      });
+      return;
+    }
+
     const sessions = this.#sessions
       .listSessions()
       .filter((session) => shouldAutoRecoverSession(session, now))
@@ -707,12 +896,35 @@ export class SlackConversationService {
 
     let recoveredBatchCount = 0;
     let recoveredMessageCount = 0;
+    let skippedByRateLimit = false;
 
     for (let session of sessions) {
-      const messages = await this.#slackApi.listThreadMessages({
-        channelId: session.channelId,
-        rootThreadTs: session.rootThreadTs
-      });
+      let messages: SlackThreadMessage[];
+      try {
+        messages = await this.#slackApi.listThreadMessages({
+          channelId: session.channelId,
+          rootThreadTs: session.rootThreadTs
+        });
+      } catch (error) {
+        if (isSlackRateLimitError(error)) {
+          const retryInMs = this.#deferMissedThreadRecoveryAfterRateLimit(error.retryAfterMs);
+          skippedByRateLimit = true;
+          logger.warn("Paused Slack missed-message recovery after Slack rate limit", {
+            reason,
+            sessionKey: session.key,
+            retryInMs,
+            retryAfterMs: error.retryAfterMs ?? null
+          });
+          break;
+        }
+
+        logger.warn("Failed to check Slack thread for missed messages", {
+          reason,
+          sessionKey: session.key,
+          error: error instanceof Error ? error.message : String(error)
+        });
+        continue;
+      }
       const latestPersistedMessageTs =
         this.#sessions.getLatestSlackInboundMessageTs(session.channelId, session.rootThreadTs) ??
         session.lastObservedMessageTs;
@@ -746,10 +958,16 @@ export class SlackConversationService {
       }
     }
 
+    if (!skippedByRateLimit) {
+      this.#missedThreadRecoveryRateLimitBackoffMs = 0;
+      this.#missedThreadRecoveryRateLimitUntilMs = 0;
+    }
+
     logger.info("Finished Slack missed-message recovery", {
       reason,
       recoveredBatchCount,
-      recoveredMessageCount
+      recoveredMessageCount,
+      skippedByRateLimit
     });
   }
 
@@ -767,25 +985,13 @@ export class SlackConversationService {
   ): Promise<string | undefined> {
     this.#clearAssistantStatus(channelId, rootThreadTs);
     const formattedText = options?.alreadyFormatted ? text : markdownishToMrkdwn(text);
-    const startedAt = Date.now();
     const ts = await this.#slackApi.postThreadMessage(channelId, rootThreadTs, formattedText);
     if (ts) {
       this.#selfMessageFilter.rememberPostedMessageTs(ts);
       const occurredAt = new Date().toISOString();
       const session = await this.#sessions.setLastSlackReplyAt(channelId, rootThreadTs, occurredAt);
-      logger.info("chat.outbound.posted", {
-        platform: "slack",
-        sessionKey: session.key,
-        conversationId: channelId,
-        conversationKind: slackConversationKind(session.conversationKind),
-        rootMessageId: rootThreadTs,
-        messageId: ts,
-        format: "text",
-        durationMs: Date.now() - startedAt
-      });
       if (options?.turnSignal?.kind) {
-        await this.#sessions.recordTurnSignal(channelId, rootThreadTs, {
-          turnId: this.#resolveTurnIdForSignal(session),
+        await this.#recordStopSignal(session, {
           kind: options.turnSignal.kind,
           reason: options.turnSignal.reason,
           occurredAt
@@ -795,56 +1001,95 @@ export class SlackConversationService {
     return ts;
   }
 
-  async #maybeRemindSilentActiveTurn(session: SlackSessionRecord): Promise<void> {
-    if (!session.activeTurnId || !session.codexThreadId || !session.activeTurnStartedAt) {
-      return;
+  async #postSessionPageLinkIfNeeded(session: SlackSessionRecord): Promise<SlackSessionRecord> {
+    const latestSession = this.#findSessionByKey(session.key);
+    if (latestSession.sessionPageLinkPostedAt) {
+      return latestSession;
     }
 
-    const nowMs = Date.now();
-    const turnStartedAtMs = Date.parse(session.activeTurnStartedAt);
-    if (!Number.isFinite(turnStartedAtMs)) {
-      return;
+    const inflight = this.#sessionPageLinkPosts.get(session.key);
+    if (inflight) {
+      return await inflight;
     }
 
-    const lastSlackReplyAtMs = session.lastSlackReplyAt ? Date.parse(session.lastSlackReplyAt) : Number.NaN;
-    const silenceAnchorMs =
-      Number.isFinite(lastSlackReplyAtMs) && lastSlackReplyAtMs > turnStartedAtMs
-        ? lastSlackReplyAtMs
-        : turnStartedAtMs;
-
-    if (nowMs - silenceAnchorMs < this.#config.slackProgressReminderAfterMs) {
-      return;
-    }
-
-    if (session.lastProgressReminderAt) {
-      const lastReminderAtMs = Date.parse(session.lastProgressReminderAt);
-      if (Number.isFinite(lastReminderAtMs) && nowMs - lastReminderAtMs < this.#config.slackProgressReminderRepeatMs) {
-        return;
+    const posting = this.#postSessionPageLinkOnce(latestSession);
+    this.#sessionPageLinkPosts.set(session.key, posting);
+    try {
+      return await posting;
+    } finally {
+      if (this.#sessionPageLinkPosts.get(session.key) === posting) {
+        this.#sessionPageLinkPosts.delete(session.key);
       }
     }
+  }
 
+  async #postSessionPageLinkOnce(session: SlackSessionRecord): Promise<SlackSessionRecord> {
+    const latestSession = this.#findSessionByKey(session.key);
+    if (latestSession.sessionPageLinkPostedAt) {
+      return latestSession;
+    }
+
+    const url = buildAdminSessionUrl(this.#config.adminBaseUrl, session.key);
     try {
-      await this.#turnRunner.steerReminder(
-        session,
-        [
-          "You have been working in this Slack thread for a while without a user-visible update.",
-          "This is only a reminder, not a command to send filler.",
-          "Decide whether there is a meaningful progress point, blocker, partial conclusion, or next-step update worth sharing now.",
-          "If yes, send a short Slack update. If not, keep working."
-        ].join("\n")
+      await this.#postBotThreadMessage(
+        latestSession.channelId,
+        latestSession.rootThreadTs,
+        this.#formatSessionPageLinkMessage(latestSession, url),
+        { alreadyFormatted: true }
+      );
+      return await this.#sessions.setSessionPageLinkPostedAt(
+        latestSession.channelId,
+        latestSession.rootThreadTs,
+        new Date().toISOString()
       );
     } catch (error) {
-      if (isMissingActiveTurnSteerError(error)) {
-        await this.#syncActiveTurnFromSteerError(session, error);
-        return;
-      }
-      throw error;
+      logger.warn("Failed to post admin session link into Slack thread", {
+        sessionKey: session.key,
+        adminSessionUrl: url,
+        error: error instanceof Error ? error.message : String(error)
+      });
+      return session;
     }
-    await this.#sessions.setLastProgressReminderAt(
-      session.channelId,
-      session.rootThreadTs,
-      new Date().toISOString()
-    );
+  }
+
+  #formatSessionPageLinkMessage(session: SlackSessionRecord, url: string): string {
+    const lines = [`<${url}|查看会话活动时间线>`];
+    const identity = this.#githubPrIdentity?.getSessionIdentityStatus(session);
+    if (identity?.binding.state === "unbound") {
+      const warning = identity.defaultAccount.available
+        ? `当前发起人还没有绑定 GitHub 账号。不绑定时，后续创建 PR 会使用默认账号 ${identity.defaultAccount.githubLogin}。`
+        : "当前发起人还没有绑定 GitHub 账号。当前没有默认 GitHub PR 账号，创建 PR 前需要先绑定。";
+      lines.push(
+        "",
+        warning,
+        `<${url}/github/bind|绑定 GitHub>`
+      );
+    }
+    return lines.join("\n");
+  }
+
+  async #recordStopSignal(
+    session: SlackSessionRecord,
+    signal: {
+      readonly kind: SlackTurnSignalKind;
+      readonly reason?: string | undefined;
+      readonly occurredAt: string;
+    }
+  ): Promise<SlackSessionRecord> {
+    const turnId = this.#resolveTurnIdForSignal(session);
+    let latestSession = await this.#sessions.recordTurnSignal(session.channelId, session.rootThreadTs, {
+      turnId,
+      kind: signal.kind,
+      reason: signal.reason,
+      occurredAt: signal.occurredAt
+    });
+
+    if (turnId) {
+      latestSession = await this.#inboundStore.markTurnBatchDone(latestSession, turnId);
+    }
+
+    this.#clearAssistantStatus(session.channelId, session.rootThreadTs);
+    return latestSession;
   }
 
   async #dispatchPersistedMessage(session: SlackSessionRecord, messageTs: string): Promise<void> {
@@ -859,25 +1104,26 @@ export class SlackConversationService {
       return;
     }
 
+    latestSession = await this.#postSessionPageLinkIfNeeded(latestSession);
     this.#setAssistantThinking(latestSession);
     if (latestSession.activeTurnId) {
       try {
         const input = this.#inboundStore.createSlackInputFromPersistedMessage(pendingMessage);
-        const steeredSession = await this.#steerPersistedMessageIntoActiveTurn(latestSession, pendingMessage, input);
-        if (steeredSession) {
-          latestSession = steeredSession;
+        const submittedSession = await this.#submitPersistedMessageIntoActiveTurn(latestSession, pendingMessage, input);
+        if (submittedSession) {
+          latestSession = submittedSession;
           return;
         }
       } catch (error) {
-        logger.warn("Failed to steer persisted Slack message into active Codex turn; falling back to queue", {
+        logger.warn("Failed to deliver persisted Slack message into active agent turn", {
           sessionKey: session.key,
           turnId: latestSession.activeTurnId,
           messageTs,
           error: error instanceof Error ? error.message : String(error)
         });
 
-        if (isMissingActiveTurnSteerError(error)) {
-          latestSession = await this.#syncActiveTurnFromSteerError(latestSession, error, {
+        if (isMissingActiveTurnInputError(error)) {
+          latestSession = await this.#syncActiveTurnFromActiveInputError(latestSession, error, {
             messageTs
           });
         }
@@ -910,25 +1156,25 @@ export class SlackConversationService {
           return 0;
         }
 
-        const steeredSession = await this.#steerPersistedBatchIntoActiveTurn(
+        const submittedSession = await this.#submitPersistedBatchIntoActiveTurn(
           latestSession,
           pendingMessages,
           input
         );
-        if (steeredSession) {
-          latestSession = steeredSession;
+        if (submittedSession) {
+          latestSession = submittedSession;
           return pendingMessages.length;
         }
       } catch (error) {
-        logger.warn("Failed to steer recovered Slack backlog into active Codex turn; queuing backlog", {
+        logger.warn("Failed to deliver recovered Slack backlog into active agent turn", {
           sessionKey: session.key,
           turnId: latestSession.activeTurnId,
           recoveryKind,
           error: error instanceof Error ? error.message : String(error)
         });
 
-        if (isMissingActiveTurnSteerError(error)) {
-          latestSession = await this.#syncActiveTurnFromSteerError(latestSession, error);
+        if (isMissingActiveTurnInputError(error)) {
+          latestSession = await this.#syncActiveTurnFromActiveInputError(latestSession, error);
         }
       }
     }
@@ -965,7 +1211,7 @@ export class SlackConversationService {
     }
   }
 
-  async #steerPersistedMessageIntoActiveTurn(
+  async #submitPersistedMessageIntoActiveTurn(
     session: SlackSessionRecord,
     pendingMessage: PersistedInboundMessage,
     input: SlackInputMessage
@@ -978,13 +1224,13 @@ export class SlackConversationService {
       }
 
       try {
-        await this.#turnRunner.steerActiveTurn(latestSession, input);
+        await this.#turnRunner.submitAdditionalInput(latestSession, input);
         await this.#inboundStore.markMessagesInflight(
           latestSession,
           [pendingMessage],
           latestSession.activeTurnId
         );
-        logger.debug("Steered persisted Slack message into active Codex turn", {
+        logger.debug("Delivered persisted Slack message into active agent turn", {
           sessionKey: session.key,
           turnId: latestSession.activeTurnId,
           source: input.source,
@@ -992,14 +1238,17 @@ export class SlackConversationService {
         });
         return latestSession;
       } catch (error) {
-        const syncedSession = isMissingActiveTurnSteerError(error)
-          ? await this.#syncActiveTurnFromSteerError(latestSession, error, {
+        const syncedSession = isMissingActiveTurnInputError(error)
+          ? await this.#syncActiveTurnFromActiveInputError(latestSession, error, {
               messageTs: pendingMessage.messageTs
             })
           : latestSession;
         if (syncedSession.activeTurnId && syncedSession.activeTurnId !== latestSession.activeTurnId) {
           latestSession = syncedSession;
           continue;
+        }
+        if (!syncedSession.activeTurnId && latestSession.activeTurnId) {
+          return null;
         }
         throw error;
       }
@@ -1008,7 +1257,7 @@ export class SlackConversationService {
     return null;
   }
 
-  async #steerPersistedBatchIntoActiveTurn(
+  async #submitPersistedBatchIntoActiveTurn(
     session: SlackSessionRecord,
     pendingMessages: readonly PersistedInboundMessage[],
     input: SlackInputMessage
@@ -1021,7 +1270,7 @@ export class SlackConversationService {
       }
 
       try {
-        await this.#turnRunner.steerActiveTurn(latestSession, input);
+        await this.#turnRunner.submitAdditionalInput(latestSession, input);
         await this.#inboundStore.markMessagesInflight(
           latestSession,
           pendingMessages,
@@ -1029,12 +1278,15 @@ export class SlackConversationService {
         );
         return latestSession;
       } catch (error) {
-        const syncedSession = isMissingActiveTurnSteerError(error)
-          ? await this.#syncActiveTurnFromSteerError(latestSession, error)
+        const syncedSession = isMissingActiveTurnInputError(error)
+          ? await this.#syncActiveTurnFromActiveInputError(latestSession, error)
           : latestSession;
         if (syncedSession.activeTurnId && syncedSession.activeTurnId !== latestSession.activeTurnId) {
           latestSession = syncedSession;
           continue;
+        }
+        if (!syncedSession.activeTurnId && latestSession.activeTurnId) {
+          return null;
         }
         throw error;
       }
@@ -1043,7 +1295,7 @@ export class SlackConversationService {
     return null;
   }
 
-  async #syncActiveTurnFromSteerError(
+  async #syncActiveTurnFromActiveInputError(
     session: SlackSessionRecord,
     error: unknown,
     options?: {
@@ -1052,7 +1304,34 @@ export class SlackConversationService {
   ): Promise<SlackSessionRecord> {
     const mismatch = parseActiveTurnMismatch(error);
     if (mismatch && mismatch.actualTurnId !== session.activeTurnId) {
-      logger.warn("Synchronizing broker active turn id to Codex-reported active turn", {
+      const inflightBatchIds = this.#sessions.listInboundMessages({
+        channelId: session.channelId,
+        rootThreadTs: session.rootThreadTs,
+        status: "inflight"
+      }).map((message) => message.batchId);
+
+      if (shouldResetConflictingActiveTurnMismatch(inflightBatchIds, mismatch.actualTurnId)) {
+        logger.warn("Detected conflicting inflight Slack batches during active-turn resync; resetting broker runtime state", {
+          sessionKey: session.key,
+          previousTurnId: session.activeTurnId,
+          actualTurnId: mismatch.actualTurnId,
+          inflightBatchIds: [...new Set(inflightBatchIds.filter((batchId): batchId is string => Boolean(batchId)))],
+          messageTs: options?.messageTs ?? null
+        });
+        await this.#sessions.resetInflightMessages(
+          session.channelId,
+          session.rootThreadTs
+        );
+        const latestSession = await this.#sessions.setActiveTurnId(
+          session.channelId,
+          session.rootThreadTs,
+          undefined
+        );
+        this.#resetRuntimeProcessing(session.key);
+        return latestSession;
+      }
+
+      logger.warn("Synchronizing broker active turn id to agent-runtime-reported active turn", {
         sessionKey: session.key,
         previousTurnId: session.activeTurnId,
         actualTurnId: mismatch.actualTurnId,
@@ -1065,7 +1344,7 @@ export class SlackConversationService {
       );
     }
 
-    logger.warn("Detected stale active Codex turn; resetting broker runtime state", {
+    logger.warn("Detected stale active agent turn; resetting broker runtime state", {
       sessionKey: session.key,
       turnId: session.activeTurnId,
       messageTs: options?.messageTs ?? null
@@ -1108,13 +1387,14 @@ export class SlackConversationService {
         }
 
         this.#setAssistantThinking(session);
-        session = await this.#turnRunner.ensureCodexThread(session);
+        session = await this.#turnRunner.ensureAgentSession(session);
         const pendingMessages = this.#inboundStore.listPendingMessages(session);
 
         if (pendingMessages.length === 0) {
           continue;
         }
 
+        session = await this.#postSessionPageLinkIfNeeded(session);
         const dispatchMessages = next.recoveryKind ? pendingMessages : [pendingMessages[0]!];
         const slackInput = next.recoveryKind
           ? await this.#inboundStore.createRecoveredBatchInput(session, dispatchMessages, next.recoveryKind)
@@ -1125,7 +1405,7 @@ export class SlackConversationService {
         }
 
         const input = await this.#turnRunner.buildTurnInput(slackInput);
-        const turnOutcome = await this.#turnRunner.runTurnWithRecovery({
+        const turnOutcome = await this.#turnRunner.submitInputWithRecovery({
           session,
           sessionKey,
           senderUserId: slackInput.userId,
@@ -1139,7 +1419,7 @@ export class SlackConversationService {
 
         session = turnOutcome.session;
         const result = turnOutcome.result;
-        logger.debug("Codex turn finished without broker-managed Slack reply forwarding", {
+        logger.debug("agent turn finished without broker-managed Slack reply forwarding", {
           sessionKey,
           turnId: result.turnId,
           aborted: result.aborted,
@@ -1152,6 +1432,11 @@ export class SlackConversationService {
       } catch (error) {
         if (runtime.generation !== generation) {
           return;
+        }
+
+        if (isAuthProfileUnavailableError(error)) {
+          await this.#handleAuthProfileUnavailable(session, error, runtime);
+          break;
         }
 
         logger.error("Slack conversation turn dispatch failed", {
@@ -1189,9 +1474,9 @@ export class SlackConversationService {
         }
         await this.#sessions.setActiveTurnId(session.channelId, session.rootThreadTs, undefined);
         if (
-          isRecoverableCodexTurnFailure(error) ||
-          isMissingActiveTurnSteerError(error) ||
-          isMissingCodexThreadError(error)
+          isRecoverableAgentTurnFailure(error) ||
+          isMissingActiveTurnInputError(error) ||
+          isMissingAgentSessionError(error)
         ) {
           this.#scheduleAutoResume(session.key);
         } else {
@@ -1228,6 +1513,21 @@ export class SlackConversationService {
     return runtime;
   }
 
+  #resetRuntimeForManualSessionReset(sessionKey: string): void {
+    const runtime = this.#getRuntimeSession(sessionKey);
+    if (runtime.autoResumeTimer) {
+      clearTimeout(runtime.autoResumeTimer);
+      runtime.autoResumeTimer = undefined;
+    }
+    runtime.queue.length = 0;
+    runtime.processing = false;
+    runtime.generation += 1;
+    runtime.blockedUntilMs = undefined;
+    runtime.blockedFailureFingerprint = undefined;
+    runtime.lastFailureNotificationFingerprint = undefined;
+    runtime.lastFailureNotificationAtMs = undefined;
+  }
+
   #findSessionByKey(sessionKey: string): SlackSessionRecord {
     const session = this.#sessions.listSessions().find((entry) => entry.key === sessionKey);
     if (!session) {
@@ -1247,6 +1547,36 @@ export class SlackConversationService {
     const runtime = this.#getRuntimeSession(sessionKey);
     runtime.blockedUntilMs = undefined;
     runtime.blockedFailureFingerprint = undefined;
+  }
+
+  async #appendSessionResetTrace(
+    session: SlackSessionRecord,
+    detail: {
+      readonly previousAgentSessionId: string | null;
+      readonly previousActiveTurnId: string | null;
+      readonly clearedInboundCount: number;
+      readonly resetMessageTs: string;
+      readonly historyMessageCount: number;
+    }
+  ): Promise<void> {
+    const now = new Date().toISOString();
+    const sequence = this.#sessions.listAgentTraceEvents(session.key, 10_000).length + 1;
+    await this.#sessions.upsertAgentTraceEvent({
+      id: randomUUID(),
+      sessionKey: session.key,
+      source: "broker",
+      type: "agent_session_reset",
+      at: now,
+      sequence,
+      title: "Session 已重置",
+      summary: "已清空 agent history 并重新唤起 bot",
+      detail: JSON.stringify(detail, null, 2),
+      status: "completed",
+      role: "system",
+      metadata: detail,
+      createdAt: now,
+      updatedAt: now
+    });
   }
 
   #scheduleAutoResume(sessionKey: string): void {
@@ -1314,13 +1644,25 @@ export class SlackConversationService {
     let orphanedInflightResetCount = 0;
 
     for (const session of sessions) {
-      const reconciled = await this.#inboundStore.reconcileOrphanedInflightMessages(session);
+      const latestSession = this.#findSessionByKey(session.key);
+      if (latestSession.activeTurnId) {
+        continue;
+      }
+
+      const reconciled = await this.#inboundStore.reconcileOrphanedInflightMessages(latestSession);
       orphanedInflightDoneCount += reconciled.markedDoneCount;
       orphanedInflightResetCount += reconciled.resetToPendingCount;
 
-      const resumedCount = await this.#resumePendingDispatch(session.key, {
-        forceReset: true
-      });
+      const runtime = this.#getRuntimeSession(session.key);
+      if (runtime.processing || runtime.queue.some((entry) => entry.kind === "dispatch_pending")) {
+        continue;
+      }
+
+      const refreshedSession = this.#findSessionByKey(session.key);
+      if (refreshedSession.activeTurnId) {
+        continue;
+      }
+      const resumedCount = await this.#resumePendingDispatch(refreshedSession.key);
 
       if (resumedCount === 0) {
         continue;
@@ -1354,9 +1696,37 @@ export class SlackConversationService {
 
     for (const session of sessions) {
       const runtime = this.#getRuntimeSession(session.key);
+      const openMessages = this.#sessions.listInboundMessages({
+        channelId: session.channelId,
+        rootThreadTs: session.rootThreadTs,
+        status: ["pending", "inflight"]
+      });
+
+      const latestOpenMessageUpdatedAt = openMessages
+        .map((message) => message.updatedAt)
+        .filter(Boolean)
+        .sort(compareIsoTimestamp)
+        .at(-1);
+
+      if (shouldForceResetStaleIdleRuntime({
+        activeTurnId: session.activeTurnId,
+        runtimeProcessing: runtime.processing,
+        latestOpenMessageUpdatedAt,
+        nowMs,
+        staleAfterMs: this.#config.slackActiveTurnReconcileIntervalMs
+      })) {
+        logger.warn("Force-resetting stale idle Slack runtime state", {
+          sessionKey: session.key,
+          latestOpenMessageUpdatedAt,
+          openMessageCount: openMessages.length
+        });
+        this.#resetRuntimeProcessing(session.key);
+      }
+
       if (runtime.processing) {
         continue;
       }
+      const authBlocked = Boolean(session.authBlockedAt);
 
       const reconciled = await this.#inboundStore.reconcileOrphanedInflightMessages(session);
       if (reconciled.markedDoneCount > 0 || reconciled.resetToPendingCount > 0) {
@@ -1367,7 +1737,7 @@ export class SlackConversationService {
         });
       }
 
-      if (runtime.blockedUntilMs && runtime.blockedUntilMs > nowMs) {
+      if (!authBlocked && runtime.blockedUntilMs && runtime.blockedUntilMs > nowMs) {
         continue;
       }
 
@@ -1400,6 +1770,23 @@ export class SlackConversationService {
       this.#config.slackActiveTurnReconcileIntervalMs
     );
     return Date.now() - this.#lastMissedThreadRecoveryAtMs >= intervalMs;
+  }
+
+  #deferMissedThreadRecoveryAfterRateLimit(retryAfterMs: number | undefined): number {
+    const nextExponentialBackoffMs = this.#missedThreadRecoveryRateLimitBackoffMs > 0
+      ? Math.min(
+        this.#missedThreadRecoveryRateLimitBackoffMs * 2,
+        MISSED_THREAD_RECOVERY_RATE_LIMIT_MAX_BACKOFF_MS
+      )
+      : MISSED_THREAD_RECOVERY_RATE_LIMIT_MIN_BACKOFF_MS;
+    const requestedBackoffMs = retryAfterMs ?? 0;
+    const nextBackoffMs = Math.min(
+      Math.max(nextExponentialBackoffMs, requestedBackoffMs, MISSED_THREAD_RECOVERY_RATE_LIMIT_MIN_BACKOFF_MS),
+      MISSED_THREAD_RECOVERY_RATE_LIMIT_MAX_BACKOFF_MS
+    );
+    this.#missedThreadRecoveryRateLimitBackoffMs = nextBackoffMs;
+    this.#missedThreadRecoveryRateLimitUntilMs = Date.now() + nextBackoffMs;
+    return nextBackoffMs;
   }
 
   #setAssistantThinking(session: SlackSessionRecord): void {
@@ -1445,36 +1832,41 @@ export class SlackConversationService {
     return controller;
   }
 
-  #handleCodexNotification(method: string, params: Record<string, unknown>): void {
-    const session = this.#findSessionForCodexNotification(params);
+  #handleAgentRuntimeEvent(event: AgentRuntimeEvent): void {
+    void this.#traceRecorder.record(event).catch((error: unknown) => {
+      logger.warn("Failed to persist agent runtime trace event", {
+        type: event.type,
+        error: error instanceof Error ? error.message : String(error)
+      });
+    });
+
+    const sessionKey = "brokerSessionKey" in event ? event.brokerSessionKey : undefined;
+    const session = sessionKey ? this.#sessions.getSessionByKey(sessionKey) : undefined;
     if (!session) {
       return;
     }
 
     const controller = this.#getStatusController(session.channelId, session.rootThreadTs);
-
-    switch (method) {
-      case "assistant.state":
-      case "workspace.assistant.state":
-        controller.handleAssistantState(asRecord(params.state));
+    switch (event.type) {
+      case "agent.tool.started":
+        controller.handleToolStart({
+          name: event.name,
+          callId: event.callId,
+          turnId: event.turnId
+        });
         return;
-      case "tool_start":
-      case "codex/event/tool_start":
-        controller.handleToolStart(params);
+      case "agent.tool.completed":
+        controller.handleToolEnd({
+          name: event.name,
+          callId: event.callId,
+          turnId: event.turnId,
+          status: event.status
+        });
         return;
-      case "tool_end":
-      case "codex/event/tool_end":
-        controller.handleToolEnd(params);
-        return;
-      case "status":
-      case "codex/event/status":
-        controller.handleTerminalStatus(typeof params.status === "string" ? params.status : undefined);
-        return;
-      case "item/agentMessage/delta":
-      case "turn/completed":
-      case "codex/event/turn_aborted":
-      case "error":
-      case "codex/event/error":
+      case "agent.message.delta":
+      case "agent.message.completed":
+      case "agent.turn.completed":
+      case "agent.error":
         controller.clear();
         return;
       default:
@@ -1482,74 +1874,114 @@ export class SlackConversationService {
     }
   }
 
-  #findSessionForCodexNotification(params: Record<string, unknown>): SlackSessionRecord | undefined {
-    const turnId = normalizeCodexTurnId(params);
-    const threadId = normalizeCodexThreadId(params);
-    if (!turnId && !threadId) {
-      return undefined;
+  async #handleAuthProfileUnavailable(
+    session: SlackSessionRecord,
+    error: AuthProfileUnavailableError,
+    runtime: RuntimeSessionState
+  ): Promise<void> {
+    if (isAuthProfileProbeFailureReason(error.reason)) {
+      await this.#handleAuthProfileProbeFailure(session, error, runtime);
+      return;
     }
 
-    const sessions = this.#sessions.listSessions();
-    for (const session of sessions) {
-      if (turnId && session.activeTurnId === turnId) {
-        return session;
-      }
-      if (threadId && session.codexThreadId === threadId) {
-        return session;
-      }
+    logger.warn("Pausing Slack session until a human switches auth profile", {
+      sessionKey: session.key,
+      profileName: error.profileName ?? null,
+      reason: error.reason
+    });
+
+    runtime.blockedUntilMs = Number.MAX_SAFE_INTEGER;
+    runtime.blockedFailureFingerprint = `auth:${error.profileName ?? "none"}:${error.reason}`;
+    const alreadyBlocked = Boolean(session.authBlockedAt);
+    const blockedAt = new Date().toISOString();
+    let blockedSession = await this.#sessions.markSessionAuthBlocked(session.key, {
+      reason: error.reason,
+      blockedAt
+    });
+    blockedSession = await this.#sessions.setActiveTurnId(
+      blockedSession.channelId,
+      blockedSession.rootThreadTs,
+      undefined
+    );
+    if (!alreadyBlocked) {
+      await this.#recordAuthBlockedTrace(blockedSession, error, blockedAt);
     }
 
-    return undefined;
-  }
-}
+    if (!blockedSession.authBlockedNoticePostedAt) {
+      const url = buildAdminSessionUrl(this.#config.adminBaseUrl, blockedSession.key);
+      const postedAt = new Date().toISOString();
+      await this.#postBotThreadMessage(
+        blockedSession.channelId,
+        blockedSession.rootThreadTs,
+        [
+          `当前会话绑定的账号额度不可用：${error.userMessage}`,
+          `<${url}|打开 Session 页面手动切换账号并继续处理>`
+        ].join("\n"),
+        {
+          alreadyFormatted: true,
+          turnSignal: {
+            kind: "block",
+            reason: error.reason
+          }
+        }
+      );
+      await this.#sessions.setSessionAuthBlockedNoticePostedAt(blockedSession.key, postedAt);
+    }
 
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return undefined;
-  }
-
-  return value as Record<string, unknown>;
-}
-
-function slackConversationKind(value: string | undefined): "channel" | "group" | "direct" | "thread" | "unknown" {
-  if (value === "channel" || value === "group" || value === "direct" || value === "thread") {
-    return value;
-  }
-  if (value === "im" || value === "mpim") {
-    return "direct";
-  }
-  return "unknown";
-}
-
-function normalizeCodexTurnId(params: Record<string, unknown>): string | undefined {
-  const direct = normalizeNonEmptyString(
-    params.turnId ??
-      params.turn_id ??
-      (asRecord(params.turn)?.id) ??
-      (asRecord(params.msg)?.turn_id)
-  );
-  if (direct) {
-    return direct;
+    this.#clearAssistantStatus(blockedSession.channelId, blockedSession.rootThreadTs);
   }
 
-  return normalizeNonEmptyString(asRecord(params.state)?.turn_id);
-}
+  async #handleAuthProfileProbeFailure(
+    session: SlackSessionRecord,
+    error: AuthProfileUnavailableError,
+    runtime: RuntimeSessionState
+  ): Promise<void> {
+    logger.warn("Deferring Slack session until auth profile status can be read", {
+      sessionKey: session.key,
+      profileName: error.profileName ?? null,
+      reason: error.reason
+    });
 
-function normalizeCodexThreadId(params: Record<string, unknown>): string | undefined {
-  return normalizeNonEmptyString(
-    params.threadId ??
-      params.thread_id ??
-      (asRecord(params.thread)?.id) ??
-      (asRecord(params.msg)?.thread_id) ??
-      (asRecord(params.state)?.thread_id)
-  );
-}
-
-function normalizeNonEmptyString(value: unknown): string | undefined {
-  if (typeof value !== "string") {
-    return undefined;
+    runtime.blockedUntilMs = undefined;
+    runtime.blockedFailureFingerprint = `auth-probe:${error.profileName ?? "none"}:${error.reason}`;
+    const latestSession = session.authBlockedAt && isAuthProfileProbeFailureReason(session.authBlockReason)
+      ? await this.#sessions.clearSessionAuthBlock(session.key)
+      : session;
+    await this.#sessions.setActiveTurnId(
+      latestSession.channelId,
+      latestSession.rootThreadTs,
+      undefined
+    );
+    this.#scheduleAutoResume(latestSession.key);
+    this.#clearAssistantStatus(latestSession.channelId, latestSession.rootThreadTs);
   }
 
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
+  async #recordAuthBlockedTrace(
+    session: SlackSessionRecord,
+    error: AuthProfileUnavailableError,
+    at: string
+  ): Promise<void> {
+    const existingCount = this.#sessions.listAgentTraceEvents(session.key, 10_000).length;
+    await this.#sessions.upsertAgentTraceEvent({
+      id: randomUUID(),
+      sessionKey: session.key,
+      source: "broker",
+      type: "agent_runtime_error",
+      at,
+      sequence: existingCount + 1,
+      title: "Auth 不可用",
+      summary: `等待人工切换账号：${error.userMessage}`,
+      detail: JSON.stringify({
+        profileName: error.profileName ?? null,
+        reason: error.reason
+      }, null, 2),
+      status: "blocked",
+      metadata: {
+        profileName: error.profileName ?? null,
+        reason: error.reason
+      },
+      createdAt: at,
+      updatedAt: at
+    });
+  }
 }

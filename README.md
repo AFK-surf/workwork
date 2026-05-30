@@ -1,15 +1,60 @@
 # slack-codex-broker
 
-Slack + China Feishu bridge for routing chat sessions into Codex app-server workflows.
+Minimal Slack + China Feishu bridge to Codex for multi-repository workflows.
 
-It connects to Slack over Socket Mode and, when `FEISHU_ENABLED=true`, to China Feishu over long connection in the same broker process. Each Slack thread or Feishu group session starts or resumes one Codex app-server thread and gets an isolated workspace directory. The Codex session always starts in that neutral workspace instead of being pinned to a specific repository. If code work is needed, the agent is expected to use a shared `repos/` cache for canonical clones and create any task-specific git worktrees under the current session workspace. Normal thread or group follow-up replies continue the same Codex thread when the platform supports that context. Sending `-stop` in the active session interrupts the current Codex turn.
+It connects to Slack over Socket Mode, starts or resumes one Codex app-server thread per Slack thread, and gives each Slack session an isolated workspace directory. The Codex session always starts in that neutral workspace instead of being pinned to a specific repository. If code work is needed, the agent is expected to use a shared `repos/` cache for canonical clones and create any task-specific git worktrees under the current session workspace. Normal thread replies continue the same Codex thread. Sending `-stop` in the thread interrupts the current Codex turn.
 
-On the first `@bot` inside an existing Slack thread, the broker backfills a bounded slice of earlier thread history into Codex. Feishu group sessions use bounded history and recovery when the needed permissions/cursors are available, and surface degraded context when they are not. If Codex needs older context than the initial backfill, it can query the broker's local chat-history HTTP API from inside its shell.
+On the first `@bot` inside an existing Slack thread, the broker backfills a bounded slice of earlier thread history into Codex. If Codex needs older context than the initial backfill, it can query the broker's local thread-history HTTP API from inside its shell.
+
+Feishu support runs in the same broker process as Slack. Feishu group `@bot ...`: create or resume a group session; private chats are ignored. For production parity, configure `FEISHU_ENABLED=true`, `FEISHU_GROUP_MESSAGE_MODE=all`, `FEISHU_APP_ID`, `FEISHU_APP_SECRET`, and at least one Feishu bot identity. `at_only` is a visible degraded mode; set `FEISHU_ALL_MESSAGE_DELIVERY_VERIFIED=true` only after the real non-@ follow-up smoke passes; keep `LOG_RAW_FEISHU_EVENTS=false` unless collecting a focused, redacted fixture.
+
+Feishu rollout:
+
+- run the preflight and smoke scripts against a China Feishu self-built app installed in the target group
+- capture a sanitized pre-rollout log snapshot; the snapshot redacts non-structured lines instead of copying raw Docker log text
+- verify metadata recursively redacts unsafe string fields while preserving safe posture text such as `FEISHU_APP_SECRET=missing`
+- Operator-facing auth status and replacement output summarize filesystem paths instead of echoing full host paths
+- Profile command output also summarizes auth/profile paths without full host filesystem paths
+
+Admin and chat APIs are platform-aware:
+
+- platform-aware `Slack/Feishu user -> GitHub author` mappings
+- `GET /admin/api/status?platform=slack|feishu`
+- `DELETE /admin/api/github-authors/:userId?platform=slack|feishu`
+- filters sessions, jobs, and GitHub author mappings to that platform
+- allowlisted `recentBrokerLogs` remain cross-platform
+- Platform query/body values must be `slack` or `feishu`; invalid values return 400 `invalid_platform` instead of falling back to Slack
+- generic platform-aware chat endpoints
+- Generic `/chat/*` JSON/query contracts use canonical `conversationId` and `rootMessageId` fields
+- also accepts `conversation_id` and `root_message_id` aliases
+- Invalid `platform` values return 400 `invalid_platform` with allowed values `slack` and `feishu`
+- Generic file uploads use canonical `filePath` or `contentBase64`
+- `file_path` and `content_base64` aliases accepted and named in validation errors
+- Inline `contentBase64`/`content_base64` uploads require `filename` and must decode to non-empty file content
+- Generic file uploads accept `filePath` or non-empty `content_base64` plus `filename`
+- `richText`/`rich_text` and `card` can be structured JSON values or JSON strings
+- invalid JSON strings return 400 with only the field name, not the raw payload
+- request logging redact message text, state reasons, file comments/alt text, rich/card payloads
+- `/integrations/*` request logging redacts MCP call `arguments`
+- Registered jobs receive `CHAT_PLATFORM`, `CHAT_CONVERSATION_ID`, and `CHAT_ROOT_MESSAGE_ID`
+- legacy Slack `channel_id` and `thread_ts` aliases only for Slack compatibility when `platform` is omitted or set to `slack`
+- Invalid generic job `platform` values return 400 `invalid_platform` before coordinate validation
+- Job callback `detailsJson`/`details_json` fields and `/integrations/mcp-call` `arguments` can be structured JSON values or JSON strings
+- `pnpm test:e2e:feishu-mock` covers the Feishu mock e2e gate, fixture replay, and Slack+Feishu same-process readiness
+- `pnpm rfc:feishu-audit` and `pnpm rfc:feishu-audit:local` summarize implementation surfaces, test slices, behavior evidence probes, package-script gates, and remaining real-tenant evidence gaps without sending Feishu messages
+- its JSON still keeps `ok=false` until real tenant gates pass
+- run `pnpm manual:feishu-smoke -- --preflight --env-file .env`; the extra `--` keeps Node's own `--env-file` flag from intercepting the smoke-checker argument
+- smoke CLI value flags also accept `--flag=value`; missing values fail before another flag is swallowed
+- secret-bearing values only as set/missing
+- generic platform-aware chat endpoints include `curl -sS -X POST http://127.0.0.1:3000/chat/post-message` and `curl -sS -X POST http://127.0.0.1:3000/chat/post-file`
+- `limit` (optional positive integer, clamped by `SLACK_HISTORY_API_MAX_LIMIT`; invalid values return 400 `invalid_limit`)
+- Generic chat history `limit` uses the same positive-integer validation
+- Generic chat history `format` uses the same `text|json` validation before broker delegation
+- For Feishu, outbound message images up to 10 MB are uploaded as image messages and fall back to file upload when still within the 30 MB file/resource limit
 
 ## What It Expects
 
 - A Slack app using Socket Mode
-- Optional China Feishu self-built app for dual-platform rollout
 - Codex authentication via either:
   - `OPENAI_API_KEY`
   - a mounted `auth.json` plus `CODEX_AUTH_JSON_PATH`
@@ -40,45 +85,27 @@ If you want to support private channels or DMs, add the corresponding `groups:hi
 
 The broker's Slack co-author flow uses Socket Mode interactive envelopes, thread ephemerals, and modals. With Socket Mode enabled, you do not need a separate public interactivity Request URL for this flow.
 
-## Feishu Setup
-
-China Feishu support is feature-flagged and runs beside Slack in the same broker process. Use [docs/feishu-setup.md](docs/feishu-setup.md) for the app setup, permission request, environment variables, and real smoke checklist.
-
 ## Environment
 
 Copy `.env.example` to `.env` and fill in:
-
-Slack:
 
 - `SLACK_APP_TOKEN`
 - `SLACK_BOT_TOKEN`
 - optional `SLACK_INITIAL_THREAD_HISTORY_COUNT`
 - optional `SLACK_HISTORY_API_MAX_LIMIT`
-
-Feishu rollout:
-
-- `FEISHU_ENABLED=true` when enabling the China Feishu long-connection bridge
-- `FEISHU_APP_ID`
-- `FEISHU_APP_SECRET`
-- at least one Feishu bot identity: `FEISHU_BOT_OPEN_ID`, `FEISHU_BOT_USER_ID`, or `FEISHU_BOT_UNION_ID`
-- `FEISHU_GROUP_MESSAGE_MODE=all` for production parity; `at_only` is degraded
-- `FEISHU_ALL_MESSAGE_DELIVERY_VERIFIED=true` only after the real non-@ follow-up smoke passes
-- optional `FEISHU_INITIAL_THREAD_HISTORY_COUNT`
-- optional `FEISHU_HISTORY_API_MAX_LIMIT`
-
-Service storage and logging:
-
 - optional `SESSIONS_ROOT`
 - optional `REPOS_ROOT`
 - optional `LOG_DIR`
 - optional `LOG_LEVEL`
 - optional `LOG_RAW_SLACK_EVENTS`
-- keep `LOG_RAW_FEISHU_EVENTS=false` unless collecting a focused, redacted fixture
 - optional `LOG_RAW_CODEX_RPC`
 - optional `LOG_RAW_HTTP_REQUESTS`
-
-Codex runtime:
-
+- optional `LOG_RAW_MAX_BYTES`
+- optional disk cleanup settings (`DISK_CLEANUP_*`), including safe-by-default
+  dry-run mode and session cache TTL. Keep `DISK_CLEANUP_DRY_RUN=true`
+  for the first few days after enabling cleanup, review the structured
+  candidate logs, and only set it to `false` after confirming the listed
+  paths are expected rebuildable artifacts.
 - one Codex auth mode
 - optional host Codex home mount if you want the container to inherit your global `~/.codex` memory/instructions
 
@@ -111,41 +138,44 @@ volumes:
 
 At startup the broker copies that file into its own `CODEX_HOME`/data directory and uses it to authenticate the embedded Codex app-server.
 
-The main Codex runtime disables all built-in MCP servers by default. Keep tool access outside the main runtime and use broker-managed integrations instead. This only removes those MCP servers from the broker's container-local Codex config. It does not modify your host `~/.codex/config.toml`.
+The main Codex runtime disables all built-in MCP servers by default, and starts the Codex app-server with the `apps` feature disabled so Apps/Connectors are not exposed to model turns. Keep tool access outside the main runtime and use broker-managed integrations instead. MCP removal only affects the broker's container-local Codex config. It does not modify your host `~/.codex/config.toml`.
 
-## Reuse Global Codex Memory
+## Shared Codex Team Home
 
-If you want the containerized Codex to see your global `~/.codex` files such as:
-
-- `AGENT.md`
-- `AGENTS.md`
-- `memory.md`
-- `memories/`
-- `skills/`
-- `superpowers/`
-
-mount your host Codex home and point the runtime at it:
+Broker auth profiles are quota/auth boundaries, not memory boundaries. Shared Codex behavior should live in one team-level home:
 
 ```env
-CODEX_HOST_HOME_PATH=/Users/you/.codex
-CODEX_HOST_HOME_PATH_HOST=/Users/you/.codex
+CODEX_TEAM_HOME=/app/.data/team-codex-home
 HOST_AGENTS_PATH_HOST=/Users/you/.agents
 HOST_AGENTS_CONTAINER_PATH=/Users/you/.agents
 ```
 
-Recommended behavior:
+Shared entries include:
 
-- `AGENT.md` is the broker's canonical personal memory file; it is bootstrapped once from your host `~/.codex/AGENT.md` if present, then persisted inside the broker state
-- new Slack sessions inject that personal memory once at `thread/start`; later turns reuse the existing session context instead of re-sending it
-- the runtime shell path `~/.codex/AGENT.md` is wired back to the broker-managed personal memory file, so agent-written memory updates persist without touching your host home directly
-- `AGENTS.md` is bootstrapped from your host `~/.codex` once and then lives independently inside the broker container state, so host and broker instructions can diverge
-- `memory.md` is still linked back to your host `~/.codex`, so durable notes continue to persist across restarts
-- directories like `skills/` and `superpowers/` are copied into the container `CODEX_HOME`
-- `HOST_AGENTS_PATH_HOST` plus `HOST_AGENTS_CONTAINER_PATH` lets relative skill symlinks like `../../.agents/...` resolve correctly during that copy
-- if your host skills contain relative symlinks, set `CODEX_HOST_HOME_PATH` to the same absolute path as the host so those symlinks keep resolving inside the container
-- for docker-side skills that need to call a host-local helper service, either set an explicit container-safe URL such as `TEMPAD_LINK_SERVICE_URL=http://host.docker.internal:4320`, or leave it unset and let the broker probe the common host-local tempad endpoints automatically
+- `AGENT.md`
+- `AGENTS.md`
+- `memory.md`
+- `config.toml`
+- `memories/`
+- `skills/`
+- `superpowers/`
+- `rules/`
+- `vendor_imports/`
 
-This keeps personal memory on the familiar `~/.codex/AGENT.md` path inside the broker runtime, while allowing broker-specific repo instructions (`AGENTS.md`) to fork away from your personal host setup without sharing the container's sqlite/log/session state.
+Runtime behavior:
+
+- `CODEX_TEAM_HOME` defaults to `.data/team-codex-home`.
+- Each auth profile still has its own `CODEX_HOME` for `auth.json`, generated images, cache, logs, and runtime state.
+- Shared entries in each profile `CODEX_HOME` are symlinks to `CODEX_TEAM_HOME`.
+- New Slack sessions inject personal memory from `CODEX_TEAM_HOME/AGENT.md` once at `thread/start`; later turns reuse the existing session context instead of re-sending it.
+- The runtime shell path `~/.codex/AGENT.md` is wired back to `CODEX_TEAM_HOME/AGENT.md`, so agent-written memory updates are visible across auth profiles.
+- If the team home is missing and there is no existing shared profile/source content, the broker creates empty shared files/directories only.
+- If existing profile/source shared content is present while the team home is empty, the broker preserves the legacy local-copy behavior instead of linking profiles to empty team files.
+- Historical profile data migration is a one-off operator action and is intentionally not part of the runtime code path.
+- `HOST_AGENTS_PATH_HOST` plus `HOST_AGENTS_CONTAINER_PATH` lets relative skill symlinks like `../../.agents/...` resolve correctly if the team home contains those symlinks.
+- For docker-side skills that need to call a host-local helper service, either set an explicit container-safe URL such as `TEMPAD_LINK_SERVICE_URL=http://host.docker.internal:4320`, or leave it unset and let the broker probe the common host-local tempad endpoints automatically.
+
+Before enabling this on an existing machine, seed `CODEX_TEAM_HOME` once from the reviewed canonical profile/global Codex files and keep an external backup of replaced profile-local shared entries. Do not move `auth.json` into the team home.
 
 ## Run With Docker Compose
 
@@ -159,7 +189,6 @@ Operational scripts for the real container:
 ```bash
 pnpm ops:check:real
 pnpm ops:rollout:real
-pnpm ops:resume:real -- --channel-id C123 --thread-ts 111.222
 pnpm ops:status:real
 pnpm ops:auth:real status
 pnpm ops:auth:profiles bootstrap
@@ -170,38 +199,34 @@ pnpm ops:auth:profiles use backup-account
 pnpm ops:ui:real
 ```
 
-`ops:rollout:real` reuses the current `slack-codex-broker-real` container's env vars and bind mounts, refuses to restart while active turns exist unless you pass `--allow-active`, rebuilds the image, recreates the container, and then runs the fixed post-update checks. When the inspected container has `FEISHU_ENABLED=true`, rollout also runs Feishu preflight for credentials, bot identity, China Feishu mode, and logging posture, then writes `feishu-preflight-report.json` plus `feishu-preflight-summary.md` under the rollout backup directory; use `--skip-feishu-preflight` only for a non-parity emergency rollout. Each rollout also writes sanitized metadata plus a sanitized pre-rollout log snapshot under `.backups/rollouts/`; metadata recursively redacts unsafe string fields while preserving safe posture text such as `FEISHU_APP_SECRET=missing`, and the log snapshot allowlists structured event/meta fields and redacts non-structured lines instead of copying raw Docker log text. Rollout JSON and metadata use repo-relative backup coordinates instead of full host filesystem paths.
-`ops:check:real` verifies the live container health endpoints, embedded Codex readiness, runtime paths, startup log markers, and a sanitized `/admin/api/status` platform-health summary for Slack and Feishu.
-`ops:status:real` prints a structured runtime snapshot for the live container, including health plus sanitized active sessions, open inbound message summaries, background jobs, and allowlisted recent broker logs. Raw message bodies, job tokens/scripts, malformed log lines, and non-allowlisted log metadata are not echoed; use `--open-inbound-limit` and `--log-lines` to tune output volume.
-`ops:auth:real status` prints the live container's Codex auth files, runtime account identity, any quota/usage fields exposed by `account/read`, plus the current session state snapshot. Operator-facing auth status and replacement output summarize filesystem paths instead of echoing full host paths.
-`ops:auth:profiles` manages a local auth-profile directory under the live data root. The host auth is kept as a reference copy, while the docker auth points at a selectable `active` profile. Use `bootstrap` once, then `import-host --name <profile>` or `import --name <profile> --from <path>` to add more docker-side auth profiles, and `use <profile>` to switch the live container. Profile command output also summarizes auth/profile paths without full host filesystem paths.
+`ops:rollout:real` reuses the current `slack-codex-broker-real` container's env vars and bind mounts, refuses to restart while active turns exist unless you pass `--allow-active`, rebuilds the image, recreates the container, and then runs the fixed post-update checks. Each rollout also writes sanitized metadata plus pre-rollout logs under `.backups/rollouts/`.
+`ops:status:real` prints a structured runtime snapshot for the live container, including health, active sessions, open inbound messages, background jobs, and recent broker logs. Use `--open-inbound-limit` and `--log-lines` to tune output volume.
+`ops:auth:real status` prints the live container's Codex auth files, runtime account identity, any quota/usage fields exposed by `account/read`, plus the current session state snapshot.
+`ops:auth:profiles` manages a local auth-profile directory under the live data root. The host auth is kept as a reference copy, while the docker auth points at a selectable `active` profile. Use `bootstrap` once, then `import-host --name <profile>` or `import --name <profile> --from <path>` to add more docker-side auth profiles, and `use <profile>` to switch the live container.
 `ops:ui:real` starts a local-only admin page on `127.0.0.1` so you can inspect sessions/account state and upload a replacement `auth.json` without using CLI flags directly.
-`ops:resume:real` manually re-queues a stuck Slack session that still has pending inbound backlog but no active Codex turn. Use it as an operator fallback while debugging a broken thread.
-
-## Local Verification
-
-Use `pnpm test` for the full local suite. RFC 0001's Feishu mock e2e gate is exposed as `pnpm test:e2e:feishu-mock`; it runs the Feishu bridge, Feishu long-connection adapter, fixture replay, and dual-platform runtime mock tests that prove group @ start/resume, non-@ follow-up, private/self ignore, stop, history recovery, text/rich/card/file behavior, co-author card callbacks, and Slack+Feishu same-process readiness without requiring a real tenant. Run `pnpm rfc:feishu-audit` to summarize local RFC assets, implementation surfaces, test slices, behavior evidence probes, package-script gates, preflight readiness, and the remaining real-tenant evidence gaps without sending Feishu messages. `pnpm rfc:feishu-audit:local` exits on the local gate only for CI/local readiness; its JSON still keeps `ok=false` until real tenant gates pass. Run `pnpm manual:feishu-smoke -- --preflight --env-file .env` before rollout when credentials live in a local env file; the `--` keeps Node's own `--env-file` flag from intercepting the smoke-checker argument, value flags also accept `--flag=value`, missing values fail before another flag is swallowed, and the checker reports secret-bearing values only as set/missing. Real tenant parity still requires `pnpm manual:feishu-smoke` after the Feishu app setup actions are performed.
 
 ## Run On a macOS VM
 
-The preferred macOS deployment model is now GitHub-first:
+The preferred macOS deployment model is package-first:
 
-- clone this repository directly on the VM
-- run the bootstrap script from inside that clone
+- build and publish/pack the admin and worker npm packages outside the VM
+- run the bootstrap script with the package version to install
 - upload `auth.json` later through the admin page
-- do all later deploy / rollback operations from the admin page by Git ref
+- do all later deploy / rollback operations from the admin page by target and
+  package version
 
-There is no host-side code sync step in the normal path anymore.
+There is no host-side code sync or production build step in the normal path.
 
 ### First bootstrap on the VM
 
 ```bash
-git clone https://github.com/zzj3720/slack-codex-broker.git ~/services/slack-codex-broker
-cd ~/services/slack-codex-broker
-node scripts/ops/macos-bootstrap.mjs --start-worker
+npm install -g @agent-session-broker/admin@0.1.2
+agent-session-broker-macos-bootstrap --service-root ~/services/slack-codex-broker --package-version 0.1.2 --start-worker
 ```
 
-The bootstrap script expects to run inside the VM's long-lived clone and uses that clone as the stable admin/control repo.
+The bootstrap script installs `@agent-session-broker/admin@<version>` and
+`@agent-session-broker/worker@<version>` into the service root. Admin launchd
+runs through `current-admin`; worker launchd runs through `current-worker`.
 
 Before running it, make sure the Slack app credentials are available through one of these sources:
 
@@ -210,68 +235,75 @@ Before running it, make sure the Slack app credentials are available through one
 
 What it prepares:
 
-- `releases/<sha>` worktrees for worker releases
-- `current`, `previous`, and `failed` release links
+- `releases/admin/npm-<version>/` and `releases/worker/npm-<version>/` package installs
+- `current-admin`, `previous-admin`, `failed-admin` release links
+- `current-worker`, `previous-worker`, `failed-worker` release links
 - shared runtime state under `.data/`
 - support homes under `runtime-support/`
 - launchd agents for:
-  - `com.zzj3720.slack-codex-broker` (admin/control plane)
-  - `com.zzj3720.slack-codex-broker.worker` (Slack/Codex worker)
+  - `io.github.hoolc.agent-session-broker` (admin/control plane)
+  - `io.github.hoolc.agent-session-broker.worker` (Slack/Codex worker)
 
 What it does not do:
 
 - it does not copy `auth.json`; import auth profiles later through `/admin`
 - it does not copy historical sessions, logs, jobs, or repo caches from another machine
-- it does not require `pnpm` to already be installed globally; it uses Corepack and the repo-pinned pnpm version
+- it does not run `pnpm install` or `pnpm build` on the VM
 
 ### Runtime layout on the VM
 
-The fixed clone is both the admin code root and the Git source of truth for worker releases.
+The npm packages are the release units. Runtime services execute code through
+their target-specific current release links, not from a source checkout.
 
 - `<service-root>/`:
-  - long-lived git clone
-  - admin launchd working directory
-- `<service-root>/releases/<sha>/`:
-  - worker build for a specific commit
-- `<service-root>/current`:
-  - symlink to the active worker release
-- `<service-root>/previous`:
-  - symlink to the last good worker release
-- `<service-root>/failed`:
-  - symlink to the most recent failed cutover
+  - release manager and shared runtime root
+- `<service-root>/releases/admin/npm-<version>/`:
+  - npm install root for one admin package version
+- `<service-root>/releases/worker/npm-<version>/`:
+  - npm install root for one worker package version
+- `<service-root>/current-admin` and `<service-root>/current-worker`:
+  - symlinks to the active installed package roots
+- `<service-root>/previous-admin` and `<service-root>/previous-worker`:
+  - symlinks to the last good release for each target
+- `<service-root>/failed-admin` and `<service-root>/failed-worker`:
+  - symlinks to the most recent failed cutover for each target
 - `<service-root>/.data/`:
   - shared broker state, sessions, jobs, logs, repos, auth profiles, codex home
 
 ### Deploy and rollback
 
-The admin service fetches from the VM's local Git clone and deploys a selected ref into a new worker release directory.
+The admin service deploys a selected target and npm package version into a new
+release directory. Admin and worker are independent release targets: an admin
+deploy switches only `current-admin` and schedules only the admin restart; a
+worker deploy switches only `current-worker`, restarts the worker immediately,
+and waits for worker readiness.
 
 - deploy:
-  - `git fetch origin`
-  - resolve commit / branch / tag
-  - create or reuse `releases/<sha>`
-  - build there
-  - switch `current` to the new release
-  - restart only the worker launchd service
-  - run health + Codex-ready checks
+  - read package versions from the selected target's npm registry entry
+  - install the selected package under `releases/<target>/npm-<version>`
+  - switch that target's current symlink
+  - for worker deploys, restart the worker launchd service
+  - run worker health + Codex-ready checks with a 90s startup window, because worker startup can spend tens of seconds reconciling Slack thread state before `/readyz` answers
+  - for admin deploys, schedule the admin launchd service restart from `current-admin`
   - auto-rollback on failed cutover
 - rollback:
-  - switch `current` back to `previous`, or to an explicitly selected ref
-  - restart the worker
-  - run the same health checks
+  - switch the requested target back to `previous-*`, or to an explicitly selected installed package version
+  - restart only that target's launchd service
+  - run worker health checks only for worker rollback
 
-Because old releases stay on disk, rollback is a pointer switch instead of a rebuild.
+Because old releases stay on disk, rollback is a pointer switch. It does not fetch source or build a missing version.
 
 ### Admin surface
 
 ```text
 GET /admin
-GET /admin/api/status?platform=slack|feishu
+GET /readyz
+GET /admin/api/status
 POST /admin/api/auth-profiles
 POST /admin/api/auth-profiles/:name/activate
 DELETE /admin/api/auth-profiles/:name
 POST /admin/api/github-authors
-DELETE /admin/api/github-authors/:userId?platform=slack|feishu
+DELETE /admin/api/github-authors/:slackUserId
 POST /admin/api/deploy
 POST /admin/api/rollback
 ```
@@ -281,16 +313,16 @@ Typical first-run flow:
 1. Open `/admin`.
 2. Upload one or more `auth.json` files into Auth Profiles.
 3. Activate the profile you want the worker to use.
-4. Later, deploy a commit / branch / tag from the Deploy panel.
+4. Later, deploy a package version from the Deploy panel.
 5. Roll back from the same panel when needed.
 
-The same admin page also exposes a `GitHub Authors` panel for manually maintaining platform-aware `Slack/Feishu user -> GitHub author` mappings. Manual Slack entries override Slack-inferred mappings; Feishu mappings are manual and keyed by the Feishu user identity used in that session. `GET /admin/api/status?platform=...` filters sessions, jobs, and GitHub author mappings to that platform while still returning independent Slack/Feishu platform health; allowlisted `recentBrokerLogs` remain cross-platform so Feishu smoke can prove same-runtime Slack readiness and reply evidence. Platform query/body values must be `slack` or `feishu`; invalid values return 400 `invalid_platform` instead of falling back to Slack.
+The same admin page also exposes a `GitHub Authors` panel for manually maintaining `Slack user -> GitHub author` mappings. Manual entries override Slack-inferred mappings.
 
 If `BROKER_ADMIN_TOKEN` is set, `/admin/api/*` requires that token via `x-admin-token` or `Authorization: Bearer ...`. If it is unset, the admin API is still enabled, so only expose the broker port in environments you trust.
 
 The container image:
 
-- uses Node 22
+- uses Node 22.5+ for the built-in SQLite runtime state store
 - installs `git`
 - installs `gh`
 - installs `rg` via `ripgrep`
@@ -316,13 +348,13 @@ Durable broker-owned identity/config data:
 
 Disposable runtime state:
 
-- `state/`
+- `state/broker.sqlite`
 - `sessions/`
 - `jobs/`
 - `logs/`
 - `repos/`
 
-The macOS bare-run deploy path only reuses the durable broker-owned subset that defines behavior and identity. It intentionally leaves the disposable runtime state behind and starts the VM with a clean `sessions/`, `jobs/`, `logs/`, and `repos/`.
+The macOS bare-run deploy path only reuses the durable broker-owned subset that defines behavior and identity. It intentionally leaves the disposable runtime state behind and starts the VM with a clean `state/`, `sessions/`, `jobs/`, `logs/`, and `repos/`.
 
 ## Logging
 
@@ -330,52 +362,53 @@ The broker now keeps a layered JSONL log set intended for postmortem debugging.
 
 Default layout under `LOG_DIR`:
 
-- `broker.jsonl`
-  Global structured application log for every `info` / `warn` / `error` / `debug` event.
-- `sessions/<session-key>.jsonl`
+- `broker/<yyyy-mm-dd-hh>.jsonl`
+  Hourly global structured application logs for every `info` / `warn` / `error` / `debug` event.
+- `sessions/<base64url-session-key>/<yyyy-mm-dd-hh>.jsonl`
   Per-session fan-out log. Useful when one Slack thread goes bad and you want only its history.
-- `jobs/<job-id>.jsonl`
+- `jobs/<base64url-job-id>/<yyyy-mm-dd-hh>.jsonl`
   Per-background-job fan-out log.
-- `raw/slack-events.jsonl`
+- `raw/slack-events/<yyyy-mm-dd-hh>.jsonl`
   Raw Socket Mode envelopes from Slack.
-- `raw/feishu-events.jsonl`
-  Raw Feishu event envelopes. Disabled by default; enable only for focused
-  fixture capture/debugging because normal structured logs must not become
-  message archives.
-- `raw/codex-rpc.jsonl`
+- `raw/codex-rpc/<yyyy-mm-dd-hh>.jsonl`
   Raw Codex app-server RPC requests, responses, and notifications.
-- `raw/http-requests.jsonl`
-  Raw local broker HTTP traffic for `/slack/*`, `/chat/*`, `/jobs/*`, and `/integrations/*`.
+- `raw/http-requests/<yyyy-mm-dd-hh>.jsonl`
+  Raw local broker HTTP traffic for `/slack/*` and `/jobs/*`.
 
 Supported environment knobs:
 
 - `LOG_LEVEL=debug|info|warn|error`
 - `LOG_RAW_SLACK_EVENTS=true|false`
-- `LOG_RAW_FEISHU_EVENTS=true|false`
 - `LOG_RAW_CODEX_RPC=true|false`
 - `LOG_RAW_HTTP_REQUESTS=true|false`
+- `LOG_RAW_MAX_BYTES=131072`
+- `DISK_CLEANUP_ENABLED=true|false`
+- `DISK_CLEANUP_CHECK_INTERVAL_MS=300000`
+- `DISK_CLEANUP_MIN_FREE_BYTES=10737418240`
+- `DISK_CLEANUP_TARGET_FREE_BYTES=21474836480`
+- `DISK_CLEANUP_INACTIVE_SESSION_MS=86400000`
+- `DISK_CLEANUP_JOB_PROTECTION_MS=172800000`
+- `DISK_CLEANUP_OLD_LOG_MS=86400000`
 
 Notes:
 
-- Raw logs are intentionally verbose and can grow quickly during long sessions.
-- `/slack/*` and `/chat/*` request logging redact message text, state reasons, file comments/alt text, rich/card payloads, and inline `content_base64` payloads into size markers instead of writing chat bodies or blobs.
-- `/jobs/*` request logging redacts job scripts, callback tokens, summaries, details, and errors before writing raw HTTP JSONL.
-- `/integrations/*` request logging redacts MCP call `arguments` before writing raw HTTP JSONL.
+- Raw logs are intentionally verbose and can grow quickly during long sessions. Oversized raw payloads are truncated to `LOG_RAW_MAX_BYTES` before they are written.
+- Admin status reads only a bounded tail of recent broker JSONL files; it does not decode entire log files into memory.
+- Broker-managed background jobs are automatically cancelled once they exceed five hours of runtime, including restartable jobs that are already over the limit when the worker boots.
+- When free space falls below `DISK_CLEANUP_MIN_FREE_BYTES`, the worker removes old hourly log files first. If space is still below `DISK_CLEANUP_TARGET_FREE_BYTES`, it removes sessions inactive for at least `DISK_CLEANUP_INACTIVE_SESSION_MS`, oldest activity first. Active turns, pending inbound work, and running jobs protect sessions only until `DISK_CLEANUP_JOB_PROTECTION_MS`; older sessions can be removed with their jobs.
+- `/slack/post-file` request logging redacts inline `content_base64` payloads into a size marker instead of writing the full blob.
 - Session and job log files are written independently, so one noisy thread no longer forces the entire broker state or log history into one giant file.
 
 ## Current Interaction Model
 
-- Slack first `@bot ...` in a thread: create or resume the session, ensure the session workspace exists, send the message to Codex
-- Slack first `@bot ...` inside an already active human thread: also backfill the most recent earlier thread messages before that mention
-- Slack later plain thread replies: continue the same Codex thread
-- Slack direct message root message: create a session keyed by that DM thread and send it to Codex
-- Feishu group `@bot ...`: create or resume a group session; private chats are ignored
-- Feishu non-@ group follow-ups: continue an active group session only in `FEISHU_GROUP_MESSAGE_MODE=all`; `at_only` is a visible degraded mode
-- Feishu rich text, cards, images, and files: keep structured/raw payload references and visible transfer status; image/file transfer is bounded by the Feishu limits in [docs/feishu-setup.md](docs/feishu-setup.md)
-- `-stop`: interrupt the current Codex turn for the active platform session
+- First `@bot ...` in a thread: create or resume the session, ensure the session workspace exists, send the message to Codex
+- First `@bot ...` inside an already active human thread: also backfill the most recent earlier thread messages before that mention
+- Later plain thread replies: continue the same Codex thread
+- Direct message root message: create a session keyed by that DM thread and send it to Codex
+- `-stop`: interrupt the current Codex turn
 - If the task needs code, Codex should use `/app/.data/repos` for canonical clones and create any worktrees or task directories inside the current session workspace
 
-## Thread History APIs
+## Slack Thread History API
 
 The broker exposes a local-only helper endpoint on the same port as the health check:
 
@@ -388,28 +421,17 @@ Query params:
 - `channel_id` (required)
 - `thread_ts` (required)
 - `before_ts` (optional, exclusive upper bound)
-- `limit` (optional positive integer, clamped by `SLACK_HISTORY_API_MAX_LIMIT`; invalid values return 400 `invalid_limit`)
+- `limit` (optional, clamped by `SLACK_HISTORY_API_MAX_LIMIT`)
 - `channel_type` (optional)
-- `format=text|json` (default `json`; invalid values return 400 `invalid_format`)
+- `format=text|json` (default `json`)
 
 This is meant for Codex itself to pull older Slack context when the initial backfill window is not enough.
 
-The generic chat-history endpoint uses platform coordinates and also supports Feishu bounded history:
+## Slack Post APIs
 
-```bash
-curl "http://127.0.0.1:3000/chat/thread-history?platform=feishu&conversation_id=oc_xxx&root_message_id=om_xxx&before_cursor=page_token&limit=20&format=json"
-```
+The broker exposes two local-only delivery endpoints for Codex:
 
-For Feishu, `before_cursor` is passed to the Open Platform history API as `page_token`; JSON responses include `hasMore` and `nextCursor` when another bounded page is available.
-Generic chat history `limit` uses the same positive-integer validation and is clamped by the target platform's max history limit. Generic chat history `format` uses the same `text|json` validation before broker delegation.
-
-## Post APIs
-
-The broker exposes Slack compatibility endpoints and generic platform-aware chat endpoints for Codex. Prefer `/chat/*` when the session already has platform coordinates; `/slack/*` remains available for Slack compatibility.
-
-Generic `/chat/*` JSON/query contracts use canonical `conversationId` and `rootMessageId` fields. The broker also accepts `conversation_id` and `root_message_id` aliases for curl-friendly examples. Invalid `platform` values return 400 `invalid_platform` with allowed values `slack` and `feishu`, rather than being reported as missing coordinates. Generic file uploads use canonical `filePath` or `contentBase64`, with `file_path` and `content_base64` aliases accepted and named in validation errors. Inline `contentBase64`/`content_base64` uploads require `filename` and must decode to non-empty file content before Slack or Feishu upload is attempted.
-
-### Post Slack text
+### Post text
 
 ```bash
 curl -sS -X POST http://127.0.0.1:3000/slack/post-message \
@@ -419,17 +441,7 @@ curl -sS -X POST http://127.0.0.1:3000/slack/post-message \
 
 `text` accepts normal Markdown/markdownish input. The broker converts it to Slack `mrkdwn` before posting.
 
-### Post platform-aware chat text
-
-```bash
-curl -sS -X POST http://127.0.0.1:3000/chat/post-message \
-  -H 'content-type: application/json' \
-  -d '{"platform":"feishu","conversation_id":"oc_xxx","root_message_id":"om_xxx","format":"markdown","text":"working on it"}'
-```
-
-For Slack, `/chat/post-message` delegates to the Slack delivery path. For Feishu, `format=markdown` or `format=rich_text` is rendered as a Feishu `post`; `format=card` sends an interactive card when `card` JSON is supplied, with safe text fallback handled by the bridge. `richText`/`rich_text` and `card` can be structured JSON values or JSON strings; invalid JSON strings return 400 with only the field name, not the raw payload.
-
-### Upload a local image or file to Slack
+### Upload a local image or file
 
 ```bash
 curl -sS -X POST http://127.0.0.1:3000/slack/post-file \
@@ -440,7 +452,7 @@ curl -sS -X POST http://127.0.0.1:3000/slack/post-file \
 `/slack/post-file` accepts either:
 
 - `file_path` pointing at a local file visible to the broker process
-- or non-empty `content_base64` plus `filename`
+- or `content_base64` plus `filename`
 
 Optional fields:
 
@@ -451,45 +463,6 @@ Optional fields:
 - `content_type`
 
 `initial_comment` accepts normal Markdown/markdownish input and is converted to Slack `mrkdwn` before upload completion.
-
-### Upload a platform-aware chat file
-
-```bash
-curl -sS -X POST http://127.0.0.1:3000/chat/post-file \
-  -H 'content-type: application/json' \
-  -d '{"platform":"feishu","conversation_id":"oc_xxx","root_message_id":"om_xxx","content_base64":"...","filename":"report.pdf","content_type":"application/pdf","initial_comment":"latest report"}'
-```
-
-For Feishu, outbound message images up to 10 MB are uploaded as image messages. Larger outbound images fall back to file upload when still within the 30 MB file/resource limit; larger transfers are rejected locally before posting or uploading.
-
-## Background Job API
-
-Long-running watcher jobs can be registered against generic chat coordinates:
-
-```bash
-curl -sS -X POST http://127.0.0.1:3000/jobs/register \
-  -H 'content-type: application/json' \
-  -d '{"platform":"feishu","conversation_id":"oc_xxx","root_message_id":"om_xxx","kind":"watch_ci","cwd":".","script":"node \"$BROKER_JOB_HELPER\" event --kind state_changed --summary ready"}'
-```
-
-`/jobs/register` also accepts legacy Slack `channel_id` and `thread_ts` aliases only for Slack compatibility when `platform` is omitted or set to `slack`; Feishu jobs must use generic `conversationId`/`rootMessageId` coordinates. Invalid generic job `platform` values return 400 `invalid_platform` before coordinate validation. Registered jobs receive `CHAT_PLATFORM`, `CHAT_CONVERSATION_ID`, and `CHAT_ROOT_MESSAGE_ID`; Slack jobs also receive `SLACK_CHANNEL_ID` and `SLACK_THREAD_TS` for compatibility.
-
-Job callback `detailsJson`/`details_json` fields and `/integrations/mcp-call` `arguments` can be structured JSON values or JSON strings. Invalid JSON strings return 400 with only the field name, not the raw payload.
-
-## Slack Recovery API
-
-The broker also exposes a local-only operator endpoint for manually resuming a stuck session:
-
-```bash
-curl -sS -X POST http://127.0.0.1:3000/slack/resume-pending-session \
-  -H 'content-type: application/x-www-form-urlencoded' \
-  --data-urlencode 'channel_id=C123' \
-  --data-urlencode 'thread_ts=111.222'
-```
-
-Optional fields:
-
-- `force_reset=true|false` (defaults to `true`)
 
 ## Notes
 

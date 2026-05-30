@@ -11,7 +11,7 @@ import { FeishuCodexBridge } from "../src/services/feishu/feishu-codex-bridge.js
 import { FeishuPlatformAdapter } from "../src/services/feishu/feishu-platform-adapter.js";
 import { GitHubAuthorMappingService } from "../src/services/github-author-mapping-service.js";
 import { SessionManager } from "../src/services/session-manager.js";
-import { SlackCodexBridge } from "../src/services/slack/slack-codex-bridge.js";
+import { SlackAgentBridge } from "../src/services/slack/slack-agent-bridge.js";
 import { StateStore } from "../src/store/state-store.js";
 import { MockSlackServer } from "./manual/mock-slack-server.js";
 
@@ -73,6 +73,7 @@ describe("dual-platform runtime", () => {
       stateStore: new StateStore(config.stateDir, config.sessionsRoot),
       sessionsRoot: config.sessionsRoot
     });
+    await sessions.load();
     const mappings = new GitHubAuthorMappingService({
       stateDir: config.stateDir
     });
@@ -85,6 +86,16 @@ describe("dual-platform runtime", () => {
       start: vi.fn(async () => {}),
       stop: vi.fn(async () => {}),
       setSlackBotIdentity: vi.fn(),
+      getCapabilities: vi.fn(() => ({
+        submitWhileActive: true,
+        interrupt: true,
+        readTurn: true,
+        readSession: true,
+        rawEvents: false,
+        tokenUsage: "none",
+        toolCalls: false,
+        systemPromptEcho: false
+      })),
       on: vi.fn((event: string, listener: (...args: unknown[]) => void) => {
         codexEvents.on(event, listener);
       }),
@@ -92,6 +103,12 @@ describe("dual-platform runtime", () => {
         codexEvents.off(event, listener);
       }),
       ensureThread: vi.fn(async () => "codex-thread-slack"),
+      ensureSession: vi.fn(async (session) => ({
+        id: session.agentSessionId ?? session.codexThreadId ?? "codex-thread-slack",
+        brokerSessionKey: session.key,
+        runtime: "test",
+        createdAt: new Date().toISOString()
+      })),
       startTurn: vi.fn(async () => {
         turnCounter += 1;
         const turnId = `turn-${turnCounter}`;
@@ -109,8 +126,35 @@ describe("dual-platform runtime", () => {
           completion
         };
       }),
+      submitInput: vi.fn(async (input) => {
+        turnCounter += 1;
+        const turnId = `turn-${turnCounter}`;
+        const agentSessionId = input.session.agentSessionId ?? input.session.codexThreadId ?? "codex-thread-slack";
+        const completion = new Promise((resolve) => {
+          completeTurns.push(() => {
+            resolve({
+              agentSessionId,
+              turnId,
+              finalMessage: "",
+              aborted: false
+            });
+          });
+        });
+        return {
+          receipt: {
+            agentSessionId,
+            turnId,
+            inputId: input.inputId,
+            delivery: "started_turn" as const,
+            deliveredAt: new Date().toISOString()
+          },
+          completion
+        };
+      }),
       steer: vi.fn(async () => {}),
       interrupt: vi.fn(async () => {}),
+      readSession: vi.fn(async () => null),
+      readTurn: vi.fn(async () => null),
       readTurnResult: vi.fn(async () => null)
     };
     const feishuWsClient = new FakeFeishuWsClient();
@@ -132,11 +176,11 @@ describe("dual-platform runtime", () => {
         startupRequired: config.feishuStartupRequired
       })
     });
-    const bridge = new SlackCodexBridge({
+    const bridge = new SlackAgentBridge({
       config,
       sessions,
-      codex: codex as never,
-      mappings,
+      agentRuntime: codex as never,
+      githubPrIdentity: createFakeGitHubPrIdentity(),
       feishuBridge
     });
     cleanups.push(async () => {
@@ -153,7 +197,7 @@ describe("dual-platform runtime", () => {
       ts: "220.331",
       text: "<@UBOT> dual runtime check"
     });
-    await waitForCondition(() => codex.startTurn.mock.calls.length === 1, "Slack turn start");
+    await waitForCondition(() => codex.submitInput.mock.calls.length === 1, "Slack turn start");
     await bridge.postChatMessage({
       platform: "slack",
       conversationId: "C123",
@@ -174,7 +218,7 @@ describe("dual-platform runtime", () => {
 
     expect(codex.start).toHaveBeenCalledTimes(1);
     expect(codex.setSlackBotIdentity).toHaveBeenCalledTimes(1);
-    expect(codex.startTurn).toHaveBeenCalledTimes(1);
+    expect(codex.submitInput).toHaveBeenCalledTimes(1);
     expect(feishuWsClient.started).toBe(true);
     await flushLogger();
     const logRecords = await readJsonl(path.join(tempRoot, "logs", "broker.jsonl"));
@@ -276,6 +320,7 @@ describe("dual-platform runtime", () => {
       stateStore: new StateStore(config.stateDir, config.sessionsRoot),
       sessionsRoot: config.sessionsRoot
     });
+    await sessions.load();
     const mappings = new GitHubAuthorMappingService({
       stateDir: config.stateDir
     });
@@ -307,11 +352,11 @@ describe("dual-platform runtime", () => {
         startupRequired: config.feishuStartupRequired
       })
     });
-    const bridge = new SlackCodexBridge({
+    const bridge = new SlackAgentBridge({
       config,
       sessions,
-      codex: codex as never,
-      mappings,
+      agentRuntime: codex as never,
+      githubPrIdentity: createFakeGitHubPrIdentity(),
       feishuBridge
     });
     cleanups.push(async () => {
@@ -397,6 +442,7 @@ describe("dual-platform runtime", () => {
       stateStore: new StateStore(config.stateDir, config.sessionsRoot),
       sessionsRoot: config.sessionsRoot
     });
+    await sessions.load();
     const mappings = new GitHubAuthorMappingService({
       stateDir: config.stateDir
     });
@@ -428,11 +474,11 @@ describe("dual-platform runtime", () => {
         startupRequired: config.feishuStartupRequired
       })
     });
-    const bridge = new SlackCodexBridge({
+    const bridge = new SlackAgentBridge({
       config,
       sessions,
-      codex: codex as never,
-      mappings,
+      agentRuntime: codex as never,
+      githubPrIdentity: createFakeGitHubPrIdentity(),
       feishuBridge
     });
     cleanups.push(async () => {
@@ -517,6 +563,7 @@ describe("dual-platform runtime", () => {
       stateStore: new StateStore(config.stateDir, config.sessionsRoot),
       sessionsRoot: config.sessionsRoot
     });
+    await sessions.load();
     const mappings = new GitHubAuthorMappingService({
       stateDir: config.stateDir
     });
@@ -548,11 +595,11 @@ describe("dual-platform runtime", () => {
         startupRequired: config.feishuStartupRequired
       })
     });
-    const bridge = new SlackCodexBridge({
+    const bridge = new SlackAgentBridge({
       config,
       sessions,
-      codex: codex as never,
-      mappings,
+      agentRuntime: codex as never,
+      githubPrIdentity: createFakeGitHubPrIdentity(),
       feishuBridge
     });
     cleanups.push(async () => {
@@ -647,9 +694,47 @@ function createFakeFeishuApi() {
   } as any;
 }
 
+function createFakeGitHubPrIdentity() {
+  return {
+    load: vi.fn(async () => {}),
+    listBindings: vi.fn(() => []),
+    getSessionIdentityStatus: vi.fn(() => ({
+      sessionKey: "test",
+      selected: null,
+      candidates: [],
+      defaultAccount: null
+    })),
+    resolveTokenForSession: vi.fn(async () => ({
+      ok: false,
+      mode: "blocked",
+      reason: "session_not_found",
+      message: "No test GitHub PR identity is configured."
+    }))
+  } as never;
+}
+
 async function readJsonl(filePath: string): Promise<unknown[]> {
-  const raw = await fs.readFile(filePath, "utf8");
+  const raw = await readLogFileOrBucket(filePath);
   return raw.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line) as unknown);
+}
+
+async function readLogFileOrBucket(filePath: string): Promise<string> {
+  try {
+    return await fs.readFile(filePath, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      throw error;
+    }
+  }
+
+  const bucketDir = path.basename(filePath) === "broker.jsonl"
+    ? path.join(path.dirname(filePath), "broker")
+    : path.join(path.dirname(filePath), path.basename(filePath, ".jsonl"));
+  const files = (await fs.readdir(bucketDir))
+    .filter((file) => file.endsWith(".jsonl"))
+    .sort();
+  const chunks = await Promise.all(files.map((file) => fs.readFile(path.join(bucketDir, file), "utf8")));
+  return chunks.join("");
 }
 
 async function waitForCondition(predicate: () => boolean, label: string, timeoutMs = 5_000): Promise<void> {

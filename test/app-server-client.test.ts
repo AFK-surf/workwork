@@ -7,7 +7,6 @@ import { afterEach, describe, expect, it } from "vitest";
 import { WebSocketServer, type WebSocket } from "ws";
 
 import { AppServerClient } from "../src/services/codex/app-server-client.js";
-import { buildSlackThreadBaseInstructions } from "../src/services/codex/slack-thread-base-instructions.js";
 
 interface TestServer {
   readonly url: string;
@@ -145,7 +144,7 @@ describe("AppServerClient disconnect handling", () => {
     await expect(started.completion).rejects.toThrow(/closed/i);
   });
 
-  it("resolves a turn when completion events arrive before turn/start returns", async () => {
+  it("buffers turn events that arrive before startTurn finishes registering the turn", async () => {
     const server = await createServer((socket, message) => {
       if (message.method === "initialize") {
         socket.send(JSON.stringify({
@@ -157,6 +156,14 @@ describe("AppServerClient disconnect handling", () => {
 
       if (message.method === "turn/start") {
         socket.send(JSON.stringify({
+          id: message.id,
+          result: {
+            turn: {
+              id: "turn-1"
+            }
+          }
+        }));
+        socket.send(JSON.stringify({
           method: "item/agentMessage/delta",
           params: {
             turnId: "turn-1",
@@ -166,14 +173,6 @@ describe("AppServerClient disconnect handling", () => {
         socket.send(JSON.stringify({
           method: "turn/completed",
           params: {
-            turn: {
-              id: "turn-1"
-            }
-          }
-        }));
-        socket.send(JSON.stringify({
-          id: message.id,
-          result: {
             turn: {
               id: "turn-1"
             }
@@ -203,8 +202,474 @@ describe("AppServerClient disconnect handling", () => {
       threadId: "thread-1",
       turnId: "turn-1",
       finalMessage: "done",
-      aborted: false
+      aborted: false,
+      generatedImages: []
     });
+  });
+
+  it("captures exact token usage from turn completion notifications", async () => {
+    const server = await createServer((socket, message) => {
+      if (message.method === "initialize") {
+        socket.send(JSON.stringify({
+          id: message.id,
+          result: { ok: true }
+        }));
+        return;
+      }
+
+      if (message.method === "turn/start") {
+        socket.send(JSON.stringify({
+          id: message.id,
+          result: {
+            turn: {
+              id: "turn-usage"
+            }
+          }
+        }));
+        socket.send(JSON.stringify({
+          method: "turn/completed",
+          params: {
+            turn: {
+              id: "turn-usage",
+              usage: {
+                input_tokens: 1200,
+                cached_input_tokens: 300,
+                output_tokens: 450,
+                reasoning_tokens: 75,
+                total_tokens: 1725,
+                model: "gpt-5.5",
+                effort: "xhigh"
+              }
+            }
+          }
+        }));
+      }
+    });
+    servers.push(server);
+
+    const client = new AppServerClient({
+      url: server.url,
+      serviceName: "test",
+      brokerHttpBaseUrl: "http://127.0.0.1:3000",
+      reposRoot: "/tmp/repos"
+    });
+
+    await client.connect();
+    const started = await client.startTurn("thread-1", "/tmp", [
+      {
+        type: "text",
+        text: "hello",
+        text_elements: []
+      }
+    ]);
+
+    await expect(started.completion).resolves.toMatchObject({
+      threadId: "thread-1",
+      turnId: "turn-usage",
+      usage: {
+        source: "exact",
+        inputTokens: 1200,
+        cachedInputTokens: 300,
+        outputTokens: 450,
+        reasoningTokens: 75,
+        totalTokens: 1725,
+        model: "gpt-5.5",
+        effort: "xhigh"
+      }
+    });
+  });
+
+  it("accumulates exact token usage from Codex token_count events", async () => {
+    const server = await createServer((socket, message) => {
+      if (message.method === "initialize") {
+        socket.send(JSON.stringify({
+          id: message.id,
+          result: { ok: true }
+        }));
+        return;
+      }
+
+      if (message.method === "turn/start") {
+        socket.send(JSON.stringify({
+          id: message.id,
+          result: {
+            turn: {
+              id: "turn-token-count"
+            }
+          }
+        }));
+        socket.send(JSON.stringify({
+          method: "codex/event/token_count",
+          params: {
+            msg: {
+              type: "token_count",
+              info: {
+                total_token_usage: {
+                  total_tokens: 12
+                },
+                last_token_usage: {
+                  input_tokens: 10,
+                  cached_input_tokens: 4,
+                  output_tokens: 2,
+                  reasoning_output_tokens: 1,
+                  total_tokens: 12
+                }
+              }
+            }
+          }
+        }));
+        socket.send(JSON.stringify({
+          method: "codex/event/token_count",
+          params: {
+            msg: {
+              type: "token_count",
+              info: {
+                total_token_usage: {
+                  total_tokens: 22
+                },
+                last_token_usage: {
+                  input_tokens: 7,
+                  cached_input_tokens: 3,
+                  output_tokens: 3,
+                  reasoning_output_tokens: 1,
+                  total_tokens: 10
+                }
+              }
+            }
+          }
+        }));
+        socket.send(JSON.stringify({
+          method: "codex/event/token_count",
+          params: {
+            msg: {
+              type: "token_count",
+              info: {
+                total_token_usage: {
+                  total_tokens: 22
+                },
+                last_token_usage: {
+                  input_tokens: 7,
+                  cached_input_tokens: 3,
+                  output_tokens: 3,
+                  reasoning_output_tokens: 1,
+                  total_tokens: 10
+                }
+              }
+            }
+          }
+        }));
+        socket.send(JSON.stringify({
+          method: "item/agentMessage/delta",
+          params: {
+            turnId: "turn-token-count",
+            delta: "done"
+          }
+        }));
+        socket.send(JSON.stringify({
+          method: "turn/completed",
+          params: {
+            turn: {
+              id: "turn-token-count"
+            }
+          }
+        }));
+      }
+    });
+    servers.push(server);
+
+    const client = new AppServerClient({
+      url: server.url,
+      serviceName: "test",
+      brokerHttpBaseUrl: "http://127.0.0.1:3000",
+      reposRoot: "/tmp/repos"
+    });
+
+    await client.connect();
+    const started = await client.startTurn("thread-1", "/tmp", [
+      {
+        type: "text",
+        text: "hello",
+        text_elements: []
+      }
+    ]);
+
+    const result = await started.completion;
+    expect(result).toMatchObject({
+      threadId: "thread-1",
+      turnId: "turn-token-count",
+      finalMessage: "done",
+      usage: {
+        source: "exact",
+        inputTokens: 17,
+        cachedInputTokens: 7,
+        outputTokens: 5,
+        reasoningTokens: 2,
+        totalTokens: 22
+      }
+    });
+    expect(result.usage?.rawUsage).toMatchObject({
+      kind: "aggregated_token_usage",
+      eventCount: 2,
+      inputTokens: 17,
+      cachedInputTokens: 7,
+      outputTokens: 5,
+      reasoningTokens: 2,
+      totalTokens: 22
+    });
+  });
+
+  it("captures exact token usage from thread/tokenUsage/updated notifications", async () => {
+    const server = await createServer((socket, message) => {
+      if (message.method === "initialize") {
+        socket.send(JSON.stringify({
+          id: message.id,
+          result: { ok: true }
+        }));
+        return;
+      }
+
+      if (message.method === "turn/start") {
+        socket.send(JSON.stringify({
+          id: message.id,
+          result: {
+            turn: {
+              id: "turn-thread-usage"
+            }
+          }
+        }));
+        socket.send(JSON.stringify({
+          method: "thread/tokenUsage/updated",
+          params: {
+            threadId: "thread-1",
+            turnId: "turn-thread-usage",
+            tokenUsage: {
+              total: {
+                totalTokens: 2_050,
+                inputTokens: 1_500,
+                cachedInputTokens: 250,
+                outputTokens: 550,
+                reasoningOutputTokens: 125
+              },
+              last: {
+                totalTokens: 2_050,
+                inputTokens: 1_500,
+                cachedInputTokens: 250,
+                outputTokens: 550,
+                reasoningOutputTokens: 125
+              },
+              modelContextWindow: 272_000
+            }
+          }
+        }));
+        socket.send(JSON.stringify({
+          method: "item/agentMessage/delta",
+          params: {
+            turnId: "turn-thread-usage",
+            delta: "done"
+          }
+        }));
+        socket.send(JSON.stringify({
+          method: "turn/completed",
+          params: {
+            turn: {
+              id: "turn-thread-usage"
+            }
+          }
+        }));
+      }
+    });
+    servers.push(server);
+
+    const client = new AppServerClient({
+      url: server.url,
+      serviceName: "test",
+      brokerHttpBaseUrl: "http://127.0.0.1:3000",
+      reposRoot: "/tmp/repos"
+    });
+
+    await client.connect();
+    const started = await client.startTurn("thread-1", "/tmp", [
+      {
+        type: "text",
+        text: "hello",
+        text_elements: []
+      }
+    ]);
+
+    await expect(started.completion).resolves.toMatchObject({
+      threadId: "thread-1",
+      turnId: "turn-thread-usage",
+      finalMessage: "done",
+      usage: {
+        source: "exact",
+        inputTokens: 1_500,
+        cachedInputTokens: 250,
+        outputTokens: 550,
+        reasoningTokens: 125,
+        totalTokens: 2_050
+      }
+    });
+  });
+
+  it("uses thread runtime defaults when token usage events omit model settings", async () => {
+    const server = await createServer((socket, message) => {
+      if (message.method === "initialize") {
+        socket.send(JSON.stringify({
+          id: message.id,
+          result: { ok: true }
+        }));
+        return;
+      }
+
+      if (message.method === "thread/start") {
+        socket.send(JSON.stringify({
+          id: message.id,
+          result: {
+            thread: {
+              id: "thread-runtime-defaults"
+            },
+            model: "gpt-5.5",
+            reasoningEffort: "xhigh"
+          }
+        }));
+        return;
+      }
+
+      if (message.method === "turn/start") {
+        socket.send(JSON.stringify({
+          id: message.id,
+          result: {
+            turn: {
+              id: "turn-runtime-defaults"
+            }
+          }
+        }));
+        socket.send(JSON.stringify({
+          method: "thread/tokenUsage/updated",
+          params: {
+            threadId: "thread-runtime-defaults",
+            turnId: "turn-runtime-defaults",
+            tokenUsage: {
+              total: {
+                totalTokens: 500,
+                inputTokens: 320,
+                cachedInputTokens: 100,
+                outputTokens: 180
+              },
+              last: {
+                totalTokens: 500,
+                inputTokens: 320,
+                cachedInputTokens: 100,
+                outputTokens: 180
+              }
+            }
+          }
+        }));
+        socket.send(JSON.stringify({
+          method: "turn/completed",
+          params: {
+            turn: {
+              id: "turn-runtime-defaults"
+            }
+          }
+        }));
+      }
+    });
+    servers.push(server);
+
+    const client = new AppServerClient({
+      url: server.url,
+      serviceName: "test",
+      brokerHttpBaseUrl: "http://127.0.0.1:3000",
+      reposRoot: "/tmp/repos"
+    });
+
+    await client.connect();
+    const threadId = await client.ensureThread({
+      workspacePath: "/tmp",
+      channelId: "C1",
+      rootThreadTs: "1.000001"
+    });
+    const started = await client.startTurn(threadId, "/tmp", [
+      {
+        type: "text",
+        text: "hello",
+        text_elements: []
+      }
+    ]);
+
+    await expect(started.completion).resolves.toMatchObject({
+      threadId: "thread-runtime-defaults",
+      turnId: "turn-runtime-defaults",
+      usage: {
+        source: "exact",
+        inputTokens: 320,
+        cachedInputTokens: 100,
+        outputTokens: 180,
+        reasoningTokens: 0,
+        totalTokens: 500,
+        model: "gpt-5.5",
+        effort: "xhigh"
+      }
+    });
+  });
+
+  it("does not emit an unhandled rejection when a turn disconnects before completion is awaited", async () => {
+    const server = await createServer((socket, message) => {
+      if (message.method === "initialize") {
+        socket.send(JSON.stringify({
+          id: message.id,
+          result: { ok: true }
+        }));
+        return;
+      }
+
+      if (message.method === "turn/start") {
+        socket.send(JSON.stringify({
+          id: message.id,
+          result: {
+            turn: {
+              id: "turn-early-close"
+            }
+          }
+        }));
+        setTimeout(() => {
+          socket.close();
+        }, 0);
+      }
+    });
+    servers.push(server);
+
+    const client = new AppServerClient({
+      url: server.url,
+      serviceName: "test",
+      brokerHttpBaseUrl: "http://127.0.0.1:3000",
+      reposRoot: "/tmp/repos"
+    });
+
+    await client.connect();
+    const started = await client.startTurn("thread-1", "/tmp", [
+      {
+        type: "text",
+        text: "hello",
+        text_elements: []
+      }
+    ]);
+
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => {
+      unhandled.push(reason);
+    };
+    process.on("unhandledRejection", onUnhandled);
+
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      await expect(started.completion).rejects.toThrow(/closed/i);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
   });
 
   it("can recover a completed turn result from thread/read", async () => {
@@ -252,7 +717,150 @@ describe("AppServerClient disconnect handling", () => {
     await expect(client.readTurnResult("thread-1", "turn-1")).resolves.toEqual({
       status: "completed",
       finalMessage: "done",
-      errorMessage: undefined
+      errorMessage: undefined,
+      generatedImages: []
+    });
+  });
+
+  it("parses generated images from thread/read results", async () => {
+    const server = await createServer((socket, message) => {
+      if (message.method === "initialize") {
+        socket.send(JSON.stringify({
+          id: message.id,
+          result: { ok: true }
+        }));
+        return;
+      }
+
+      if (message.method === "thread/read") {
+        socket.send(JSON.stringify({
+          id: message.id,
+          result: {
+            thread: {
+              turns: [
+                {
+                  id: "turn-1",
+                  status: "completed",
+                  items: [
+                    {
+                      type: "agentMessage",
+                      text: "done"
+                    },
+                    {
+                      type: "image_generation_call",
+                      id: "ig-1",
+                      revised_prompt: "blue cat",
+                      result: "QUJDREVGRw==",
+                      saved_path: "/tmp/ig-1.png"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        }));
+      }
+    });
+    servers.push(server);
+
+    const client = new AppServerClient({
+      url: server.url,
+      serviceName: "test",
+      brokerHttpBaseUrl: "http://127.0.0.1:3000",
+      reposRoot: "/tmp/repos"
+    });
+
+    await client.connect();
+    await expect(client.readTurnResult("thread-1", "turn-1")).resolves.toEqual({
+      status: "completed",
+      finalMessage: "done",
+      errorMessage: undefined,
+      generatedImages: [
+        {
+          id: "ig-1",
+          contentBase64: "QUJDREVGRw==",
+          contentType: "image/png",
+          savedPath: "/tmp/ig-1.png",
+          revisedPrompt: "blue cat"
+        }
+      ]
+    });
+  });
+
+  it("captures image generation results from live turn notifications", async () => {
+    const server = await createServer((socket, message) => {
+      if (message.method === "initialize") {
+        socket.send(JSON.stringify({
+          id: message.id,
+          result: { ok: true }
+        }));
+        return;
+      }
+
+      if (message.method === "turn/start") {
+        socket.send(JSON.stringify({
+          id: message.id,
+          result: {
+            turn: {
+              id: "turn-1"
+            }
+          }
+        }));
+        socket.send(JSON.stringify({
+          method: "item/completed",
+          params: {
+            turnId: "turn-1",
+            item: {
+              type: "imageGeneration",
+              id: "ig-1",
+              revisedPrompt: "blue cat",
+              result: "QUJDREVGRw==",
+              savedPath: "/tmp/ig-1.png"
+            }
+          }
+        }));
+        socket.send(JSON.stringify({
+          method: "turn/completed",
+          params: {
+            turn: {
+              id: "turn-1"
+            }
+          }
+        }));
+      }
+    });
+    servers.push(server);
+
+    const client = new AppServerClient({
+      url: server.url,
+      serviceName: "test",
+      brokerHttpBaseUrl: "http://127.0.0.1:3000",
+      reposRoot: "/tmp/repos"
+    });
+
+    await client.connect();
+    const started = await client.startTurn("thread-1", "/tmp", [
+      {
+        type: "text",
+        text: "hello",
+        text_elements: []
+      }
+    ]);
+
+    await expect(started.completion).resolves.toEqual({
+      threadId: "thread-1",
+      turnId: "turn-1",
+      finalMessage: "",
+      aborted: false,
+      generatedImages: [
+        {
+          id: "ig-1",
+          contentBase64: "QUJDREVGRw==",
+          contentType: "image/png",
+          savedPath: "/tmp/ig-1.png",
+          revisedPrompt: "blue cat"
+        }
+      ]
     });
   });
 
@@ -442,13 +1050,15 @@ describe("AppServerClient disconnect handling", () => {
     ).resolves.toEqual({
       status: "completed",
       finalMessage: "done",
-      errorMessage: undefined
+      errorMessage: undefined,
+      generatedImages: []
     });
     await expect(started.completion).resolves.toEqual({
       threadId: "thread-1",
       turnId: "turn-1",
       finalMessage: "done",
-      aborted: false
+      aborted: false,
+      generatedImages: []
     });
   });
 
@@ -673,15 +1283,13 @@ describe("AppServerClient disconnect handling", () => {
     await expect(client.ensureThread({
       channelId: "C123",
       rootThreadTs: "111.222",
-      codexThreadId: "thread-1",
+      agentSessionId: "thread-1",
       workspacePath: "/tmp/workspace"
     })).resolves.toBe("thread-1");
 
     expect(threadStartParams?.baseInstructions).toEqual(expect.stringContaining("channel_id: C123"));
+    expect(threadStartParams?.experimentalRawEvents).toBe(true);
     expect(threadStartParams?.baseInstructions).toEqual(expect.stringContaining("thread_ts: 111.222"));
-    expect(threadStartParams?.baseInstructions).toEqual(expect.stringContaining("platform: slack"));
-    expect(threadStartParams?.baseInstructions).toEqual(expect.stringContaining("conversation_id: C123"));
-    expect(threadStartParams?.baseInstructions).toEqual(expect.stringContaining("root_message_id: 111.222"));
     expect(threadStartParams?.baseInstructions).toEqual(expect.stringContaining("session_workspace: /tmp/workspace"));
     expect(threadStartParams?.baseInstructions).toEqual(
       expect.stringContaining(`runtime_platform: ${process.platform}`)
@@ -734,10 +1342,10 @@ describe("AppServerClient disconnect handling", () => {
       expect.stringContaining("UI/frontend/layout/styling contract")
     );
     expect(threadStartParams?.baseInstructions).toEqual(
-      expect.stringContaining("BROKER_GEMINI_UI_HELPER")
+      expect.stringContaining("kimi --work-dir /absolute/project/path")
     );
     expect(threadStartParams?.baseInstructions).toEqual(
-      expect.stringContaining("consult Gemini first by default")
+      expect.stringContaining("consult Kimi first by default")
     );
     expect(threadStartParams?.baseInstructions).toEqual(
       expect.stringContaining("Keep APIs, data contracts, and non-UI behavior unchanged")
@@ -746,10 +1354,7 @@ describe("AppServerClient disconnect handling", () => {
       expect.stringContaining("user explicitly asks you to do the UI work directly yourself")
     );
     expect(threadStartParams?.baseInstructions).toEqual(
-      expect.stringContaining("Gemini is unavailable right now and then continue the UI work yourself")
-    );
-    expect(threadStartParams?.baseInstructions).toEqual(
-      expect.stringContaining("tell Slack that Gemini is unavailable right now")
+      expect.stringContaining("Kimi is unavailable right now and then continue the UI work yourself")
     );
     expect(threadStartParams?.baseInstructions).toEqual(
       expect.stringContaining("\"server\":\"linear\"")
@@ -770,13 +1375,7 @@ describe("AppServerClient disconnect handling", () => {
       expect.stringContaining("kind=wait")
     );
     expect(threadStartParams?.baseInstructions).toEqual(
-      expect.stringContaining("/chat/post-state")
-    );
-    expect(threadStartParams?.baseInstructions).toEqual(
-      expect.stringContaining("/chat/post-message")
-    );
-    expect(threadStartParams?.baseInstructions).toEqual(
-      expect.stringContaining("\"platform\":\"slack\"")
+      expect.stringContaining("/slack/post-state")
     );
     expect(threadStartParams?.baseInstructions).toEqual(
       expect.stringContaining("silent block state")
@@ -817,53 +1416,5 @@ describe("AppServerClient disconnect handling", () => {
     );
     expect(String(threadStartParams?.baseInstructions)).not.toContain("{{");
     expect(threadResumeParams?.baseInstructions).toBeNull();
-  });
-});
-
-describe("chat base instructions", () => {
-  it("renders Feishu sessions without Slack-only routing language", async () => {
-    const instructions = await buildSlackThreadBaseInstructions({
-      brokerHttpBaseUrl: "http://127.0.0.1:3000",
-      platform: "feishu",
-      channelId: "oc_group",
-      rootThreadTs: "om_root",
-      workspacePath: "/tmp/workspace",
-      reposRoot: "/tmp/repos",
-      slackBotIdentity: null
-    });
-
-    expect(instructions).toContain("You are serving a Feishu group thread.");
-    expect(instructions).toContain("Current chat thread coordinates:");
-    expect(instructions).toContain("platform: feishu");
-    expect(instructions).toContain("conversation_id: oc_group");
-    expect(instructions).toContain("root_message_id: om_root");
-    expect(instructions).not.toContain("channel_id:");
-    expect(instructions).not.toContain("thread_ts:");
-    expect(instructions).toContain("before_cursor=older-page-token");
-    expect(instructions).not.toContain("before_message_id=older-message-id");
-    expect(instructions).toContain("\"platform\":\"feishu\"");
-    expect(instructions).toContain("/chat/post-message");
-    expect(instructions).toContain("/chat/post-state");
-    expect(instructions).toContain("The broker converts markdownish output to Feishu post content before posting");
-    expect(instructions).toContain("Use Feishu rich text or card output only through broker-supported `/chat/post-message` payloads");
-    expect(instructions).toContain("record a silent final state through /chat/post-state");
-    expect(instructions).toContain("A new message arrived in the active Feishu group thread.");
-    expect(instructions).toContain("Feishu private chats are unsupported by this broker");
-    expect(instructions).toContain("Feishu message trees are not Slack threads");
-    expect(instructions).toContain("do not assume Slack thread semantics");
-    expect(instructions).toContain("all-message mode, non-mention follow-ups can be context");
-    expect(instructions).toContain("at_only mode, context may be degraded");
-    expect(instructions).toContain("Register a broker-managed background job with:");
-    expect(instructions).toContain("/jobs/register");
-    expect(instructions).toContain("CHAT_PLATFORM");
-    expect(instructions).toContain("CHAT_CONVERSATION_ID");
-    expect(instructions).toContain("BROKER_JOB_HELPER");
-    expect(instructions).toContain("platform-aware `/jobs/register` command");
-    expect(instructions).toContain("When sending a terminal chat state, set kind to final, block, or wait");
-    expect(instructions).toContain("tell Feishu that Gemini is unavailable right now");
-    expect(instructions).not.toContain("You are serving a Slack thread.");
-    expect(instructions).not.toContain("tell Slack that Gemini is unavailable");
-    expect(instructions).not.toContain("/slack/post-state");
-    expect(instructions).not.toContain("SLACK_CHANNEL_ID");
   });
 });

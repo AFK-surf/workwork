@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  formatSlackHistoryContextForCodex,
-  formatSlackMessageForCodex
+  formatSlackHistoryContextForAgent,
+  formatSlackMessageForAgent
 } from "../src/services/slack/slack-message-format.js";
 
-describe("formatSlackMessageForCodex", () => {
+describe("formatSlackMessageForAgent", () => {
   it("includes sender identity and thread metadata", () => {
-    const result = formatSlackMessageForCodex(
+    const result = formatSlackMessageForAgent(
       {
         source: "thread_reply",
         channelId: "C123",
@@ -73,16 +73,16 @@ describe("formatSlackMessageForCodex", () => {
     expect(result).toContain("\"mentioned_user_mentions\": [");
     expect(result).toContain("\"<@U456>\"");
     expect(result).toContain("\"mentioned_users\": [");
-    expect(result).toContain("\"images\": [");
+    expect(result).toContain("\"attachments\": [");
     expect(result).toContain("\"title\": \"Screenshot\"");
     expect(result).toContain("\"dimensions\": \"1280x720\"");
     expect(result).toContain("\"text\": \"Please fix the flaky test.\"");
-    expect(result).toContain("\"slack_message\": {");
-    expect(result).toContain("\"blocks\": [");
+    expect(result).not.toContain("\"slack_message\":");
+    expect(result).not.toContain("\"blocks\": [");
   });
 
   it("falls back to ids when profile lookup is unavailable", () => {
-    const result = formatSlackMessageForCodex(
+    const result = formatSlackMessageForAgent(
       {
         source: "direct_message",
         channelId: "D123",
@@ -102,7 +102,7 @@ describe("formatSlackMessageForCodex", () => {
   });
 
   it("prepends earlier thread context when provided", () => {
-    const result = formatSlackMessageForCodex(
+    const result = formatSlackMessageForAgent(
       {
         source: "app_mention",
         channelId: "C123",
@@ -125,7 +125,7 @@ describe("formatSlackMessageForCodex", () => {
   });
 
   it("includes resolved mentioned users and readable mention text", () => {
-    const result = formatSlackMessageForCodex(
+    const result = formatSlackMessageForAgent(
       {
         source: "thread_reply",
         channelId: "C123",
@@ -157,7 +157,7 @@ describe("formatSlackMessageForCodex", () => {
   });
 
   it("renders image-only messages without dropping the body block", () => {
-    const result = formatSlackMessageForCodex(
+    const result = formatSlackMessageForAgent(
       {
         source: "thread_reply",
         channelId: "C123",
@@ -178,12 +178,12 @@ describe("formatSlackMessageForCodex", () => {
       null
     );
 
-    expect(result).toContain("\"images\": [");
+    expect(result).toContain("\"attachments\": [");
     expect(result).toContain("\"text\": \"[no text body]\"");
   });
 
   it("renders recovered missed messages as one chronological batch", () => {
-    const result = formatSlackMessageForCodex(
+    const result = formatSlackMessageForAgent(
       {
         source: "recovered_thread_batch",
         channelId: "C123",
@@ -243,7 +243,7 @@ describe("formatSlackMessageForCodex", () => {
   });
 
   it("renders bot/app card messages with raw Slack payload intact", () => {
-    const result = formatSlackMessageForCodex(
+    const result = formatSlackMessageForAgent(
       {
         source: "thread_reply",
         channelId: "C123",
@@ -280,8 +280,49 @@ describe("formatSlackMessageForCodex", () => {
     expect(result).toContain("CUE-1180 感觉 ai chat webview 帧率很低");
   });
 
+  it("includes only selected Slack payload fields for bot cards", () => {
+    const result = formatSlackMessageForAgent(
+      {
+        source: "thread_reply",
+        channelId: "C123",
+        rootThreadTs: "111.222",
+        messageTs: "111.226",
+        userId: "bot:B123",
+        text: "issue created",
+        senderKind: "bot",
+        botId: "B123",
+        appId: "A123",
+        senderUsername: "Linear",
+        slackMessage: {
+          subtype: "bot_message",
+          bot_id: "B123",
+          app_id: "A123",
+          username: "Linear",
+          text: "issue created",
+          channel: "C123",
+          team: "T123",
+          attachments: [
+            {
+              title: "CUE-1180",
+              title_link: "https://linear.app/cue/issue/CUE-1180"
+            }
+          ],
+          metadata: {
+            noisy: "not needed by app-server"
+          }
+        }
+      },
+      null
+    );
+
+    expect(result).toContain("\"slack_message\": {");
+    expect(result).toContain("\"attachments\": [");
+    expect(result).not.toContain("\"metadata\"");
+    expect(result).not.toContain("\"team\"");
+  });
+
   it("renders background job events without pretending they came from a Slack user", () => {
-    const result = formatSlackMessageForCodex(
+    const result = formatSlackMessageForAgent(
       {
         source: "background_job_event",
         channelId: "C123",
@@ -317,7 +358,7 @@ describe("formatSlackMessageForCodex", () => {
   });
 
   it("renders unexpected stop nudges as structured broker events", () => {
-    const result = formatSlackMessageForCodex(
+    const result = formatSlackMessageForAgent(
       {
         source: "unexpected_turn_stop",
         channelId: "C123",
@@ -346,9 +387,9 @@ describe("formatSlackMessageForCodex", () => {
   });
 });
 
-describe("formatSlackHistoryContextForCodex", () => {
+describe("formatSlackHistoryContextForAgent", () => {
   it("renders a readable thread history block", () => {
-    const result = formatSlackHistoryContextForCodex([
+    const result = formatSlackHistoryContextForAgent([
       {
         channelId: "C123",
         channelType: "channel",
@@ -383,8 +424,8 @@ describe("formatSlackHistoryContextForCodex", () => {
     expect(result).toContain("\"mentioned_user_ids\": [");
     expect(result).toContain("\"U345\"");
     expect(result).toContain("\"display_name\": \"Bob\"");
-    expect(result).toContain("\"images\": [");
+    expect(result).toContain("\"attachments\": [");
     expect(result).toContain("\"text\": \"Earlier note\"");
-    expect(result).toContain("\"slack_message\": {");
+    expect(result).not.toContain("\"slack_message\":");
   });
 });

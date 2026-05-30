@@ -6,17 +6,28 @@ export interface SlackSessionRecord {
   readonly rootMessageId?: string | undefined;
   readonly platformThreadId?: string | undefined;
   readonly channelId: string;
+  readonly channelName?: string | undefined;
+  readonly channelType?: string | undefined;
   readonly rootThreadTs: string;
   readonly workspacePath: string;
+  readonly initiatorUserId?: string | undefined;
+  readonly initiatorMessageTs?: string | undefined;
+  readonly initiatorCapturedAt?: string | undefined;
   readonly createdAt: string;
   readonly updatedAt: string;
+  readonly agentSessionId?: string | undefined;
   readonly codexThreadId?: string | undefined;
   readonly activeTurnId?: string | undefined;
   readonly activeTurnStartedAt?: string | undefined;
   readonly lastObservedMessageTs?: string | undefined;
   readonly lastDeliveredMessageTs?: string | undefined;
   readonly lastSlackReplyAt?: string | undefined;
-  readonly lastProgressReminderAt?: string | undefined;
+  readonly sessionPageLinkPostedAt?: string | undefined;
+  readonly authProfileName?: string | undefined;
+  readonly authProfileBoundAt?: string | undefined;
+  readonly authBlockedAt?: string | undefined;
+  readonly authBlockReason?: string | undefined;
+  readonly authBlockedNoticePostedAt?: string | undefined;
   readonly lastTurnSignalTurnId?: string | undefined;
   readonly lastTurnSignalKind?: SlackTurnSignalKind | undefined;
   readonly lastTurnSignalReason?: string | undefined;
@@ -25,6 +36,7 @@ export interface SlackSessionRecord {
   readonly coAuthorCandidateRevision?: number | undefined;
   readonly coAuthorConfirmedUserIds?: readonly string[] | undefined;
   readonly coAuthorConfirmedRevision?: number | undefined;
+  readonly coAuthorIgnoreMissingRevision?: number | undefined;
   readonly coAuthorPromptRevision?: number | undefined;
   readonly coAuthorPromptedAt?: string | undefined;
 }
@@ -46,8 +58,17 @@ export interface PersistedState {
 
 export type PersistedInboundMessageStatus = "pending" | "inflight" | "done";
 export type SlackInboundSource = "app_mention" | "direct_message" | "thread_reply";
-export type SyntheticInboundSource = "background_job_event" | "unexpected_turn_stop";
+export type SyntheticInboundSource = "background_job_event" | "unexpected_turn_stop" | "admin_session_reset";
 export type PersistedInboundSource = SlackInboundSource | SyntheticInboundSource;
+export type PersistedSlackEventStatus = "pending" | "done";
+
+export interface PersistedSlackEvent {
+  readonly eventId: string;
+  readonly payload: JsonLike;
+  readonly status: PersistedSlackEventStatus;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
 
 export type SlackTurnSignalKind = "progress" | "final" | "block" | "wait";
 
@@ -80,6 +101,7 @@ export interface PersistedInboundMessage {
   readonly appId?: string | undefined;
   readonly senderUsername?: string | undefined;
   readonly mentionedUserIds?: readonly string[] | undefined;
+  readonly mentionedUsers?: readonly SlackUserIdentity[] | undefined;
   readonly contextText?: string | undefined;
   readonly images?: readonly SlackImageAttachment[] | undefined;
   readonly slackMessage?: JsonLike | undefined;
@@ -124,6 +146,142 @@ export interface PersistedBackgroundJob {
   readonly lastEventAt?: string | undefined;
   readonly lastEventKind?: string | undefined;
   readonly lastEventSummary?: string | undefined;
+}
+
+export type AdminOperationKind =
+  | "deploy"
+  | "rollback"
+  | "auth_profile_add"
+  | "auth_profile_delete"
+  | "session_auth_profile_switch"
+  | "session_reset"
+  | "session_delete"
+  | "session_job_cancel"
+  | "github_author_upsert"
+  | "github_author_delete"
+  | "github_pr_default_set";
+
+export type AdminOperationStatus = "running" | "succeeded" | "failed";
+
+export interface PersistedAdminOperation {
+  readonly id: string;
+  readonly kind: AdminOperationKind;
+  readonly status: AdminOperationStatus;
+  readonly request: JsonLike;
+  readonly result?: JsonLike | undefined;
+  readonly error?: string | undefined;
+  readonly actor?: string | undefined;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+  readonly startedAt?: string | undefined;
+  readonly completedAt?: string | undefined;
+}
+
+export interface PersistedAdminAuditEvent {
+  readonly id: string;
+  readonly operationId?: string | undefined;
+  readonly action: AdminOperationKind | string;
+  readonly status: AdminOperationStatus | "started";
+  readonly detail?: JsonLike | undefined;
+  readonly actor?: string | undefined;
+  readonly createdAt: string;
+}
+
+export interface PersistedAdminEvent {
+  readonly sequence: number;
+  readonly kind: string;
+  readonly scope: "global" | "session";
+  readonly sessionKey?: string | undefined;
+  readonly entityId?: string | undefined;
+  readonly payload: JsonLike;
+  readonly createdAt: string;
+}
+
+export type AgentTurnUsageSource = "exact" | "estimated" | "missing";
+export type PersistedAgentTurnStatus = "completed" | "interrupted" | "failed";
+
+export interface AgentTurnTokenUsage {
+  readonly source: AgentTurnUsageSource;
+  readonly inputTokens: number;
+  readonly cachedInputTokens: number;
+  readonly outputTokens: number;
+  readonly reasoningTokens: number;
+  readonly totalTokens: number;
+  readonly model?: string | undefined;
+  readonly effort?: string | undefined;
+  readonly rawUsage?: JsonLike | undefined;
+}
+
+export interface PersistedAgentTurnUsage {
+  readonly turnId: string;
+  readonly sessionKey: string;
+  readonly channelId: string;
+  readonly rootThreadTs: string;
+  readonly agentSessionId?: string | undefined;
+  readonly status: PersistedAgentTurnStatus;
+  readonly source: AgentTurnUsageSource;
+  readonly model?: string | undefined;
+  readonly effort?: string | undefined;
+  readonly inputTokens: number;
+  readonly cachedInputTokens: number;
+  readonly outputTokens: number;
+  readonly reasoningTokens: number;
+  readonly totalTokens: number;
+  readonly rawUsage?: JsonLike | undefined;
+  readonly startedAt?: string | undefined;
+  readonly completedAt?: string | undefined;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface PersistedAgentSessionUsageSummary {
+  readonly sessionKey: string;
+  readonly channelId: string;
+  readonly rootThreadTs: string;
+  readonly turnCount: number;
+  readonly exactTurns: number;
+  readonly estimatedTurns: number;
+  readonly missingTurns: number;
+  readonly inputTokens: number;
+  readonly cachedInputTokens: number;
+  readonly outputTokens: number;
+  readonly reasoningTokens: number;
+  readonly totalTokens: number;
+  readonly updatedAt: string;
+  readonly lastTurnAt?: string | undefined;
+  readonly model?: string | undefined;
+  readonly effort?: string | undefined;
+}
+
+export interface PersistedAgentTraceEvent {
+  readonly id: string;
+  readonly sessionKey: string;
+  readonly source: "broker" | "agent_runtime";
+  readonly type: string;
+  readonly at: string;
+  readonly sequence: number;
+  readonly title: string;
+  readonly summary: string;
+  readonly detail?: string | undefined;
+  readonly status?: string | undefined;
+  readonly role?: string | undefined;
+  readonly toolName?: string | undefined;
+  readonly callId?: string | undefined;
+  readonly turnId?: string | undefined;
+  readonly detailTruncated?: boolean | undefined;
+  readonly detailOriginalChars?: number | undefined;
+  readonly metadata?: JsonLike | undefined;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface PersistedAgentSessionTraceSummary {
+  readonly sessionKey: string;
+  readonly eventCount: number;
+  readonly modelRequestCount: number;
+  readonly categories: Record<string, number>;
+  readonly sources: Record<string, number>;
+  readonly updatedAt: string;
 }
 
 export interface SlackInputMessage {
@@ -207,9 +365,13 @@ export interface SlackImageAttachment {
   readonly name?: string | undefined;
   readonly title?: string | undefined;
   readonly mimetype?: string | undefined;
+  readonly filetype?: string | undefined;
+  readonly size?: number | undefined;
   readonly width?: number | undefined;
   readonly height?: number | undefined;
   readonly url: string;
+  readonly localPath?: string | undefined;
+  readonly downloadError?: string | undefined;
 }
 
 export interface SlackThreadMessage {
@@ -233,9 +395,10 @@ export interface ResolvedSlackThreadMessage extends SlackThreadMessage {
   readonly mentionedUsers?: readonly SlackUserIdentity[];
 }
 
-export interface CodexTurnResult {
-  readonly threadId: string;
-  readonly turnId: string;
-  readonly finalMessage: string;
-  readonly aborted: boolean;
+export interface GeneratedImageArtifact {
+  readonly id: string;
+  readonly contentBase64?: string | undefined;
+  readonly contentType?: string | undefined;
+  readonly savedPath?: string | undefined;
+  readonly revisedPrompt?: string | undefined;
 }

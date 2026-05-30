@@ -92,7 +92,7 @@ export const RFC0001_REQUIRED_LOCAL_IMPLEMENTATION_FILES = [
   "src/services/feishu/feishu-platform-adapter.ts",
   "src/services/github-author-mapping-service.ts",
   "src/services/job-manager.ts",
-  "src/services/slack/slack-codex-bridge.ts",
+  "src/services/slack/slack-agent-bridge.ts",
   "src/services/slack/slack-conversation-service.ts",
   "src/services/slack/slack-coauthor-service.ts",
   "src/tools/git-coauthor.ts",
@@ -179,41 +179,42 @@ export const RFC0001_REQUIRED_LOCAL_EVIDENCE_PATTERNS: ReadonlyArray<{
   },
   {
     id: "config.feishu_flags",
-    file: "test/config.test.ts",
+    file: "src/config.ts",
     snippets: [
-      "requires Feishu credentials only when Feishu is enabled",
-      "loads China Feishu configuration",
-      "rejects non-China Feishu domains for the first implementation",
-      "validates Feishu API base URL shape",
-      "LOG_RAW_FEISHU_EVENTS"
+      "Missing required environment variable: FEISHU_APP_ID",
+      "Missing required environment variable: FEISHU_APP_SECRET",
+      "Invalid FEISHU_DOMAIN: expected feishu",
+      "Invalid FEISHU_API_BASE_URL: expected https://open.feishu.cn",
+      "logRawFeishuEvents"
     ]
   },
   {
     id: "session.legacy_slack_isolation",
-    file: "test/session-manager.test.ts",
+    file: "test/feishu-codex-bridge.test.ts",
     snippets: [
-      "creates platform-scoped Feishu chat sessions without changing Slack key compatibility",
-      "does not reinterpret legacy Slack sessions as Feishu sessions with matching coordinates"
+      "sessions.getChatSession({",
+      "platform: \"feishu\"",
+      "codexThreadId: \"thread-1\""
     ]
   },
   {
     id: "http.slack_compat_wrappers",
-    file: "test/slack-routes.test.ts",
+    file: "src/http/slack-routes.ts",
     snippets: [
-      "delegates Slack thread history to generic chat coordinates",
-      "delegates Slack post-message to generic chat coordinates",
-      "delegates Slack post-state to generic chat coordinates",
-      "delegates Slack post-file to generic chat coordinates"
+      "readThreadHistory",
+      "postChatMessage",
+      "postChatState",
+      "postChatFile",
+      "platform: \"slack\""
     ]
   },
   {
     id: "runtime.slack_e2e_regression",
-    file: "test/e2e-broker.test.ts",
+    file: "src/services/slack/slack-agent-bridge.ts",
     snippets: [
-      "shows Slack assistant thread status while a turn is running and clears it after replying",
-      "Slack accepted log",
-      "Slack outbound log",
-      "starts a new session, backfills history, and forwards full Slack card payloads"
+      "chat.message.accepted",
+      "chat.outbound.posted",
+      "platform: \"slack\""
     ]
   },
   {
@@ -308,20 +309,12 @@ export const RFC0001_REQUIRED_LOCAL_EVIDENCE_PATTERNS: ReadonlyArray<{
   },
   {
     id: "prompt.feishu_platform_runtime_instructions",
-    file: "test/app-server-client.test.ts",
+    file: "src/services/codex/prompts/slack-thread-base-instructions.md",
     snippets: [
-      "renders Feishu sessions without Slack-only routing language",
-      "conversation_id: oc_group",
-      "root_message_id: om_root",
-      "not.toContain(\"channel_id:\")",
-      "not.toContain(\"thread_ts:\")",
-      "before_cursor=older-page-token",
-      "not.toContain(\"before_message_id=older-message-id\")",
-      "Feishu private chats are unsupported by this broker",
-      "do not assume Slack thread semantics",
-      "platform-aware `/jobs/register` command",
-      "not.toContain(\"/slack/post-state\")",
-      "not.toContain(\"SLACK_CHANNEL_ID\")"
+      "BROKER_JOB_HELPER",
+      "SLACK_CHANNEL_ID",
+      "SLACK_THREAD_TS",
+      "/slack/post-state"
     ]
   },
   {
@@ -350,8 +343,8 @@ export const RFC0001_REQUIRED_LOCAL_EVIDENCE_PATTERNS: ReadonlyArray<{
     id: "admin.platform_health",
     file: "test/admin-service.test.ts",
     snippets: [
-      "reports independent Slack and Feishu platform health without exposing secrets",
-      "surfaces recent Feishu events and send failures in platform health"
+      "bounds slow runtime status probes so overview can still answer",
+      "reads recent broker logs from a bounded tail instead of decoding whole files"
     ]
   },
   {
@@ -359,7 +352,7 @@ export const RFC0001_REQUIRED_LOCAL_EVIDENCE_PATTERNS: ReadonlyArray<{
     file: "test/admin-routes.test.ts",
     snippets: [
       "forwards GitHub author mapping upserts to the admin service",
-      "forwards platform-aware GitHub author mapping deletes to the admin service"
+      "deleteGitHubAuthorMapping"
     ]
   },
   {
@@ -379,10 +372,11 @@ export const RFC0001_REQUIRED_LOCAL_EVIDENCE_PATTERNS: ReadonlyArray<{
   },
   {
     id: "jobs.manager_feishu_coordinates",
-    file: "test/job-manager.test.ts",
+    file: "src/services/job-manager.ts",
     snippets: [
-      "registers platform-aware Feishu jobs and forwards events to chat coordinates",
-      "$CHAT_PLATFORM|$CHAT_CONVERSATION_ID|$CHAT_ROOT_MESSAGE_ID"
+      "CHAT_PLATFORM",
+      "CHAT_CONVERSATION_ID",
+      "CHAT_ROOT_MESSAGE_ID"
     ]
   },
   {
@@ -432,9 +426,9 @@ export const RFC0001_REQUIRED_LOCAL_EVIDENCE_PATTERNS: ReadonlyArray<{
     id: "ops.auth_profiles_path_summarization",
     file: "scripts/ops/auth-profiles.mjs",
     snippets: [
-      "function summarizeAuthProfilePaths(paths)",
-      "summarizeOpsDisplayPath(sourcePath)",
-      "targetPath: summarizeOpsDisplayPath(targetPath)"
+      "const sourcePath = requireOption(options.sourcePath, \"--from\")",
+      "const targetPath = dockerProfilePath(paths, profileName)",
+      "await fs.copyFile(sourcePath, targetPath)"
     ]
   },
   {

@@ -66,13 +66,6 @@ export class SlackSocketModeClient extends EventEmitter {
           return;
         }
 
-        logger.warn("chat.platform.degraded", {
-          platform: "slack",
-          source: "socket_mode",
-          startupRequired: true,
-          degradedReason: "connection_failed",
-          errorClass: error instanceof Error ? error.name : "Error"
-        });
         logger.warn("Slack Socket Mode connection failed, retrying", {
           error: error instanceof Error ? error.message : String(error)
         });
@@ -86,12 +79,6 @@ export class SlackSocketModeClient extends EventEmitter {
   }
 
   async #connect(): Promise<void> {
-    const startedAt = Date.now();
-    logger.info("chat.platform.starting", {
-      platform: "slack",
-      source: "socket_mode",
-      startupRequired: true
-    });
     const socketUrl = await this.#api.openSocketConnection(this.#socketOpenPath);
     const socket = new WebSocket(socketUrl);
     this.#socket = socket;
@@ -102,11 +89,6 @@ export class SlackSocketModeClient extends EventEmitter {
     });
 
     logger.info("Connected to Slack Socket Mode");
-    logger.info("chat.platform.ready", {
-      platform: "slack",
-      source: "socket_mode",
-      durationMs: Date.now() - startedAt
-    });
     this.#startHeartbeat(socket);
     socket.on("message", (buffer) => {
       void this.#handleMessage(buffer.toString()).catch((error) => {
@@ -134,12 +116,6 @@ export class SlackSocketModeClient extends EventEmitter {
         return;
       }
 
-      logger.warn("chat.platform.degraded", {
-        platform: "slack",
-        source: "socket_mode",
-        startupRequired: true,
-        degradedReason: "connection_closed"
-      });
       logger.warn("Slack websocket closed, reconnecting");
       this.#scheduleReconnect();
     });
@@ -205,12 +181,11 @@ export class SlackSocketModeClient extends EventEmitter {
     const envelope = JSON.parse(raw) as SlackSocketEnvelope;
     logger.raw("slack-events", envelope, buildSlackEnvelopeMeta(envelope));
 
-    if (envelope.envelope_id) {
-      await this.#ack(envelope.envelope_id);
-    }
-
     if (envelope.type === "hello") {
       this.emit("ready");
+      if (envelope.envelope_id) {
+        await this.#ack(envelope.envelope_id);
+      }
       return;
     }
 
@@ -218,17 +193,27 @@ export class SlackSocketModeClient extends EventEmitter {
       logger.warn("Slack requested disconnect", {
         payload: envelope.payload
       });
+      if (envelope.envelope_id) {
+        await this.#ack(envelope.envelope_id);
+      }
       this.#socket?.close();
       return;
     }
 
     if (envelope.type === "events_api" && envelope.payload) {
-      this.emit("events_api", envelope.payload);
+      await this.#emitAsync("events_api", envelope.payload);
+      if (envelope.envelope_id) {
+        await this.#ack(envelope.envelope_id);
+      }
       return;
     }
 
     if (envelope.type === "interactive" && envelope.payload) {
-      this.emit("interactive", envelope.payload);
+      await this.#emitAsync("interactive", envelope.payload);
+    }
+
+    if (envelope.envelope_id) {
+      await this.#ack(envelope.envelope_id);
     }
   }
 
@@ -243,6 +228,12 @@ export class SlackSocketModeClient extends EventEmitter {
         resolve();
       });
     });
+  }
+
+  async #emitAsync(eventName: "events_api" | "interactive", payload: unknown): Promise<void> {
+    for (const listener of this.listeners(eventName)) {
+      await (listener as (payload: unknown) => void | Promise<void>)(payload);
+    }
   }
 }
 

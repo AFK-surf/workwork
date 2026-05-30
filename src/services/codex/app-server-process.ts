@@ -1,3 +1,4 @@
+import { constants as fsConstants } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -6,15 +7,23 @@ import type { Readable } from "node:stream";
 
 import { logger } from "../../logger.js";
 import { ensureDir, fileExists } from "../../utils/fs.js";
+import { withoutGlobalGitHubTokenEnv } from "../../utils/github-env.js";
 import { resolveRuntimeToolPath } from "../../utils/runtime-paths.js";
 import { syncUserCodexHome } from "./codex-home.js";
 import { syncGeminiHome } from "./gemini-home.js";
 
 const ALL_MCP_SERVERS = "*";
+const DISABLED_CODEX_APP_SERVER_FEATURES = ["apps"] as const;
+
+function resolveRuntimeHomePath(): string {
+  const envHome = process.env.HOME?.trim();
+  return envHome ? path.resolve(envHome) : os.homedir();
+}
 
 export class AppServerProcess {
   readonly #brokerHttpBaseUrl: string;
   readonly #codexHome: string;
+  readonly #teamCodexHomePath: string | undefined;
   readonly #runtimeHome: string;
   readonly #port: number;
   readonly #openAiApiKey: string | undefined;
@@ -32,6 +41,7 @@ export class AppServerProcess {
   constructor(options: {
     readonly brokerHttpBaseUrl: string;
     readonly codexHome: string;
+    readonly teamCodexHomePath?: string | undefined;
     readonly port: number;
     readonly openAiApiKey?: string | undefined;
     readonly authJsonPath?: string | undefined;
@@ -45,7 +55,8 @@ export class AppServerProcess {
   }) {
     this.#brokerHttpBaseUrl = options.brokerHttpBaseUrl;
     this.#codexHome = options.codexHome;
-    this.#runtimeHome = path.join(path.dirname(options.codexHome), "runtime-home");
+    this.#teamCodexHomePath = options.teamCodexHomePath;
+    this.#runtimeHome = resolveRuntimeHomePath();
     this.#port = options.port;
     this.#openAiApiKey = options.openAiApiKey;
     this.#authJsonPath = options.authJsonPath;
@@ -71,19 +82,26 @@ export class AppServerProcess {
     await this.#bootstrapAuth();
     await this.#disableConfiguredMcpServers();
     await this.#ensureGitCommitHook();
+    const githubCliWrapper = await this.#ensureGitHubCliWrapper();
     const tempadLinkServiceUrl = await this.#resolveTempadLinkServiceUrl();
 
-    const env: NodeJS.ProcessEnv = {
+    const env: NodeJS.ProcessEnv = withoutGlobalGitHubTokenEnv({
       ...process.env,
       CODEX_HOME: this.#codexHome,
+      ...(this.#teamCodexHomePath ? { CODEX_TEAM_HOME: this.#teamCodexHomePath } : {}),
       HOME: this.#runtimeHome,
       BROKER_API_BASE: this.#brokerHttpBaseUrl,
+      BROKER_GH_HELPER:
+        process.env.BROKER_GH_HELPER?.trim() || resolveRuntimeToolPath("gh.js"),
+      BROKER_REAL_GH_PATH:
+        process.env.BROKER_REAL_GH_PATH?.trim() || githubCliWrapper.realGhPath || "",
       TEMPAD_LINK_SERVICE_URL: tempadLinkServiceUrl,
       BROKER_GIT_COAUTHOR_HELPER:
         process.env.BROKER_GIT_COAUTHOR_HELPER?.trim() || resolveRuntimeToolPath("git-coauthor.js"),
       BROKER_GEMINI_UI_HELPER:
-        process.env.BROKER_GEMINI_UI_HELPER?.trim() || resolveRuntimeToolPath("gemini-ui.js")
-    };
+        process.env.BROKER_GEMINI_UI_HELPER?.trim() || resolveRuntimeToolPath("gemini-ui.js"),
+      PATH: `${githubCliWrapper.binDir}:${process.env.PATH ?? ""}`
+    });
 
     if (this.#geminiHttpProxy) {
       env.BROKER_GEMINI_HTTP_PROXY = this.#geminiHttpProxy;
@@ -120,7 +138,14 @@ export class AppServerProcess {
   }
 
   async #startProcess(env: NodeJS.ProcessEnv, allowPortRecovery: boolean): Promise<void> {
-    this.#child = spawn("codex", ["app-server", "--listen", this.url], {
+    const args = [
+      "app-server",
+      ...DISABLED_CODEX_APP_SERVER_FEATURES.flatMap((feature) => ["--disable", feature]),
+      "--listen",
+      this.url
+    ];
+
+    this.#child = spawn("codex", args, {
       detached: true,
       env,
       stdio: ["ignore", "pipe", "pipe"]
@@ -168,12 +193,9 @@ export class AppServerProcess {
     await ensureDir(this.#codexHome);
     await syncUserCodexHome({
       codexHome: this.#codexHome,
+      teamCodexHomePath: this.#teamCodexHomePath,
       hostCodexHomePath: this.#hostCodexHomePath,
-      runtimeHomePath: this.#runtimeHome,
-      legacyPersonalMemoryPath:
-        path.resolve(this.#runtimeHome) === path.resolve(os.homedir())
-        ? undefined
-          : path.join(os.homedir(), ".codex", "AGENT.md")
+      runtimeHomePath: this.#runtimeHome
     });
     await syncGeminiHome({
       runtimeHomePath: this.#runtimeHome,
@@ -185,13 +207,17 @@ export class AppServerProcess {
   async #bootstrapAuth(): Promise<void> {
     const authTarget = path.join(this.#codexHome, "auth.json");
 
+    if (this.#authJsonPath && await fileExists(this.#authJsonPath)) {
+      await pointSymlink(authTarget, this.#authJsonPath);
+      return;
+    }
+
     if (await fileExists(authTarget)) {
       return;
     }
 
     const candidatePaths = [
-      this.#authJsonPath,
-      path.join(os.homedir(), ".codex", "auth.json")
+      path.join(this.#runtimeHome, ".codex", "auth.json")
     ].filter((value): value is string => Boolean(value));
 
     for (const candidate of candidatePaths) {
@@ -218,6 +244,30 @@ export class AppServerProcess {
     await fs.writeFile(hookPath, `${hookScript}\n`, { mode: 0o755 });
     await fs.chmod(hookPath, 0o755);
     await this.#runGit(["config", "--global", "core.hooksPath", hooksDir]);
+  }
+
+  async #ensureGitHubCliWrapper(): Promise<{
+    readonly binDir: string;
+    readonly realGhPath?: string | undefined;
+  }> {
+    const binDir = path.join(this.#runtimeHome, ".local", "broker-bin");
+    await ensureDir(binDir);
+    const wrapperPath = path.join(binDir, "gh");
+    const wrapperScript = [
+      "#!/usr/bin/env bash",
+      "set -euo pipefail",
+      "if [ -z \"${BROKER_GH_HELPER:-}\" ]; then",
+      "  printf '%s\\n' 'BROKER_GH_HELPER is required for broker gh wrapper.' >&2",
+      "  exit 1",
+      "fi",
+      "exec node \"$BROKER_GH_HELPER\" \"$@\""
+    ].join("\n");
+    await fs.writeFile(wrapperPath, `${wrapperScript}\n`, { mode: 0o755 });
+    await fs.chmod(wrapperPath, 0o755);
+    return {
+      binDir,
+      realGhPath: process.env.BROKER_REAL_GH_PATH?.trim() || await findExecutableOnPath("gh", process.env.PATH)
+    };
   }
 
   async #disableConfiguredMcpServers(): Promise<void> {
@@ -257,11 +307,12 @@ export class AppServerProcess {
   }
 
   async #runCodex(args: string[]): Promise<string> {
-    const env: NodeJS.ProcessEnv = {
+    const env: NodeJS.ProcessEnv = withoutGlobalGitHubTokenEnv({
       ...process.env,
       CODEX_HOME: this.#codexHome,
+      ...(this.#teamCodexHomePath ? { CODEX_TEAM_HOME: this.#teamCodexHomePath } : {}),
       HOME: this.#runtimeHome
-    };
+    });
 
     if (this.#openAiApiKey) {
       env.OPENAI_API_KEY = this.#openAiApiKey;
@@ -294,10 +345,10 @@ export class AppServerProcess {
   }
 
   async #runGit(args: string[]): Promise<string> {
-    const env: NodeJS.ProcessEnv = {
+    const env: NodeJS.ProcessEnv = withoutGlobalGitHubTokenEnv({
       ...process.env,
       HOME: this.#runtimeHome
-    };
+    });
 
     return await new Promise<string>((resolve, reject) => {
       const child = spawn("git", args, {
@@ -422,8 +473,11 @@ async function waitForAppServerListen(
   return await new Promise<void>((resolve, reject) => {
     let stdoutTail = "";
     let stderrTail = "";
+    let startupComplete = false;
     const timeout = setTimeout(() => {
-      cleanup();
+      cleanup({
+        removeStreamListeners: true
+      });
       reject(
         new Error(
           `Timed out waiting for codex app-server to start${formatStartupDetails(stdoutTail, stderrTail)}`
@@ -431,11 +485,30 @@ async function waitForAppServerListen(
       );
     }, 15_000);
 
-    const cleanup = () => {
+    const cleanup = (options?: {
+      readonly removeStreamListeners?: boolean;
+    }) => {
       clearTimeout(timeout);
-      child.stdout.off("data", onStdout);
-      child.stderr.off("data", onStderr);
-      child.off("exit", onExit);
+      child.off("exit", onStartupExit);
+
+      if (options?.removeStreamListeners) {
+        child.stdout.off("data", onStdout);
+        child.stderr.off("data", onStderr);
+      }
+    };
+
+    const finishStartup = () => {
+      if (startupComplete) {
+        return;
+      }
+
+      startupComplete = true;
+      // Keep draining stdout/stderr after the startup banner so later app-server
+      // transport warnings (for example websocket disconnect reasons) are not
+      // lost and the child cannot block on a full pipe.
+      cleanup();
+      child.once("exit", onPostStartupExit);
+      resolve();
     };
 
     const onStdout = (chunk: Buffer): void => {
@@ -443,8 +516,7 @@ async function waitForAppServerListen(
       stdoutTail = `${stdoutTail}${text}`.slice(-8_000);
       logger.debug("codex app-server stdout", { text });
       if (text.includes("listening on:")) {
-        cleanup();
-        resolve();
+        finishStartup();
       }
     };
 
@@ -453,13 +525,20 @@ async function waitForAppServerListen(
       stderrTail = `${stderrTail}${text}`.slice(-8_000);
       logger.warn("codex app-server stderr", { text });
       if (text.includes("listening on:")) {
-        cleanup();
-        resolve();
+        finishStartup();
       }
     };
 
-    const onExit = (code: number | null) => {
-      cleanup();
+    const onPostStartupExit = () => {
+      child.stdout.off("data", onStdout);
+      child.stderr.off("data", onStderr);
+      child.off("exit", onPostStartupExit);
+    };
+
+    const onStartupExit = (code: number | null) => {
+      cleanup({
+        removeStreamListeners: true
+      });
       reject(
         new Error(
           `codex app-server exited early with code ${code ?? "null"}${formatStartupDetails(stdoutTail, stderrTail)}`
@@ -469,13 +548,32 @@ async function waitForAppServerListen(
 
     child.stdout.on("data", onStdout);
     child.stderr.on("data", onStderr);
-    child.once("exit", onExit);
+    child.once("exit", onStartupExit);
   });
 }
 
 function formatStartupDetails(stdoutTail: string, stderrTail: string): string {
   const details = (stderrTail || stdoutTail).trim();
   return details ? `: ${details}` : "";
+}
+
+async function pointSymlink(linkPath: string, targetPath: string): Promise<void> {
+  const desiredTarget = path.relative(path.dirname(linkPath), targetPath);
+  try {
+    const currentTarget = await fs.readlink(linkPath);
+    const resolvedCurrent = path.resolve(path.dirname(linkPath), currentTarget);
+    if (path.resolve(resolvedCurrent) === path.resolve(targetPath)) {
+      return;
+    }
+  } catch (error) {
+    if (!(error && typeof error === "object" && "code" in error && error.code === "ENOENT") &&
+        !(error && typeof error === "object" && "code" in error && error.code === "EINVAL")) {
+      throw error;
+    }
+  }
+
+  await fs.rm(linkPath, { force: true });
+  await fs.symlink(desiredTarget, linkPath);
 }
 
 function isAddressInUseStartupError(error: unknown): boolean {
@@ -533,10 +631,10 @@ function parsePidList(output: string): number[] {
   )];
 }
 
-function parseCodexAppServerPidsFromPsOutput(output: string, port: number): number[] {
+export function parseCodexAppServerPidsFromPsOutput(output: string, port: number): number[] {
   const listenPatterns = [
-    `app-server --listen ws://127.0.0.1:${port}`,
-    `app-server --listen ws://localhost:${port}`
+    `--listen ws://127.0.0.1:${port}`,
+    `--listen ws://localhost:${port}`
   ];
 
   return [...new Set(
@@ -544,7 +642,7 @@ function parseCodexAppServerPidsFromPsOutput(output: string, port: number): numb
       .split("\n")
       .map((line) => line.trim())
       .filter(Boolean)
-      .filter((line) => listenPatterns.some((pattern) => line.includes(pattern)))
+      .filter((line) => line.includes("app-server") && listenPatterns.some((pattern) => line.includes(pattern)))
       .map((line) => Number.parseInt(line.split(/\s+/, 2)[0] ?? "", 10))
       .filter((value) => Number.isInteger(value) && value > 0)
   )];
@@ -593,4 +691,17 @@ async function isHealthyHttpService(baseUrl: string): Promise<boolean> {
 
 function uniqueStrings(values: readonly (string | undefined)[]): string[] {
   return [...new Set(values.filter((value): value is string => Boolean(value)))];
+}
+
+async function findExecutableOnPath(command: string, pathValue: string | undefined): Promise<string | undefined> {
+  for (const dir of (pathValue ?? "").split(path.delimiter).filter(Boolean)) {
+    const candidate = path.join(dir, command);
+    try {
+      await fs.access(candidate, fsConstants.X_OK);
+      return candidate;
+    } catch {
+      // Keep searching PATH.
+    }
+  }
+  return undefined;
 }

@@ -6,7 +6,7 @@ import type {
   SlackTurnSignalKind
 } from "../../types.js";
 
-const AUTO_RECOVERY_SESSION_LOOKBACK_MS = 14 * 24 * 60 * 60 * 1_000;
+const AUTO_RECOVERY_SESSION_LOOKBACK_MS = 24 * 60 * 60 * 1_000;
 const DEFAULT_FAILURE_NOTIFICATION_COOLDOWN_MS = 5 * 60 * 1_000;
 
 export function chunkSlackMessage(text: string, chunkSize = 3_500): string[] {
@@ -66,6 +66,25 @@ export function shouldAutoRecoverSession(session: SlackSessionRecord, nowMs: num
   return nowMs - updatedAtMs <= AUTO_RECOVERY_SESSION_LOOKBACK_MS;
 }
 
+export function shouldForceResetStaleIdleRuntime(options: {
+  readonly activeTurnId?: string | undefined;
+  readonly runtimeProcessing: boolean;
+  readonly latestOpenMessageUpdatedAt?: string | undefined;
+  readonly nowMs: number;
+  readonly staleAfterMs: number;
+}): boolean {
+  if (options.activeTurnId || !options.runtimeProcessing || !options.latestOpenMessageUpdatedAt) {
+    return false;
+  }
+
+  const updatedAtMs = Date.parse(options.latestOpenMessageUpdatedAt);
+  if (!Number.isFinite(updatedAtMs)) {
+    return false;
+  }
+
+  return options.nowMs - updatedAtMs >= options.staleAfterMs;
+}
+
 export function compareIsoTimestamp(left: string, right: string): number {
   return Date.parse(left) - Date.parse(right);
 }
@@ -87,20 +106,23 @@ export function clampHistoryLimit(requested: number | undefined, fallback: numbe
   return Math.max(0, Math.min(resolved, max));
 }
 
-export function isRecoverableCodexTurnFailure(error: unknown): boolean {
+export function isRecoverableAgentTurnFailure(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   return [
-    "Codex app-server websocket is not connected",
-    "Codex app-server websocket closed",
+    "app-server websocket is not connected",
+    "app-server websocket closed",
+    "websocket is not connected",
+    "websocket closed",
     "WebSocket is not open",
     "readyState 3",
     "socket hang up",
     "ECONNREFUSED",
+    "EPIPE",
     "closed"
   ].some((pattern) => message.includes(pattern));
 }
 
-export function isMissingCodexThreadError(error: unknown): boolean {
+export function isMissingAgentSessionError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   return (
     /no rollout found for thread id/i.test(message) ||
@@ -136,15 +158,15 @@ export function shouldNotifySlackFailure(options: {
 export function formatSlackRunFailureMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
 
-  if (isRecoverableCodexTurnFailure(error)) {
+  if (isRecoverableAgentTurnFailure(error)) {
     return "I lost my connection while working on this thread. I will resume as soon as the connection comes back.";
   }
 
-  if (isMissingCodexThreadError(error)) {
+  if (isMissingAgentSessionError(error)) {
     return "I lost my previous runtime state for this thread. I am resetting the session and will continue from the latest state.";
   }
 
-  if (isMissingActiveTurnSteerError(error)) {
+  if (isMissingActiveTurnInputError(error)) {
     return "I lost track of the current run while reconnecting. I am resyncing and will continue from the latest state.";
   }
 
@@ -156,12 +178,12 @@ export function formatSlackRunFailureMessage(error: unknown): string {
 }
 
 export function shouldPostSlackRunFailure(error: unknown): boolean {
-  return !isRecoverableCodexTurnFailure(error);
+  return !isRecoverableAgentTurnFailure(error);
 }
 
-export function isMissingActiveTurnSteerError(error: unknown): boolean {
+export function isMissingActiveTurnInputError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
-  return /no active turn to steer/i.test(message) || /expected active turn id `[^`]+` but found `[^`]+`/i.test(message);
+  return /no active turn to (receive input|deliver input)/i.test(message) || /expected active turn id `[^`]+` but found `[^`]+`/i.test(message);
 }
 
 export function parseActiveTurnMismatch(error: unknown): {
@@ -178,6 +200,27 @@ export function parseActiveTurnMismatch(error: unknown): {
     expectedTurnId: match[1]!,
     actualTurnId: match[2]!
   };
+}
+
+export function shouldResetConflictingActiveTurnMismatch(
+  inflightBatchIds: readonly (string | undefined)[],
+  actualTurnId: string
+): boolean {
+  const distinct = new Set(
+    inflightBatchIds
+      .map((batchId) => batchId?.trim())
+      .filter((batchId): batchId is string => Boolean(batchId))
+  );
+
+  if (distinct.size === 0) {
+    return false;
+  }
+
+  if (distinct.size === 1) {
+    return !distinct.has(actualTurnId);
+  }
+
+  return true;
 }
 
 export function isSlackInboundSource(

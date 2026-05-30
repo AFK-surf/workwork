@@ -1,0 +1,73 @@
+name: Publish NPM Package
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    name: Build, test, pack, and publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      - name: Run tests
+        run: pnpm test
+
+      - name: Stage release packages
+        run: pnpm release:stage
+
+      - name: Pack admin release artifact
+        run: npm pack artifacts/npm-packages/admin --pack-destination artifacts
+
+      - name: Pack worker release artifact
+        run: npm pack artifacts/npm-packages/worker --pack-destination artifacts
+
+      - name: Upload admin release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-session-broker-admin-npm-package
+          path: artifacts/agent-session-broker-admin-*.tgz
+
+      - name: Upload worker release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-session-broker-worker-npm-package
+          path: artifacts/agent-session-broker-worker-*.tgz
+
+      - name: Publish admin to npm
+        run: npm publish artifacts/npm-packages/admin --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish worker to npm
+        run: npm publish artifacts/npm-packages/worker --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

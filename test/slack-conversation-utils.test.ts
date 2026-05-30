@@ -3,21 +3,24 @@ import { describe, expect, it } from "vitest";
 import {
   createSlackFailureFingerprint,
   formatSlackRunFailureMessage,
-  isMissingCodexThreadError,
-  isMissingActiveTurnSteerError,
+  isMissingAgentSessionError,
+  isMissingActiveTurnInputError,
   parseActiveTurnMismatch,
+  shouldResetConflictingActiveTurnMismatch,
+  shouldAutoRecoverSession,
+  shouldForceResetStaleIdleRuntime,
   shouldPostSlackRunFailure,
   shouldNotifySlackFailure
 } from "../src/services/slack/slack-conversation-utils.js";
 
 describe("slack conversation utils", () => {
-  it("detects a missing active turn steer error", () => {
-    expect(isMissingActiveTurnSteerError(new Error("no active turn to steer"))).toBe(true);
+  it("detects a missing active turn input delivery error", () => {
+    expect(isMissingActiveTurnInputError(new Error("no active turn to deliver input"))).toBe(true);
   });
 
-  it("detects an active turn mismatch steer error", () => {
+  it("detects an active turn mismatch input delivery error", () => {
     expect(
-      isMissingActiveTurnSteerError(
+      isMissingActiveTurnInputError(
         new Error("expected active turn id `turn-old` but found `turn-new`")
       )
     ).toBe(true);
@@ -38,14 +41,37 @@ describe("slack conversation utils", () => {
     expect(parseActiveTurnMismatch(new Error("socket hang up"))).toBeNull();
   });
 
+  it("does not reset active-turn mismatch when there are no inflight batches", () => {
+    expect(shouldResetConflictingActiveTurnMismatch([], "turn-new")).toBe(false);
+  });
+
+  it("does not reset active-turn mismatch when the only inflight batch matches the actual turn", () => {
+    expect(shouldResetConflictingActiveTurnMismatch(["turn-new"], "turn-new")).toBe(false);
+  });
+
+  it("resets active-turn mismatch when the only inflight batch conflicts with the actual turn", () => {
+    expect(shouldResetConflictingActiveTurnMismatch(["turn-old"], "turn-new")).toBe(true);
+  });
+
+  it("resets active-turn mismatch when multiple inflight batches exist", () => {
+    expect(shouldResetConflictingActiveTurnMismatch(["turn-old", "turn-new"], "turn-new")).toBe(true);
+  });
+
   it("formats recoverable websocket failures for Slack users", () => {
-    expect(formatSlackRunFailureMessage(new Error("Codex app-server websocket closed"))).toBe(
+    expect(formatSlackRunFailureMessage(new Error("app-server websocket closed"))).toBe(
       "I lost my connection while working on this thread. I will resume as soon as the connection comes back."
     );
   });
 
   it("suppresses visible Slack notifications for recoverable websocket failures", () => {
-    expect(shouldPostSlackRunFailure(new Error("Codex app-server websocket closed"))).toBe(false);
+    expect(shouldPostSlackRunFailure(new Error("app-server websocket closed"))).toBe(false);
+  });
+
+  it("treats EPIPE transport failures as recoverable", () => {
+    expect(formatSlackRunFailureMessage(new Error("write EPIPE"))).toBe(
+      "I lost my connection while working on this thread. I will resume as soon as the connection comes back."
+    );
+    expect(shouldPostSlackRunFailure(new Error("write EPIPE"))).toBe(false);
   });
 
   it("formats active turn mismatches for Slack users", () => {
@@ -58,11 +84,11 @@ describe("slack conversation utils", () => {
     );
   });
 
-  it("detects missing codex thread errors", () => {
-    expect(isMissingCodexThreadError(new Error("no rollout found for thread id 019cf4fd"))).toBe(true);
+  it("detects missing agent session errors", () => {
+    expect(isMissingAgentSessionError(new Error("no rollout found for thread id 019cf4fd"))).toBe(true);
   });
 
-  it("formats missing codex thread errors for Slack users", () => {
+  it("formats missing agent session errors for Slack users", () => {
     expect(
       formatSlackRunFailureMessage(new Error("no rollout found for thread id 019cf4fd"))
     ).toBe(
@@ -89,4 +115,59 @@ describe("slack conversation utils", () => {
       })
     ).toBe(false);
   });
+
+  it("only auto-recovers sessions updated within the last day", () => {
+    const nowMs = Date.parse("2026-04-08T12:00:00.000Z");
+    const baseSession = {
+      key: "C123:1.23",
+      channelId: "C123",
+      rootThreadTs: "1.23",
+      workspacePath: "/tmp/workspace",
+      createdAt: "2026-04-07T00:00:00.000Z",
+      updatedAt: "2026-04-08T00:00:01.000Z",
+      lastObservedMessageTs: "1775621831.247979"
+    };
+
+    expect(shouldAutoRecoverSession(baseSession, nowMs)).toBe(true);
+    expect(
+      shouldAutoRecoverSession(
+        {
+          ...baseSession,
+          updatedAt: "2026-04-07T11:59:59.000Z"
+        },
+        nowMs
+      )
+    ).toBe(false);
+  });
+
+  it("force-resets a stale idle runtime when open messages remain", () => {
+    expect(shouldForceResetStaleIdleRuntime({
+      activeTurnId: undefined,
+      runtimeProcessing: true,
+      latestOpenMessageUpdatedAt: "2026-04-17T04:00:00.000Z",
+      nowMs: Date.parse("2026-04-17T04:01:00.000Z"),
+      staleAfterMs: 30_000
+    })).toBe(true);
+  });
+
+  it("does not force-reset an idle runtime when the open messages are still fresh", () => {
+    expect(shouldForceResetStaleIdleRuntime({
+      activeTurnId: undefined,
+      runtimeProcessing: true,
+      latestOpenMessageUpdatedAt: "2026-04-17T04:00:45.000Z",
+      nowMs: Date.parse("2026-04-17T04:01:00.000Z"),
+      staleAfterMs: 30_000
+    })).toBe(false);
+  });
+
+  it("does not force-reset when an active turn still exists", () => {
+    expect(shouldForceResetStaleIdleRuntime({
+      activeTurnId: "turn-1",
+      runtimeProcessing: true,
+      latestOpenMessageUpdatedAt: "2026-04-17T04:00:00.000Z",
+      nowMs: Date.parse("2026-04-17T04:01:00.000Z"),
+      staleAfterMs: 30_000
+    })).toBe(false);
+  });
+
 });

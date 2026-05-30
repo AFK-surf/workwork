@@ -1,7 +1,7 @@
 import http from "node:http";
 import { randomUUID } from "node:crypto";
 
-import { WebSocket, WebSocketServer } from "ws";
+import { WebSocketServer, type WebSocket } from "ws";
 
 import type { CodexInputItem } from "../../src/services/codex/app-server-client.js";
 
@@ -13,6 +13,7 @@ interface MockTurnRecord {
   status: "inProgress" | "completed" | "interrupted" | "failed";
   finalMessage: string;
   errorMessage?: string | undefined;
+  usage?: unknown;
 }
 
 interface MockThreadRecord {
@@ -29,8 +30,15 @@ export interface MockTurnContext {
   readonly cwd: string;
   readonly input: readonly CodexInputItem[];
   readonly thread: MockThreadRecord;
-  complete: (message?: string) => void;
+  complete: (message?: string, usage?: unknown) => void;
+  fail: (message: string) => void;
   interrupt: (message?: string) => void;
+}
+
+export interface MockTurnSteerRequest {
+  readonly threadId: string;
+  readonly expectedTurnId: string;
+  readonly input: readonly CodexInputItem[];
 }
 
 export class MockCodexAppServer {
@@ -44,15 +52,25 @@ export class MockCodexAppServer {
     readonly turnId: string;
     readonly input: readonly CodexInputItem[];
   }> = [];
+  readonly interrupts: Array<{
+    readonly threadId: string;
+    readonly turnId: string;
+  }> = [];
   readonly onTurnStart: ((context: MockTurnContext) => Promise<void> | void) | undefined;
   readonly onTurnSteer: ((context: MockTurnContext) => Promise<void> | void) | undefined;
+  readonly onTurnSteerRequest: ((request: MockTurnSteerRequest) => string | undefined) | undefined;
+  readonly #emitThreadTokenUsage: boolean;
 
   constructor(options?: {
     readonly onTurnStart?: (context: MockTurnContext) => Promise<void> | void;
     readonly onTurnSteer?: (context: MockTurnContext) => Promise<void> | void;
+    readonly onTurnSteerRequest?: (request: MockTurnSteerRequest) => string | undefined;
+    readonly emitThreadTokenUsage?: boolean;
   }) {
     this.onTurnStart = options?.onTurnStart;
     this.onTurnSteer = options?.onTurnSteer;
+    this.onTurnSteerRequest = options?.onTurnSteerRequest;
+    this.#emitThreadTokenUsage = options?.emitThreadTokenUsage ?? false;
 
     this.#wsServer.on("connection", (socket) => {
       this.#connections.add(socket);
@@ -64,8 +82,6 @@ export class MockCodexAppServer {
           readonly id?: string;
           readonly method?: string;
           readonly params?: Record<string, unknown>;
-        }).catch((error) => {
-          this.#error(socket, undefined, error instanceof Error ? error.message : String(error));
         });
       });
     });
@@ -220,16 +236,9 @@ export class MockCodexAppServer {
         });
 
         const context = this.#createTurnContext(socket, thread, turn);
-        try {
-          await this.onTurnStart?.(context);
-        } catch (error) {
-          this.#failTurn(socket, thread, turn, error);
-          return;
-        }
-
-        if (turn.status === "inProgress") {
-          context.complete("");
-        }
+        setTimeout(() => {
+          void this.#runTurnStart(context, turn);
+        }, 10);
         return;
       }
       case "turn/steer": {
@@ -237,13 +246,32 @@ export class MockCodexAppServer {
         const expectedTurnId = String(params.expectedTurnId ?? "");
         const thread = this.#requireThread(threadId);
 
-        if (!thread.activeTurnId || thread.activeTurnId !== expectedTurnId) {
+        if (!thread.activeTurnId) {
           this.#error(socket, message.id, "no active turn to steer");
+          return;
+        }
+
+        if (thread.activeTurnId !== expectedTurnId) {
+          this.#error(
+            socket,
+            message.id,
+            `expected active turn id \`${expectedTurnId}\` but found \`${thread.activeTurnId}\``
+          );
           return;
         }
 
         const turn = this.#requireTurn(thread, expectedTurnId);
         const input = normalizeInput(params.input);
+        const requestError = this.onTurnSteerRequest?.({
+          threadId,
+          expectedTurnId,
+          input
+        });
+        if (requestError) {
+          this.#error(socket, message.id, requestError);
+          return;
+        }
+
         this.steers.push({
           threadId,
           turnId: expectedTurnId,
@@ -252,11 +280,9 @@ export class MockCodexAppServer {
         this.#respond(socket, message.id, { ok: true });
 
         const context = this.#createTurnContext(socket, thread, turn);
-        try {
-          await this.onTurnSteer?.(context);
-        } catch (error) {
-          this.#failTurn(socket, thread, turn, error);
-        }
+        setTimeout(() => {
+          void this.onTurnSteer?.(context);
+        }, 10);
         return;
       }
       case "turn/interrupt": {
@@ -264,6 +290,10 @@ export class MockCodexAppServer {
         const turnId = String(params.turnId ?? "");
         const thread = this.#requireThread(threadId);
         const turn = this.#requireTurn(thread, turnId);
+        this.interrupts.push({
+          threadId,
+          turnId
+        });
         this.#respond(socket, message.id, { ok: true });
         this.#interruptTurn(socket, thread, turn, "interrupted");
         return;
@@ -277,6 +307,7 @@ export class MockCodexAppServer {
               id: turn.turnId,
               status: turn.status,
               error: turn.errorMessage ? { message: turn.errorMessage } : null,
+              usage: turn.usage,
               items: turn.finalMessage
                 ? [
                   {
@@ -302,36 +333,70 @@ export class MockCodexAppServer {
       cwd: turn.cwd,
       input: turn.input,
       thread,
-      complete: (message = "") => {
+      complete: (message = "", usage?: unknown) => {
         if (turn.status !== "inProgress") {
           return;
         }
 
         turn.status = "completed";
         turn.finalMessage = message;
+        turn.usage = this.#emitThreadTokenUsage ? undefined : usage;
         thread.activeTurnId = undefined;
+        if (usage && this.#emitThreadTokenUsage) {
+          socket.send(JSON.stringify({
+            method: "thread/tokenUsage/updated",
+            params: {
+              threadId: thread.id,
+              turnId: turn.turnId,
+              tokenUsage: toThreadTokenUsage(usage)
+            }
+          }));
+        }
         if (message) {
-          this.#send(socket, {
+          socket.send(JSON.stringify({
             method: "item/agentMessage/delta",
             params: {
               turnId: turn.turnId,
               delta: message
             }
-          });
+          }));
         }
-        this.#send(socket, {
+        socket.send(JSON.stringify({
           method: "turn/completed",
           params: {
             turn: {
-              id: turn.turnId
-            }
+              id: turn.turnId,
+              usage: this.#emitThreadTokenUsage ? undefined : usage
+            },
+            usage: this.#emitThreadTokenUsage ? undefined : usage
           }
-        });
+        }));
+      },
+      fail: (message) => {
+        if (turn.status !== "inProgress") {
+          return;
+        }
+
+        turn.status = "failed";
+        turn.errorMessage = message;
+        thread.activeTurnId = undefined;
       },
       interrupt: (message = "") => {
         this.#interruptTurn(socket, thread, turn, message);
       }
     };
+  }
+
+  async #runTurnStart(context: MockTurnContext, turn: MockTurnRecord): Promise<void> {
+    try {
+      await this.onTurnStart?.(context);
+    } catch (error) {
+      context.fail(error instanceof Error ? error.message : String(error));
+    } finally {
+      if (turn.status === "inProgress") {
+        context.complete("");
+      }
+    }
   }
 
   #interruptTurn(socket: WebSocket, thread: MockThreadRecord, turn: MockTurnRecord, message: string): void {
@@ -342,31 +407,14 @@ export class MockCodexAppServer {
     turn.status = "interrupted";
     turn.finalMessage = message;
     thread.activeTurnId = undefined;
-    this.#send(socket, {
+    socket.send(JSON.stringify({
       method: "codex/event/turn_aborted",
       params: {
         msg: {
           turn_id: turn.turnId
         }
       }
-    });
-  }
-
-  #failTurn(socket: WebSocket, thread: MockThreadRecord, turn: MockTurnRecord, error: unknown): void {
-    if (turn.status !== "inProgress") {
-      return;
-    }
-
-    turn.status = "failed";
-    turn.errorMessage = error instanceof Error ? error.message : String(error);
-    thread.activeTurnId = undefined;
-    this.#send(socket, {
-      method: "codex/event/error",
-      params: {
-        turnId: turn.turnId,
-        message: turn.errorMessage
-      }
-    });
+    }));
   }
 
   #requireThread(threadId: string): MockThreadRecord {
@@ -386,27 +434,19 @@ export class MockCodexAppServer {
   }
 
   #respond(socket: WebSocket, id: string | undefined, result: Record<string, unknown>): void {
-    this.#send(socket, {
+    socket.send(JSON.stringify({
       id,
       result
-    });
+    }));
   }
 
   #error(socket: WebSocket, id: string | undefined, message: string): void {
-    this.#send(socket, {
+    socket.send(JSON.stringify({
       id,
       error: {
         message
       }
-    });
-  }
-
-  #send(socket: WebSocket, payload: Record<string, unknown>): void {
-    if (socket.readyState !== WebSocket.OPEN) {
-      return;
-    }
-
-    socket.send(JSON.stringify(payload));
+    }));
   }
 }
 
@@ -416,4 +456,28 @@ function normalizeInput(value: unknown): readonly CodexInputItem[] {
   }
 
   return value as readonly CodexInputItem[];
+}
+
+function toThreadTokenUsage(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {
+      last: {},
+      total: {}
+    };
+  }
+
+  const record = value as Record<string, unknown>;
+  const usage = {
+    inputTokens: record.input_tokens ?? record.inputTokens ?? 0,
+    cachedInputTokens: record.cached_input_tokens ?? record.cachedInputTokens ?? 0,
+    outputTokens: record.output_tokens ?? record.outputTokens ?? 0,
+    reasoningOutputTokens: record.reasoning_tokens ?? record.reasoningTokens ?? record.reasoning_output_tokens ?? record.reasoningOutputTokens ?? 0,
+    totalTokens: record.total_tokens ?? record.totalTokens ?? 0,
+    model: record.model,
+    effort: record.effort
+  };
+  return {
+    last: usage,
+    total: usage
+  };
 }

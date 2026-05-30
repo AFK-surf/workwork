@@ -12,7 +12,7 @@ import {
   type ChatMessageFormat,
   type ChatPlatform
 } from "../services/chat/chat-types.js";
-import type { SlackCodexBridge } from "../services/slack/slack-codex-bridge.js";
+import type { SlackAgentBridge } from "../services/slack/slack-agent-bridge.js";
 import {
   parseJsonLikeRequestField,
   readJsonBody,
@@ -34,7 +34,7 @@ export async function handleChatRequest(
   request: http.IncomingMessage,
   response: http.ServerResponse,
   options: {
-    readonly bridge: SlackCodexBridge;
+    readonly bridge: SlackAgentBridge;
     readonly config: AppConfig;
   }
 ): Promise<boolean> {
@@ -65,7 +65,7 @@ async function handleChatThreadHistoryRequest(
   url: URL,
   response: http.ServerResponse,
   options: {
-    readonly bridge: SlackCodexBridge;
+    readonly bridge: SlackAgentBridge;
     readonly config: AppConfig;
   }
 ): Promise<void> {
@@ -156,7 +156,7 @@ async function handleChatPostMessageRequest(
   request: http.IncomingMessage,
   response: http.ServerResponse,
   options: {
-    readonly bridge: SlackCodexBridge;
+    readonly bridge: SlackAgentBridge;
   }
 ): Promise<void> {
   let body: Record<string, unknown>;
@@ -282,7 +282,7 @@ async function handleChatPostStateRequest(
   request: http.IncomingMessage,
   response: http.ServerResponse,
   options: {
-    readonly bridge: SlackCodexBridge;
+    readonly bridge: SlackAgentBridge;
   }
 ): Promise<void> {
   let body: Record<string, unknown>;
@@ -370,7 +370,7 @@ async function handleChatPostFileRequest(
   request: http.IncomingMessage,
   response: http.ServerResponse,
   options: {
-    readonly bridge: SlackCodexBridge;
+    readonly bridge: SlackAgentBridge;
   }
 ): Promise<void> {
   let body: Record<string, unknown>;

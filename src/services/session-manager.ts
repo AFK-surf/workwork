@@ -1,10 +1,20 @@
+import fs from "node:fs/promises";
 import path from "node:path";
 
 import type {
+  JsonLike,
+  PersistedAdminAuditEvent,
+  PersistedAdminEvent,
+  PersistedAdminOperation,
+  PersistedAgentSessionTraceSummary,
+  PersistedAgentSessionUsageSummary,
+  PersistedAgentTraceEvent,
   PersistedBackgroundJob,
+  PersistedAgentTurnUsage,
   PersistedInboundMessage,
   PersistedInboundMessageStatus,
   PersistedInboundSource,
+  PersistedSlackEvent,
   SlackSessionRecord,
   SlackTurnSignalKind
 } from "../types.js";
@@ -16,6 +26,18 @@ import {
   createChatWorkspacePath
 } from "./chat/chat-session-key.js";
 import type { ChatConversationKind, ChatPlatform } from "./chat/chat-types.js";
+
+export interface SessionChannelMetadata {
+  readonly channelName?: string | undefined;
+  readonly channelType?: string | undefined;
+}
+
+export interface SessionInitiatorMetadata {
+  readonly initiatorUserId?: string | undefined;
+  readonly initiatorMessageTs?: string | undefined;
+}
+
+export type EnsureSessionMetadata = SessionChannelMetadata & SessionInitiatorMetadata;
 
 export class SessionManager {
   readonly #stateStore: StateStore;
@@ -64,6 +86,17 @@ export class SessionManager {
     return this.#stateStore.getSession(key);
   }
 
+  async deleteSessionByKey(key: string): Promise<boolean> {
+    const session = this.#stateStore.getSession(key);
+    if (session) {
+      const sessionRoot = this.#resolveSessionRoot(session.workspacePath);
+      if (sessionRoot) {
+        await fs.rm(sessionRoot, { force: true, recursive: true });
+      }
+    }
+    return await this.#stateStore.deleteSession(key);
+  }
+
   hasProcessedEvent(eventId: string): boolean {
     return this.#stateStore.hasProcessedEvent(eventId);
   }
@@ -72,11 +105,27 @@ export class SessionManager {
     await this.#stateStore.markProcessedEvent(eventId);
   }
 
-  async ensureSession(channelId: string, rootThreadTs: string): Promise<SlackSessionRecord> {
+  async enqueueSlackEvent(eventId: string, payload: JsonLike): Promise<void> {
+    await this.#stateStore.enqueueSlackEvent(eventId, payload);
+  }
+
+  listPendingSlackEvents(limit?: number): PersistedSlackEvent[] {
+    return this.#stateStore.listPendingSlackEvents(limit);
+  }
+
+  async markSlackEventProcessed(eventId: string): Promise<void> {
+    await this.#stateStore.markSlackEventProcessed(eventId);
+  }
+
+  async ensureSession(
+    channelId: string,
+    rootThreadTs: string,
+    metadata?: EnsureSessionMetadata | undefined
+  ): Promise<SlackSessionRecord> {
     const existing = this.getSession(channelId, rootThreadTs);
     if (existing) {
       await ensureDir(existing.workspacePath);
-      return existing;
+      return await this.#applyChannelMetadata(existing, metadata);
     }
 
     const workspacePath = this.#createWorkspacePath(channelId, rootThreadTs);
@@ -84,11 +133,9 @@ export class SessionManager {
 
     const record: SlackSessionRecord = {
       key: SessionManager.createKey(channelId, rootThreadTs),
-      platform: "slack",
-      conversationId: channelId,
-      conversationKind: "channel",
-      rootMessageId: rootThreadTs,
       channelId,
+      ...normalizeChannelMetadata(metadata),
+      ...normalizeSessionInitiator(metadata),
       rootThreadTs,
       workspacePath,
       createdAt: new Date().toISOString(),
@@ -117,6 +164,7 @@ export class SessionManager {
       : createChatWorkspacePath(this.#sessionsRoot, coordinates);
     await ensureDir(workspacePath);
 
+    const now = new Date().toISOString();
     const record: SlackSessionRecord = {
       key: SessionManager.createChatKey(coordinates),
       platform: coordinates.platform,
@@ -127,8 +175,8 @@ export class SessionManager {
       channelId: coordinates.conversationId,
       rootThreadTs: coordinates.rootMessageId,
       workspacePath,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      createdAt: now,
+      updatedAt: now
     };
 
     await this.#stateStore.upsertSession(record);
@@ -142,6 +190,15 @@ export class SessionManager {
     });
   }
 
+  async setChannelMetadata(
+    channelId: string,
+    rootThreadTs: string,
+    metadata: SessionChannelMetadata
+  ): Promise<SlackSessionRecord> {
+    const session = this.#requireSession(channelId, rootThreadTs);
+    return await this.#applyChannelMetadata(session, metadata);
+  }
+
   findSessionByWorkspace(cwd: string): SlackSessionRecord | undefined {
     const targetPath = path.resolve(cwd);
     const candidates = this.listSessions()
@@ -151,32 +208,69 @@ export class SessionManager {
     return candidates[0];
   }
 
-  async setCodexThreadId(
+  findSessionByAgentActivity(options: {
+    readonly agentSessionId?: string | undefined;
+    readonly turnId?: string | undefined;
+  }): SlackSessionRecord | undefined {
+    const sessionKey = this.#stateStore.getSessionKeyForAgentActivity(options);
+    return sessionKey ? this.getSessionByKey(sessionKey) : undefined;
+  }
+
+  async setAgentSessionId(
     channelId: string,
     rootThreadTs: string,
-    codexThreadId: string | undefined
+    agentSessionId: string | undefined
   ): Promise<SlackSessionRecord> {
-    return await this.#patchSession(channelId, rootThreadTs, {
-      codexThreadId
+    const session = await this.#patchSession(channelId, rootThreadTs, {
+      agentSessionId
     });
+    if (agentSessionId) {
+      await this.#stateStore.bindAgentSession({
+        sessionKey: session.key,
+        channelId: session.channelId,
+        rootThreadTs: session.rootThreadTs,
+        agentSessionId
+      });
+    }
+    return session;
   }
 
   async setChatCodexThreadId(
     coordinates: ChatSessionCoordinates,
     codexThreadId: string | undefined
   ): Promise<SlackSessionRecord> {
-    return await this.#patchChatSession(coordinates, {
+    const session = await this.#patchChatSession(coordinates, {
+      agentSessionId: codexThreadId,
       codexThreadId
     });
+    if (codexThreadId) {
+      await this.#stateStore.bindAgentSession({
+        sessionKey: session.key,
+        channelId: session.channelId,
+        rootThreadTs: session.rootThreadTs,
+        agentSessionId: codexThreadId
+      });
+    }
+    return session;
   }
 
   async setActiveTurnId(channelId: string, rootThreadTs: string, activeTurnId: string | undefined): Promise<SlackSessionRecord> {
     const now = new Date().toISOString();
-    return await this.#patchSession(channelId, rootThreadTs, {
+    const session = await this.#patchSession(channelId, rootThreadTs, {
       activeTurnId,
-      activeTurnStartedAt: activeTurnId ? now : undefined,
-      lastProgressReminderAt: undefined
+      activeTurnStartedAt: activeTurnId ? now : undefined
     });
+    if (activeTurnId) {
+      await this.#stateStore.bindAgentTurn({
+        sessionKey: session.key,
+        channelId: session.channelId,
+        rootThreadTs: session.rootThreadTs,
+        agentSessionId: session.agentSessionId,
+        turnId: activeTurnId,
+        at: now
+      });
+    }
+    return session;
   }
 
   async setChatActiveTurnId(
@@ -184,10 +278,49 @@ export class SessionManager {
     activeTurnId: string | undefined
   ): Promise<SlackSessionRecord> {
     const now = new Date().toISOString();
-    return await this.#patchChatSession(coordinates, {
+    const session = await this.#patchChatSession(coordinates, {
       activeTurnId,
-      activeTurnStartedAt: activeTurnId ? now : undefined,
-      lastProgressReminderAt: undefined
+      activeTurnStartedAt: activeTurnId ? now : undefined
+    });
+    if (activeTurnId) {
+      await this.#stateStore.bindAgentTurn({
+        sessionKey: session.key,
+        channelId: session.channelId,
+        rootThreadTs: session.rootThreadTs,
+        agentSessionId: session.agentSessionId ?? session.codexThreadId,
+        turnId: activeTurnId,
+        at: now
+      });
+    }
+    return session;
+  }
+
+  async clearActiveTurnIdIfMatches(
+    channelId: string,
+    rootThreadTs: string,
+    expectedTurnId: string
+  ): Promise<SlackSessionRecord> {
+    const session = this.#requireSession(channelId, rootThreadTs);
+    if (session.activeTurnId !== expectedTurnId) {
+      return session;
+    }
+
+    return await this.#patchSession(channelId, rootThreadTs, {
+      activeTurnId: undefined,
+      activeTurnStartedAt: undefined
+    });
+  }
+
+  async resetSessionRuntimeState(sessionKey: string): Promise<SlackSessionRecord> {
+    return await this.#stateStore.patchSession(sessionKey, {
+      agentSessionId: undefined,
+      activeTurnId: undefined,
+      activeTurnStartedAt: undefined,
+      lastTurnSignalTurnId: undefined,
+      lastTurnSignalKind: undefined,
+      lastTurnSignalReason: undefined,
+      lastTurnSignalAt: undefined,
+      updatedAt: new Date().toISOString()
     });
   }
 
@@ -230,13 +363,75 @@ export class SessionManager {
     });
   }
 
-  async setLastProgressReminderAt(
+  async setSessionPageLinkPostedAt(
     channelId: string,
     rootThreadTs: string,
-    lastProgressReminderAt: string | undefined
+    sessionPageLinkPostedAt: string
   ): Promise<SlackSessionRecord> {
     return await this.#patchSession(channelId, rootThreadTs, {
-      lastProgressReminderAt
+      sessionPageLinkPostedAt
+    });
+  }
+
+  async setSessionAuthProfile(
+    sessionKey: string,
+    profileName: string,
+    options?: {
+      readonly boundAt?: string | undefined;
+    }
+  ): Promise<SlackSessionRecord> {
+    return await this.#stateStore.patchSession(sessionKey, {
+      authProfileName: profileName,
+      authProfileBoundAt: options?.boundAt ?? new Date().toISOString()
+    });
+  }
+
+  async markSessionAuthBlocked(
+    sessionKey: string,
+    options: {
+      readonly reason: string;
+      readonly blockedAt?: string | undefined;
+    }
+  ): Promise<SlackSessionRecord> {
+    return await this.#stateStore.patchSession(sessionKey, {
+      authBlockedAt: options.blockedAt ?? new Date().toISOString(),
+      authBlockReason: options.reason
+    });
+  }
+
+  async setSessionAuthBlockedNoticePostedAt(
+    sessionKey: string,
+    postedAt: string
+  ): Promise<SlackSessionRecord> {
+    return await this.#stateStore.patchSession(sessionKey, {
+      authBlockedNoticePostedAt: postedAt
+    });
+  }
+
+  async clearSessionAuthBlock(sessionKey: string): Promise<SlackSessionRecord> {
+    return await this.#stateStore.patchSession(sessionKey, {
+      authBlockedAt: undefined,
+      authBlockReason: undefined,
+      authBlockedNoticePostedAt: undefined
+    });
+  }
+
+  async switchSessionAuthProfileAndClearBlock(
+    sessionKey: string,
+    profileName: string,
+    options?: {
+      readonly boundAt?: string | undefined;
+    }
+  ): Promise<SlackSessionRecord> {
+    return await this.#stateStore.patchSession(sessionKey, {
+      authProfileName: profileName,
+      authProfileBoundAt: options?.boundAt ?? new Date().toISOString(),
+      authBlockedAt: undefined,
+      authBlockReason: undefined,
+      authBlockedNoticePostedAt: undefined,
+      agentSessionId: undefined,
+      activeTurnId: undefined,
+      activeTurnStartedAt: undefined
     });
   }
 
@@ -294,6 +489,7 @@ export class SessionManager {
     return await this.#patchSession(channelId, rootThreadTs, {
       coAuthorCandidateUserIds: [...(session.coAuthorCandidateUserIds ?? []), ...additions],
       coAuthorCandidateRevision: (session.coAuthorCandidateRevision ?? 0) + 1,
+      coAuthorIgnoreMissingRevision: undefined,
       coAuthorPromptRevision: undefined,
       coAuthorPromptedAt: undefined
     });
@@ -317,6 +513,7 @@ export class SessionManager {
     return await this.#patchChatSession(coordinates, {
       coAuthorCandidateUserIds: [...(session.coAuthorCandidateUserIds ?? []), ...additions],
       coAuthorCandidateRevision: (session.coAuthorCandidateRevision ?? 0) + 1,
+      coAuthorIgnoreMissingRevision: undefined,
       coAuthorPromptRevision: undefined,
       coAuthorPromptedAt: undefined
     });
@@ -328,6 +525,7 @@ export class SessionManager {
     options: {
       readonly userIds: readonly string[];
       readonly candidateRevision: number;
+      readonly ignoreMissing?: boolean | undefined;
     }
   ): Promise<SlackSessionRecord> {
     const session = this.#requireSession(channelId, rootThreadTs);
@@ -337,6 +535,7 @@ export class SessionManager {
     return await this.#patchSession(channelId, rootThreadTs, {
       coAuthorConfirmedUserIds: confirmedUserIds,
       coAuthorConfirmedRevision: options.candidateRevision,
+      coAuthorIgnoreMissingRevision: options.ignoreMissing ? options.candidateRevision : undefined,
       coAuthorPromptRevision: options.candidateRevision,
       coAuthorPromptedAt: undefined
     });
@@ -347,6 +546,7 @@ export class SessionManager {
     options: {
       readonly userIds: readonly string[];
       readonly candidateRevision: number;
+      readonly ignoreMissing?: boolean | undefined;
     }
   ): Promise<SlackSessionRecord> {
     const session = this.#requireChatSession(coordinates);
@@ -356,7 +556,20 @@ export class SessionManager {
     return await this.#patchChatSession(coordinates, {
       coAuthorConfirmedUserIds: confirmedUserIds,
       coAuthorConfirmedRevision: options.candidateRevision,
+      coAuthorIgnoreMissingRevision: options.ignoreMissing ? options.candidateRevision : undefined,
       coAuthorPromptRevision: options.candidateRevision,
+      coAuthorPromptedAt: undefined
+    });
+  }
+
+  async allowMissingCoAuthors(
+    channelId: string,
+    rootThreadTs: string,
+    candidateRevision: number
+  ): Promise<SlackSessionRecord> {
+    return await this.#patchSession(channelId, rootThreadTs, {
+      coAuthorIgnoreMissingRevision: candidateRevision,
+      coAuthorPromptRevision: candidateRevision,
       coAuthorPromptedAt: undefined
     });
   }
@@ -392,6 +605,7 @@ export class SessionManager {
     readonly status?: PersistedInboundMessageStatus | readonly PersistedInboundMessageStatus[] | undefined;
     readonly batchId?: string | undefined;
     readonly source?: PersistedInboundSource | readonly PersistedInboundSource[] | undefined;
+    readonly needsMentionUserBackfill?: boolean | undefined;
   }): PersistedInboundMessage[] {
     return this.#stateStore.listInboundMessages({
       sessionKey:
@@ -400,7 +614,8 @@ export class SessionManager {
           : undefined,
       status: options?.status,
       batchId: options?.batchId,
-      source: options?.source
+      source: options?.source,
+      needsMentionUserBackfill: options?.needsMentionUserBackfill
     });
   }
 
@@ -459,12 +674,12 @@ export class SessionManager {
         conversationId: options.conversationId,
         rootMessageId: options.rootMessageId
       })
-      : options?.channelId && options?.rootThreadTs
-        ? SessionManager.createKey(options.channelId, options.rootThreadTs)
-        : undefined;
-
+      : undefined;
     return this.#stateStore.listBackgroundJobs({
-      sessionKey,
+      sessionKey: sessionKey ??
+        (options?.channelId && options?.rootThreadTs
+          ? SessionManager.createKey(options.channelId, options.rootThreadTs)
+          : undefined),
       id: options?.id
     });
   }
@@ -475,6 +690,84 @@ export class SessionManager {
 
   async upsertBackgroundJob(record: PersistedBackgroundJob): Promise<void> {
     await this.#stateStore.upsertBackgroundJob(record);
+  }
+
+  listAdminOperations(limit?: number): PersistedAdminOperation[] {
+    return this.#stateStore.listAdminOperations(limit);
+  }
+
+  getAdminOperation(id: string): PersistedAdminOperation | undefined {
+    return this.#stateStore.getAdminOperation(id);
+  }
+
+  async upsertAdminOperation(record: PersistedAdminOperation): Promise<void> {
+    await this.#stateStore.upsertAdminOperation(record);
+  }
+
+  listAdminAuditEvents(options?: {
+    readonly operationId?: string | undefined;
+    readonly limit?: number | undefined;
+  }): PersistedAdminAuditEvent[] {
+    return this.#stateStore.listAdminAuditEvents(options);
+  }
+
+  async appendAdminAuditEvent(record: PersistedAdminAuditEvent): Promise<void> {
+    await this.#stateStore.appendAdminAuditEvent(record);
+  }
+
+  listAgentTurnUsage(limit?: number): PersistedAgentTurnUsage[] {
+    return this.#stateStore.listAgentTurnUsage(limit);
+  }
+
+  listAgentSessionUsageSummaries(): PersistedAgentSessionUsageSummary[] {
+    return this.#stateStore.listAgentSessionUsageSummaries();
+  }
+
+  getAgentSessionUsageSummary(sessionKey: string): PersistedAgentSessionUsageSummary | undefined {
+    return this.#stateStore.getAgentSessionUsageSummary(sessionKey);
+  }
+
+  async upsertAgentTurnUsage(record: PersistedAgentTurnUsage): Promise<void> {
+    await this.#stateStore.upsertAgentTurnUsage(record);
+  }
+
+  listAgentTraceEvents(sessionKey: string, limit?: number): PersistedAgentTraceEvent[] {
+    return this.#stateStore.listAgentTraceEvents(sessionKey, limit);
+  }
+
+  getAgentTraceEvent(sessionKey: string, id: string): PersistedAgentTraceEvent | undefined {
+    return this.#stateStore.getAgentTraceEvent(sessionKey, id);
+  }
+
+  listAgentTraceEventsPage(sessionKey: string, options?: {
+    readonly limit?: number | undefined;
+    readonly beforeSequence?: number | undefined;
+  }): {
+    readonly events: PersistedAgentTraceEvent[];
+    readonly hasMore: boolean;
+    readonly nextBeforeSequence: number | null;
+  } {
+    return this.#stateStore.listAgentTraceEventsPage(sessionKey, options);
+  }
+
+  getAgentSessionTraceSummary(sessionKey: string): PersistedAgentSessionTraceSummary | undefined {
+    return this.#stateStore.getAgentSessionTraceSummary(sessionKey);
+  }
+
+  async upsertAgentTraceEvent(record: PersistedAgentTraceEvent): Promise<void> {
+    await this.#stateStore.upsertAgentTraceEvent(record);
+  }
+
+  listAdminEvents(options?: {
+    readonly afterSequence?: number | undefined;
+    readonly sessionKey?: string | undefined;
+    readonly limit?: number | undefined;
+  }): PersistedAdminEvent[] {
+    return this.#stateStore.listAdminEvents(options);
+  }
+
+  getLatestAdminEventSequence(): number {
+    return this.#stateStore.getLatestAdminEventSequence();
   }
 
   #requireSession(channelId: string, rootThreadTs: string): SlackSessionRecord {
@@ -495,12 +788,59 @@ export class SessionManager {
     return session;
   }
 
+  async #patchChatSession(
+    coordinates: ChatSessionCoordinates,
+    patch: Partial<SlackSessionRecord>
+  ): Promise<SlackSessionRecord> {
+    const session = this.#requireChatSession(coordinates);
+    return await this.#stateStore.patchSession(session.key, {
+      ...patch,
+      updatedAt: new Date().toISOString()
+    });
+  }
+
   #createWorkspacePath(channelId: string, rootThreadTs: string): string {
     return path.join(
       this.#sessionsRoot,
       `${channelId}-${rootThreadTs}`.replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-+|-+$/g, ""),
       "workspace"
     );
+  }
+
+  #resolveSessionRoot(workspacePath: string): string | undefined {
+    const resolvedSessionsRoot = path.resolve(this.#sessionsRoot);
+    const resolvedWorkspacePath = path.resolve(workspacePath);
+    const sessionRoot = path.basename(resolvedWorkspacePath) === "workspace"
+      ? path.dirname(resolvedWorkspacePath)
+      : resolvedWorkspacePath;
+
+    return isSubpathOf(resolvedSessionsRoot, sessionRoot) ? sessionRoot : undefined;
+  }
+
+  async #applyChannelMetadata(
+    session: SlackSessionRecord,
+    metadata?: SessionChannelMetadata | undefined
+  ): Promise<SlackSessionRecord> {
+    const normalized = normalizeChannelMetadata(metadata);
+    if (!normalized.channelName && !normalized.channelType) {
+      return session;
+    }
+
+    const patch: Record<string, string> = {};
+    if (normalized.channelName && normalized.channelName !== session.channelName) {
+      patch.channelName = normalized.channelName;
+    }
+    if (normalized.channelType && normalized.channelType !== session.channelType) {
+      patch.channelType = normalized.channelType;
+    }
+    if (!Object.keys(patch).length) {
+      return session;
+    }
+
+    return await this.#stateStore.patchSession(session.key, {
+      ...patch,
+      updatedAt: new Date().toISOString()
+    });
   }
 
   async #patchSession(
@@ -514,17 +854,39 @@ export class SessionManager {
       updatedAt: new Date().toISOString()
     });
   }
+}
 
-  async #patchChatSession(
-    coordinates: ChatSessionCoordinates,
-    patch: Partial<SlackSessionRecord>
-  ): Promise<SlackSessionRecord> {
-    const session = this.#requireChatSession(coordinates);
-    return await this.#stateStore.patchSession(session.key, {
-      ...patch,
-      updatedAt: new Date().toISOString()
-    });
+function normalizeChannelMetadata(
+  metadata?: SessionChannelMetadata | undefined
+): SessionChannelMetadata {
+  return {
+    channelName: normalizeNonEmptyString(metadata?.channelName),
+    channelType: normalizeNonEmptyString(metadata?.channelType)
+  };
+}
+
+function normalizeSessionInitiator(
+  metadata?: SessionInitiatorMetadata | undefined
+): Pick<SlackSessionRecord, "initiatorUserId" | "initiatorMessageTs" | "initiatorCapturedAt"> {
+  const initiatorUserId = normalizeNonEmptyString(metadata?.initiatorUserId);
+  const initiatorMessageTs = normalizeNonEmptyString(metadata?.initiatorMessageTs);
+  if (!initiatorUserId) {
+    return {};
   }
+
+  return {
+    initiatorUserId,
+    initiatorMessageTs,
+    initiatorCapturedAt: new Date().toISOString()
+  };
+}
+
+function normalizeNonEmptyString(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
 }
 
 function isSubpathOf(rootPath: string, targetPath: string): boolean {

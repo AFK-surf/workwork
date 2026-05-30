@@ -352,7 +352,7 @@ describe("RFC 0001 local audit", () => {
           status: "missing",
           evidence: expect.arrayContaining([
             "env.feishu_rollout_flags:.env.example:missing_file",
-            "config.feishu_flags:test/config.test.ts:missing_file"
+            expect.stringContaining("config.feishu_flags:src/config.ts:missing_snippet=")
           ])
         })
       ])
@@ -390,8 +390,7 @@ describe("RFC 0001 local audit", () => {
           id: "local.behavior_evidence",
           status: "missing",
           evidence: expect.arrayContaining([
-            expect.stringContaining("http.slack_compat_wrappers:test/slack-routes.test.ts:missing_snippet="),
-            "runtime.slack_e2e_regression:test/e2e-broker.test.ts:missing_file"
+            "http.slack_compat_wrappers:src/http/slack-routes.ts:missing_file"
           ])
         })
       ])
@@ -482,7 +481,7 @@ describe("RFC 0001 local audit", () => {
           id: "local.behavior_evidence",
           status: "missing",
           evidence: expect.arrayContaining([
-            expect.stringContaining("prompt.feishu_platform_runtime_instructions:test/app-server-client.test.ts:missing_snippet=")
+            expect.stringContaining("prompt.feishu_platform_runtime_instructions:src/services/codex/prompts/slack-thread-base-instructions.md:missing_snippet=")
           ])
         })
       ])

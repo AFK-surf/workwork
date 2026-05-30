@@ -1,10 +1,12 @@
 import http from "node:http";
-import { URL } from "node:url";
+import fs from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath, URL } from "node:url";
 
 import type { AppConfig } from "../config.js";
-import { CHAT_PLATFORM_VALUES, type ChatPlatform } from "../services/chat/chat-types.js";
 import type { AdminService } from "../services/admin-service.js";
 import { readJsonBody, readString, respondJson } from "./common.js";
+import { renderAdminPage } from "./admin-page.js";
 
 export async function handleAdminRequest(
   method: string,
@@ -16,12 +18,12 @@ export async function handleAdminRequest(
     readonly config: AppConfig;
   }
 ): Promise<boolean> {
-  if (method === "GET" && url.pathname === "/admin") {
-    response.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
-    response.end(renderAdminPage({
-      serviceName: options.config.serviceName
-    }));
-    return true;
+  if (method === "GET" && isAdminSpaRoute(url.pathname)) {
+    return serveAdminSpaIndex(response, options.config);
+  }
+
+  if (method === "GET" && url.pathname.startsWith("/admin/assets/")) {
+    return serveAdminAsset(url, response);
   }
 
   if (!url.pathname.startsWith("/admin/api/")) {
@@ -36,19 +38,235 @@ export async function handleAdminRequest(
     return true;
   }
 
-  if (method === "GET" && url.pathname === "/admin/api/status") {
-    const platformParam = url.searchParams.get("platform");
-    const platform = readAdminPlatform(platformParam);
-    if (isInvalidAdminPlatformValue(platformParam)) {
+  if (method === "GET" && url.pathname === "/admin/api/overview") {
+    await respondTracedAdminJson(response, "overview", () => options.adminService.getOverview());
+    return true;
+  }
+
+  if (method === "GET" && url.pathname === "/admin/api/logs") {
+    await respondTracedAdminJson(response, "logs", () => options.adminService.getRecentLogs({
+      limit: readPositiveNumber(url.searchParams.get("limit"))
+    }));
+    return true;
+  }
+
+  if (method === "GET" && url.pathname === "/admin/api/sessions") {
+    await respondTracedAdminJson(response, "sessions", () => options.adminService.listSessionSummaries());
+    return true;
+  }
+
+  if (method === "GET" && url.pathname.startsWith("/admin/api/sessions/") && url.pathname.endsWith("/timeline")) {
+    const sessionKey = decodeURIComponent(url.pathname.slice(
+      "/admin/api/sessions/".length,
+      -"/timeline".length
+    ));
+    if (!sessionKey || sessionKey.includes("/")) {
+      return false;
+    }
+
+    await respondTracedAdminJson(response, "session-timeline", () => options.adminService.getSessionTimeline(sessionKey, {
+      limit: readPositiveNumber(url.searchParams.get("limit")),
+      beforeSequence: readPositiveNumber(url.searchParams.get("before_sequence"))
+    }));
+    return true;
+  }
+
+  const timelineEventMatch = matchSessionTimelineEventPath(url.pathname);
+  if (method === "GET" && timelineEventMatch) {
+    const result = await options.adminService.getSessionTimelineEvent(
+      timelineEventMatch.sessionKey,
+      timelineEventMatch.eventId
+    );
+    response.setHeader("server-timing", "admin;desc=\"session-timeline-event\";dur=0");
+    respondJson(response, result.ok === false ? 404 : 200, result);
+    return true;
+  }
+
+  if (method === "GET" && url.pathname.startsWith("/admin/api/sessions/") && url.pathname.endsWith("/slack-thread-url")) {
+    const sessionKey = decodeURIComponent(url.pathname.slice(
+      "/admin/api/sessions/".length,
+      -"/slack-thread-url".length
+    ));
+    if (!sessionKey || sessionKey.includes("/")) {
+      return false;
+    }
+
+    const result = await options.adminService.getSessionSlackThreadUrl(sessionKey);
+    respondJson(response, result.ok === false ? 404 : 200, result);
+    return true;
+  }
+
+  if (method === "GET" && url.pathname.startsWith("/admin/api/sessions/") && url.pathname.endsWith("/github-identity")) {
+    const sessionKey = decodeURIComponent(url.pathname.slice(
+      "/admin/api/sessions/".length,
+      -"/github-identity".length
+    ));
+    if (!sessionKey || sessionKey.includes("/")) {
+      return false;
+    }
+
+    const result = await options.adminService.getSessionGitHubIdentity(sessionKey);
+    respondJson(response, result.ok === false ? 404 : 200, result);
+    return true;
+  }
+
+  if (
+    method === "POST" &&
+    url.pathname.startsWith("/admin/api/sessions/") &&
+    url.pathname.endsWith("/github-oauth/device/start")
+  ) {
+    const sessionKey = decodeURIComponent(url.pathname.slice(
+      "/admin/api/sessions/".length,
+      -"/github-oauth/device/start".length
+    ));
+    if (!sessionKey || sessionKey.includes("/")) {
+      return false;
+    }
+
+    await runAdminOperation(response, () =>
+      options.adminService.startSessionGitHubDeviceAuthorization(sessionKey)
+    );
+    return true;
+  }
+
+  if (method === "GET" && url.pathname.startsWith("/admin/api/github-oauth/device/")) {
+    const deviceAuthorizationId = decodeURIComponent(url.pathname.slice("/admin/api/github-oauth/device/".length));
+    if (!deviceAuthorizationId || deviceAuthorizationId.includes("/")) {
+      return false;
+    }
+
+    await runAdminOperation(response, () =>
+      options.adminService.pollGitHubDeviceAuthorization(deviceAuthorizationId)
+    );
+    return true;
+  }
+
+  if (
+    method === "POST" &&
+    url.pathname.startsWith("/admin/api/github-accounts/") &&
+    url.pathname.endsWith("/oauth/device/start")
+  ) {
+    const slackUserId = decodeURIComponent(url.pathname.slice(
+      "/admin/api/github-accounts/".length,
+      -"/oauth/device/start".length
+    ));
+    if (!slackUserId || slackUserId.includes("/")) {
+      return false;
+    }
+
+    await runAdminOperation(response, () =>
+      options.adminService.startGitHubAccountDeviceAuthorization(slackUserId)
+    );
+    return true;
+  }
+
+  if (method === "POST" && url.pathname.startsWith("/admin/api/sessions/") && url.pathname.endsWith("/auth-profile")) {
+    const sessionKey = decodeURIComponent(url.pathname.slice(
+      "/admin/api/sessions/".length,
+      -"/auth-profile".length
+    ));
+    if (!sessionKey || sessionKey.includes("/")) {
+      return false;
+    }
+
+    const body = await readAdminBody(request, response);
+    if (!body) {
+      return true;
+    }
+
+    const name = readString(body.name);
+    const mode = readString(body.mode);
+    const autoMode = mode === "auto";
+    if (!name && !autoMode) {
       respondJson(response, 400, {
         ok: false,
-        error: "invalid_platform",
-        allowed: CHAT_PLATFORM_VALUES
+        error: "missing_required_body",
+        required: ["name", "mode=auto"]
       });
       return true;
     }
 
-    respondJson(response, 200, await options.adminService.getStatus(platform ? { platform } : undefined));
+    await runAdminOperation(response, () =>
+      options.adminService.switchSessionAuthProfile({
+        sessionKey,
+        ...(autoMode ? { mode: "auto" as const } : { name })
+      })
+    );
+    return true;
+  }
+
+  if (method === "POST" && url.pathname.startsWith("/admin/api/sessions/") && url.pathname.endsWith("/reset")) {
+    const sessionKey = decodeURIComponent(url.pathname.slice(
+      "/admin/api/sessions/".length,
+      -"/reset".length
+    ));
+    if (!sessionKey || sessionKey.includes("/")) {
+      return false;
+    }
+
+    await runAdminOperation(response, () =>
+      options.adminService.resetSession({
+        sessionKey
+      })
+    );
+    return true;
+  }
+
+  if (method === "DELETE" && url.pathname.startsWith("/admin/api/sessions/")) {
+    const sessionKey = decodeURIComponent(url.pathname.slice("/admin/api/sessions/".length));
+    if (!sessionKey || sessionKey.includes("/")) {
+      return false;
+    }
+
+    await runAdminOperation(response, () =>
+      options.adminService.deleteSession({
+        sessionKey
+      }), {
+        errorStatus: (error) => isSessionNotFoundError(error) ? 404 : 500
+      }
+    );
+    return true;
+  }
+
+  const sessionJobCancel = matchSessionJobCancelPath(url.pathname);
+  if (method === "POST" && sessionJobCancel) {
+    await runAdminOperation(response, () =>
+      options.adminService.cancelSessionJob(sessionJobCancel)
+    );
+    return true;
+  }
+
+  if (method === "GET" && url.pathname === "/admin/api/preflight") {
+    respondJson(response, 200, await options.adminService.getOperationPreflight({
+      operation: readString(url.searchParams.get("operation")) ?? "unknown"
+    }));
+    return true;
+  }
+
+  if (method === "GET" && url.pathname === "/admin/api/operations") {
+    respondJson(response, 200, await options.adminService.listAdminOperations());
+    return true;
+  }
+
+  if (method === "GET" && url.pathname === "/admin/api/usage") {
+    await respondTracedAdminJson(response, "usage", () => options.adminService.getUsageOverview());
+    return true;
+  }
+
+  if (method === "GET" && url.pathname === "/admin/api/audit") {
+    respondJson(response, 200, await options.adminService.listAdminAuditEvents({
+      operationId: readString(url.searchParams.get("operation_id")) ?? undefined
+    }));
+    return true;
+  }
+
+  if (method === "GET" && url.pathname === "/admin/api/events") {
+    streamAdminEvents(request, response, options.adminService, url);
+    return true;
+  }
+
+  if (method === "GET" && url.pathname === "/admin/api/status") {
+    await respondTracedAdminJson(response, "status", () => options.adminService.getStatus());
     return true;
   }
 
@@ -78,39 +296,88 @@ export async function handleAdminRequest(
     return true;
   }
 
+  if (method === "POST" && url.pathname === "/admin/api/auth-profiles/device-code/start") {
+    await runAdminOperation(response, () =>
+      options.adminService.startAuthProfileDeviceCode()
+    );
+    return true;
+  }
+
+  if (method === "POST" && url.pathname === "/admin/api/auth-profiles/device-code/complete") {
+    const body = await readAdminBody(request, response);
+    if (!body) {
+      return true;
+    }
+
+    const name = readString(body.name) ?? undefined;
+    const deviceAuthId = readString(body.device_auth_id);
+    const userCode = readString(body.user_code);
+    const retryAfterSeconds = readPositiveNumber(body.retry_after_seconds);
+    if (!deviceAuthId || !userCode) {
+      respondJson(response, 400, {
+        ok: false,
+        error: "missing_required_body",
+        required: ["device_auth_id", "user_code"]
+      });
+      return true;
+    }
+
+    await runAdminOperation(response, () =>
+      options.adminService.completeAuthProfileDeviceCode({
+        name,
+        deviceAuthId,
+        userCode,
+        retryAfterSeconds
+      })
+    );
+    return true;
+  }
+
   if (method === "POST" && url.pathname === "/admin/api/github-authors") {
     const body = await readAdminBody(request, response);
     if (!body) {
       return true;
     }
 
-    const platform = readAdminPlatform(body.platform);
-    if (isInvalidAdminPlatformValue(body.platform)) {
-      respondJson(response, 400, {
-        ok: false,
-        error: "invalid_platform",
-        allowed: CHAT_PLATFORM_VALUES
-      });
-      return true;
-    }
-
-    const userId = readString(body.user_id) ?? readString(body.slack_user_id);
+    const slackUserId = readString(body.slack_user_id);
     const githubAuthor = readString(body.github_author);
-    if (!userId || !githubAuthor) {
+    if (!slackUserId || !githubAuthor) {
       respondJson(response, 400, {
         ok: false,
         error: "missing_required_body",
-        required: ["user_id or slack_user_id", "github_author"]
+        required: ["slack_user_id", "github_author"]
       });
       return true;
     }
 
     await runAdminOperation(response, () =>
       options.adminService.upsertGitHubAuthorMapping({
-        ...(platform ? { platform } : {}),
-        ...(readString(body.user_id) ? { userId } : {}),
-        slackUserId: userId,
+        slackUserId,
         githubAuthor
+      })
+    );
+    return true;
+  }
+
+  if (method === "POST" && url.pathname === "/admin/api/github-accounts/default-pr") {
+    const body = await readAdminBody(request, response);
+    if (!body) {
+      return true;
+    }
+
+    const slackUserId = readString(body.slack_user_id);
+    if (!slackUserId) {
+      respondJson(response, 400, {
+        ok: false,
+        error: "missing_required_body",
+        required: ["slack_user_id"]
+      });
+      return true;
+    }
+
+    await runAdminOperation(response, () =>
+      options.adminService.setDefaultGitHubPrAccount({
+        slackUserId
       })
     );
     return true;
@@ -122,19 +389,21 @@ export async function handleAdminRequest(
       return true;
     }
 
-    const ref = readString(body.ref);
-    if (!ref) {
+    const target = readReleaseTarget(body.target);
+    const version = readString(body.version);
+    if (!target || !version) {
       respondJson(response, 400, {
         ok: false,
         error: "missing_required_body",
-        required: ["ref"]
+        required: ["target", "version"]
       });
       return true;
     }
 
     await runAdminOperation(response, () =>
-      options.adminService.deployWorker({
-        ref,
+      options.adminService.deployRelease({
+        target,
+        version,
         allowActive: body.allow_active === true
       })
     );
@@ -147,25 +416,20 @@ export async function handleAdminRequest(
       return true;
     }
 
-    await runAdminOperation(response, () =>
-      options.adminService.rollbackWorker({
-        ref: readString(body.ref) ?? undefined,
-        allowActive: body.allow_active === true
-      })
-    );
-    return true;
-  }
-
-  if (method === "POST" && url.pathname.startsWith("/admin/api/auth-profiles/") && url.pathname.endsWith("/activate")) {
-    const profileName = decodeURIComponent(url.pathname.slice("/admin/api/auth-profiles/".length, -"/activate".length));
-    const body = await readAdminBody(request, response);
-    if (!body) {
+    const target = readReleaseTarget(body.target);
+    if (!target) {
+      respondJson(response, 400, {
+        ok: false,
+        error: "missing_required_body",
+        required: ["target"]
+      });
       return true;
     }
 
     await runAdminOperation(response, () =>
-      options.adminService.activateAuthProfile({
-        name: profileName,
+      options.adminService.rollbackRelease({
+        target,
+        version: readString(body.version) ?? undefined,
         allowActive: body.allow_active === true
       })
     );
@@ -187,32 +451,168 @@ export async function handleAdminRequest(
   }
 
   if (method === "DELETE" && url.pathname.startsWith("/admin/api/github-authors/")) {
-    const platformParam = url.searchParams.get("platform");
-    const platform = readAdminPlatform(platformParam);
-    const userId = decodeURIComponent(url.pathname.slice("/admin/api/github-authors/".length));
-    if (!userId || userId.includes("/")) {
+    const slackUserId = decodeURIComponent(url.pathname.slice("/admin/api/github-authors/".length));
+    if (!slackUserId || slackUserId.includes("/")) {
       return false;
-    }
-
-    if (isInvalidAdminPlatformValue(platformParam)) {
-      respondJson(response, 400, {
-        ok: false,
-        error: "invalid_platform",
-        allowed: CHAT_PLATFORM_VALUES
-      });
-      return true;
     }
 
     await runAdminOperation(response, () =>
       options.adminService.deleteGitHubAuthorMapping({
-        ...(platform ? { platform } : {}),
-        slackUserId: userId
+        slackUserId
       })
     );
     return true;
   }
 
   return false;
+}
+
+function matchSessionJobCancelPath(pathname: string): {
+  readonly sessionKey: string;
+  readonly jobId: string;
+} | null {
+  const prefix = "/admin/api/sessions/";
+  const suffix = "/cancel";
+  if (!pathname.startsWith(prefix) || !pathname.endsWith(suffix)) {
+    return null;
+  }
+  const middle = pathname.slice(prefix.length, -suffix.length);
+  const marker = "/jobs/";
+  const markerIndex = middle.indexOf(marker);
+  if (markerIndex <= 0) {
+    return null;
+  }
+  const encodedSessionKey = middle.slice(0, markerIndex);
+  const encodedJobId = middle.slice(markerIndex + marker.length);
+  if (!encodedSessionKey || !encodedJobId || encodedSessionKey.includes("/") || encodedJobId.includes("/")) {
+    return null;
+  }
+
+  return {
+    sessionKey: decodeURIComponent(encodedSessionKey),
+    jobId: decodeURIComponent(encodedJobId)
+  };
+}
+
+function matchSessionTimelineEventPath(pathname: string): {
+  readonly sessionKey: string;
+  readonly eventId: string;
+} | null {
+  const prefix = "/admin/api/sessions/";
+  const marker = "/timeline-events/";
+  if (!pathname.startsWith(prefix)) {
+    return null;
+  }
+  const middle = pathname.slice(prefix.length);
+  const markerIndex = middle.indexOf(marker);
+  if (markerIndex <= 0) {
+    return null;
+  }
+  const encodedSessionKey = middle.slice(0, markerIndex);
+  const encodedEventId = middle.slice(markerIndex + marker.length);
+  if (!encodedSessionKey || !encodedEventId || encodedSessionKey.includes("/") || encodedEventId.includes("/")) {
+    return null;
+  }
+  return {
+    sessionKey: decodeURIComponent(encodedSessionKey),
+    eventId: decodeURIComponent(encodedEventId)
+  };
+}
+
+async function serveAdminSpaIndex(response: http.ServerResponse, config: AppConfig): Promise<boolean> {
+  if (process.env.ADMIN_UI_DEV_ORIGIN) {
+    response.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
+    response.end(renderAdminPage({
+      serviceName: config.serviceName
+    }));
+    return true;
+  }
+
+  const indexPath = await findAdminSpaIndex();
+  if (indexPath) {
+    const html = await fs.readFile(indexPath, "utf8");
+    response.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
+    response.end(html);
+    return true;
+  }
+
+  response.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
+  response.end(renderAdminPage({
+    serviceName: config.serviceName
+  }));
+  return true;
+}
+
+async function findAdminSpaIndex(): Promise<string | null> {
+  const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    path.resolve(moduleDir, "..", "..", "admin-ui", "index.html"),
+    path.resolve(moduleDir, "..", "..", "dist", "admin-ui", "index.html")
+  ];
+
+  for (const candidate of candidates) {
+    try {
+      await fs.access(candidate);
+      return candidate;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        throw error;
+      }
+    }
+  }
+
+  return null;
+}
+
+async function serveAdminAsset(url: URL, response: http.ServerResponse): Promise<boolean> {
+  const assetName = decodeURIComponent(url.pathname.slice("/admin/assets/".length));
+  if (!assetName || assetName.includes("\0")) {
+    return false;
+  }
+
+  const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+  const assetRoots = [
+    path.resolve(moduleDir, "..", "..", "admin-ui", "assets"),
+    path.resolve(moduleDir, "..", "..", "dist", "admin-ui", "assets")
+  ];
+
+  for (const assetRoot of assetRoots) {
+    const assetPath = path.resolve(assetRoot, assetName);
+    if (!assetPath.startsWith(`${assetRoot}${path.sep}`)) {
+      continue;
+    }
+
+    try {
+      const content = await fs.readFile(assetPath);
+      response.writeHead(200, {
+        "content-type": contentTypeForAsset(assetPath),
+        "cache-control": "no-store"
+      });
+      response.end(content);
+      return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        throw error;
+      }
+    }
+  }
+
+  response.writeHead(404, { "content-type": "application/json" });
+  response.end(JSON.stringify({ ok: false, error: "admin_asset_not_found" }));
+  return true;
+}
+
+function isAdminSpaRoute(pathname: string): boolean {
+  return pathname === "/admin" || pathname === "/admin/" || pathname.startsWith("/admin/sessions/");
+}
+
+function contentTypeForAsset(assetPath: string): string {
+  const extension = path.extname(assetPath).toLowerCase();
+  if (extension === ".css") return "text/css; charset=utf-8";
+  if (extension === ".js") return "text/javascript; charset=utf-8";
+  if (extension === ".map") return "application/json; charset=utf-8";
+  if (extension === ".svg") return "image/svg+xml";
+  return "application/octet-stream";
 }
 
 async function readAdminBody(
@@ -230,18 +630,125 @@ async function readAdminBody(
   }
 }
 
+function readPositiveNumber(value: unknown): number | undefined {
+  const numeric = typeof value === "number" ? value : typeof value === "string" ? Number.parseFloat(value) : Number.NaN;
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : undefined;
+}
+
+function readReleaseTarget(value: unknown): "admin" | "worker" | undefined {
+  return value === "admin" || value === "worker" ? value : undefined;
+}
+
 async function runAdminOperation(
   response: http.ServerResponse,
-  operation: () => Promise<Record<string, unknown>>
+  operation: () => Promise<Record<string, unknown>>,
+  options?: {
+    readonly errorStatus?: ((error: unknown) => number) | undefined;
+  }
 ): Promise<void> {
   try {
     respondJson(response, 200, await operation());
   } catch (error) {
-    respondJson(response, 500, {
+    respondJson(response, options?.errorStatus?.(error) ?? 500, {
       ok: false,
       error: error instanceof Error ? error.message : String(error)
     });
   }
+}
+
+function isSessionNotFoundError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.startsWith("Session not found:");
+}
+
+function streamAdminEvents(
+  request: http.IncomingMessage,
+  response: http.ServerResponse,
+  adminService: AdminService,
+  url: URL
+): void {
+  let cursor = readEventCursor(url, request);
+  if (cursor <= 0) {
+    cursor = adminService.getRealtimeCursor();
+  }
+  let closed = false;
+  let draining = false;
+
+  response.writeHead(200, {
+    "content-type": "text/event-stream; charset=utf-8",
+    "cache-control": "no-store, no-transform",
+    connection: "keep-alive",
+    "x-accel-buffering": "no"
+  });
+  response.flushHeaders?.();
+
+  const interval = setInterval(() => {
+    void drain();
+  }, 500);
+
+  request.on("close", () => {
+    closed = true;
+    clearInterval(interval);
+  });
+
+  void drain();
+
+  async function drain(): Promise<void> {
+    if (closed || draining) {
+      return;
+    }
+    draining = true;
+    try {
+      const payload = await adminService.listRealtimeEvents({
+        afterSequence: cursor,
+        limit: 100
+      });
+      const events = Array.isArray(payload.events) ? payload.events as Array<Record<string, unknown>> : [];
+      for (const event of events) {
+        const sequence = Number(event.sequence);
+        if (!Number.isFinite(sequence)) {
+          continue;
+        }
+        cursor = Math.max(cursor, sequence);
+        response.write(`id: ${sequence}\n`);
+        response.write("event: admin-event\n");
+        response.write(`data: ${JSON.stringify({ ok: true, event })}\n\n`);
+      }
+    } catch (error) {
+      response.write("event: admin-error\n");
+      response.write(`data: ${JSON.stringify({
+        ok: false,
+        error: error instanceof Error ? error.message : String(error)
+      })}\n\n`);
+    } finally {
+      draining = false;
+    }
+  }
+}
+
+function readEventCursor(url: URL, request: http.IncomingMessage): number {
+  const fromHeader = request.headers["last-event-id"];
+  const value = Array.isArray(fromHeader) ? fromHeader.at(-1) : fromHeader;
+  const parsed = value == null || value === "" ? NaN : Number(value);
+  if (Number.isFinite(parsed) && parsed >= 0) {
+    return Math.floor(parsed);
+  }
+
+  const fromQuery = Number(url.searchParams.get("after") ?? "");
+  return Number.isFinite(fromQuery) && fromQuery >= 0 ? Math.floor(fromQuery) : 0;
+}
+
+async function respondTracedAdminJson(
+  response: http.ServerResponse,
+  label: string,
+  load: () => Promise<Record<string, unknown>>
+): Promise<void> {
+  const startedAt = Date.now();
+  const body = await load();
+  const durationMs = Math.max(0, Date.now() - startedAt);
+  response.setHeader("server-timing", `admin;desc="${label}";dur=${durationMs}`);
+  response.setHeader("x-admin-duration-ms", String(durationMs));
+  respondJson(response, 200, body);
 }
 
 function isAuthorizedAdminRequest(request: http.IncomingMessage, config: AppConfig): boolean {
@@ -260,1024 +767,4 @@ function isAuthorizedAdminRequest(request: http.IncomingMessage, config: AppConf
   }
 
   return false;
-}
-
-function readAdminPlatform(value: unknown): ChatPlatform | undefined {
-  return value === "slack" || value === "feishu" ? value : undefined;
-}
-
-function isInvalidAdminPlatformValue(value: unknown): boolean {
-  return value != null && value !== "" && !readAdminPlatform(value);
-}
-
-function renderAdminPage(options: {
-  readonly serviceName: string;
-}): string {
-  return `<!doctype html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>${escapeHtml(options.serviceName)} 控制台</title>
-  <style>
-    :root {
-      color-scheme: dark;
-      --accent: #ff962d;
-      --accent-soft: rgba(255, 150, 45, 0.1);
-      --bg: #050505;
-      --panel: #0a0a0a;
-      --border: rgba(255, 150, 45, 0.2);
-      --border-strong: rgba(255, 150, 45, 0.4);
-      --text: #eee;
-      --muted: #888;
-      --good: #34dd93;
-      --warn: #ffcb63;
-      --danger: #ff7458;
-      --mono: "IBM Plex Mono", "SF Mono", "JetBrains Mono", ui-monospace, monospace;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      background: var(--bg);
-      color: var(--text);
-      font-family: var(--mono);
-      font-size: 13px;
-      line-height: 1.4;
-    }
-    .wrap {
-      max-width: 1600px;
-      margin: 0 auto;
-      padding: 16px;
-    }
-    header {
-      display: flex;
-      justify-content: space-between;
-      align-items: baseline;
-      border-bottom: 2px solid var(--accent);
-      padding-bottom: 8px;
-      margin-bottom: 16px;
-    }
-    h1 { margin: 0; font-size: 18px; text-transform: uppercase; color: var(--accent); }
-    .header-meta { display: flex; gap: 12px; }
-    .header-tools {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-      flex-wrap: wrap;
-    }
-    
-    .grid-summary {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 1px;
-      background: var(--border);
-      border: 1px solid var(--border);
-      margin-bottom: 16px;
-    }
-    .summary-item {
-      background: var(--panel);
-      padding: 12px;
-    }
-    .summary-label { font-size: 10px; color: var(--muted); text-transform: uppercase; margin-bottom: 4px; }
-    .summary-value { font-size: 20px; font-weight: bold; color: var(--accent); }
-    .summary-detail { font-size: 11px; color: var(--muted); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
-    .main-layout {
-      display: grid;
-      grid-template-columns: 1fr 400px;
-      gap: 16px;
-      align-items: start;
-    }
-    section {
-      border: 1px solid var(--border);
-      background: var(--panel);
-      margin-bottom: 16px;
-    }
-    .section-head {
-      background: var(--accent-soft);
-      padding: 6px 12px;
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .section-title { font-size: 12px; font-weight: bold; text-transform: uppercase; color: var(--accent); }
-    
-    .toolbar { display: flex; gap: 8px; padding: 12px; border-bottom: 1px solid var(--border); background: rgba(255,255,255,0.02); }
-    .toolbar input, .toolbar select { 
-      background: #000; border: 1px solid var(--border); color: var(--text); 
-      padding: 6px 10px; font-family: inherit; font-size: 12px; 
-    }
-    .toolbar input[type="search"] { flex: 1; }
-
-    .session-table-header {
-      display: grid;
-      grid-template-columns: 1.5fr 1fr 1.2fr 1fr 80px;
-      gap: 8px;
-      padding: 8px 12px;
-      border-bottom: 1px solid var(--border);
-      color: var(--muted);
-      font-size: 11px;
-      text-transform: uppercase;
-    }
-    .session-list { display: grid; }
-    .session-row { border-bottom: 1px solid var(--border); }
-    .session-summary {
-      display: grid;
-      grid-template-columns: 1.5fr 1fr 1.2fr 1fr 80px;
-      gap: 8px;
-      padding: 10px 12px;
-      cursor: pointer;
-      align-items: center;
-    }
-    .session-summary:hover { background: rgba(255,150,45,0.05); }
-    .session-key { color: var(--accent); font-weight: bold; overflow: hidden; text-overflow: ellipsis; }
-    .session-body { padding: 12px; background: #000; border-top: 1px solid var(--border); }
-
-    .tui-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-    .tui-table th { text-align: left; color: var(--muted); padding: 4px 8px; border-bottom: 1px solid var(--border); font-size: 10px; text-transform: uppercase; }
-    .tui-table td { padding: 6px 8px; border-bottom: 1px solid rgba(255,255,255,0.05); }
-
-    .profile-row {
-      display: grid;
-      gap: 8px;
-      width: 100%;
-      padding: 12px;
-      border: 1px solid var(--border);
-      background: rgba(255, 255, 255, 0.01);
-    }
-    .profile-row.is-active {
-      border-color: var(--border-strong);
-      background: rgba(255, 150, 45, 0.05);
-    }
-    .profile-line {
-      display: flex;
-      gap: 8px;
-      align-items: baseline;
-      flex-wrap: wrap;
-    }
-    .profile-account {
-      font-weight: bold;
-      color: var(--accent);
-    }
-    .profile-plan,
-    .profile-quota {
-      color: var(--muted);
-      font-size: 11px;
-    }
-    .profile-quota {
-      display: grid;
-      gap: 2px;
-    }
-    .profile-quota-line {
-      display: grid;
-      grid-template-columns: 56px 88px 1fr;
-      gap: 8px;
-      align-items: baseline;
-    }
-    .profile-quota-label {
-      color: var(--muted);
-    }
-    .profile-quota-value {
-      color: var(--text);
-      font-weight: bold;
-    }
-    .profile-quota-reset {
-      color: var(--muted);
-      text-align: right;
-    }
-    .profile-actions {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-      align-items: center;
-    }
-    
-    .badge {
-      display: inline-block; padding: 2px 6px; font-size: 10px; font-weight: bold;
-      text-transform: uppercase; border: 1px solid currentColor;
-    }
-    .badge.good { color: var(--good); }
-    .badge.warn { color: var(--warn); }
-    .badge.danger { color: var(--danger); }
-
-    button {
-      background: var(--accent); color: #000; border: none; padding: 6px 12px;
-      font-family: inherit; font-size: 11px; font-weight: bold; cursor: pointer;
-      text-transform: uppercase;
-    }
-    button.secondary { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
-    button.danger { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
-    button:disabled { opacity: 0.5; cursor: default; }
-    
-    textarea, input[type="password"], input[type="file"], input[type="text"] {
-      width: 100%; background: #000; border: 1px solid var(--border); color: var(--text);
-      padding: 8px; font-family: inherit; font-size: 12px;
-    }
-    textarea { min-height: 120px; }
-    
-    dialog {
-      background: var(--panel); border: 2px solid var(--accent); color: var(--text);
-      padding: 0; width: 600px; max-width: 90vw;
-    }
-    dialog::backdrop { background: rgba(0,0,0,0.8); backdrop-filter: blur(2px); }
-    .modal-content { padding: 20px; display: grid; gap: 16px; }
-    
-    .log-list { max-height: 400px; overflow-y: auto; font-size: 11px; }
-    .log-entry { padding: 4px 12px; border-bottom: 1px solid rgba(255,255,255,0.05); }
-    .log-entry.warn { color: var(--warn); background: rgba(255, 203, 99, 0.05); }
-    .log-entry.error { color: var(--danger); background: rgba(255, 116, 88, 0.05); }
-    @media (max-width: 1000px) {
-      .main-layout { grid-template-columns: 1fr; }
-      .grid-summary { grid-template-columns: 1fr 1fr; }
-    }
-  </style>
-</head>
-<body>
-  <div class="wrap">
-    <header>
-      <h1>${escapeHtml(options.serviceName)} ADMIN</h1>
-      <div class="header-meta">
-        <span class="badge">REFRESH: 10S</span>
-        <div class="header-tools">
-          <button id="refresh-button" class="secondary">REFRESH</button>
-        </div>
-      </div>
-    </header>
-
-    <div class="grid-summary">
-      <div class="summary-item">
-        <div class="summary-label">SERVICE</div>
-        <div class="summary-value" id="summary-service">--</div>
-        <div class="summary-detail" id="summary-service-detail">...</div>
-      </div>
-      <div class="summary-item">
-        <div class="summary-label">ACCOUNT</div>
-        <div class="summary-value" id="summary-account">--</div>
-        <div class="summary-detail" id="summary-account-detail">...</div>
-      </div>
-      <div class="summary-item">
-        <div class="summary-label">SESSIONS</div>
-        <div class="summary-value" id="summary-sessions">--</div>
-        <div class="summary-detail" id="summary-sessions-detail">...</div>
-      </div>
-      <div class="summary-item">
-        <div class="summary-label">JOBS</div>
-        <div class="summary-value" id="summary-jobs">--</div>
-        <div class="summary-detail" id="summary-jobs-detail">...</div>
-      </div>
-    </div>
-
-    <div class="main-layout">
-      <div class="stack-main">
-        <section>
-          <div class="section-head">
-            <div class="section-title">Sessions</div>
-            <div id="last-refresh" style="font-size:10px; color:var(--muted)">READY</div>
-          </div>
-          <div class="toolbar">
-            <input id="session-search" type="search" placeholder="FILTER SESSIONS..." />
-            <select id="session-filter">
-              <option value="all">ALL</option>
-              <option value="platform:slack">SLACK</option>
-              <option value="platform:feishu">FEISHU</option>
-              <option value="active">ACTIVE</option>
-              <option value="inbound">INBOUND</option>
-              <option value="jobs">JOBS</option>
-              <option value="issues">ISSUES</option>
-            </select>
-          </div>
-          <div class="session-table-header">
-            <div>Session Key / Channel</div>
-            <div>Status / Platform</div>
-            <div>Inbound / Jobs</div>
-            <div>Current Lead</div>
-            <div>Action</div>
-          </div>
-          <div id="sessions-panel" class="session-list"></div>
-        </section>
-
-        <section>
-          <div class="section-head">
-            <div class="section-title">System Logs</div>
-          </div>
-          <div id="logs-panel" class="log-list"></div>
-        </section>
-      </div>
-
-      <div class="stack-side">
-        <section>
-          <div class="section-head">
-            <div class="section-title">Auth Profiles</div>
-            <button id="open-add-profile-dialog">ADD</button>
-          </div>
-          <div id="auth-profiles-panel" style="padding:12px; display:grid; gap:8px;"></div>
-          <div id="replace-status" style="padding:8px; font-size:10px;"></div>
-        </section>
-
-        <section>
-          <div class="section-head">
-            <div class="section-title">GitHub Authors</div>
-            <button id="open-github-author-dialog">ADD</button>
-          </div>
-          <div class="toolbar" style="border-bottom:none;">
-            <input id="github-author-search" type="search" placeholder="FILTER AUTHORS..." />
-          </div>
-          <div id="github-authors-panel" style="padding:12px; display:grid; gap:8px;"></div>
-          <div id="github-authors-status" style="padding:8px; font-size:10px;"></div>
-        </section>
-
-        <section>
-          <div class="section-head">
-            <div class="section-title">Deploy</div>
-            <button id="deploy-release-button">DEPLOY</button>
-          </div>
-          <div style="padding:12px; display:grid; gap:8px;">
-            <input id="deploy-ref-input" type="text" placeholder="COMMIT / BRANCH / TAG" />
-            <div style="display:flex; gap:8px;">
-              <button id="rollback-release-button" class="secondary" style="flex:1">ROLLBACK</button>
-            </div>
-            <div id="deploy-panel" style="display:grid; gap:8px;"></div>
-            <div id="deploy-status" style="font-size:10px;"></div>
-          </div>
-        </section>
-
-        <section>
-          <div class="section-head">
-            <div class="section-title">Runtime Info</div>
-          </div>
-          <div id="service-card" style="padding:12px; font-size:11px;"></div>
-        </section>
-      </div>
-    </div>
-  </div>
-
-  <dialog id="add-profile-dialog"><div class="modal-content">
-    <div class="section-title">Add auth profile</div>
-    <input id="profile-auth-file" type="file" accept="application/json,.json" />
-    <textarea id="profile-auth-text" placeholder="PASTE AUTH.JSON HERE..."></textarea>
-    <div style="display:flex; gap:8px; justify-content:flex-end;">
-      <button id="close-add-profile-dialog" class="secondary">CANCEL</button>
-      <button id="submit-add-profile-dialog">SAVE</button>
-    </div>
-    <div id="add-profile-status" style="font-size:10px;"></div>
-  </div></dialog>
-
-  <dialog id="github-author-dialog"><div class="modal-content">
-    <div class="section-title">GitHub author mapping</div>
-    <select id="github-author-platform">
-      <option value="slack">SLACK</option>
-      <option value="feishu">FEISHU</option>
-    </select>
-    <input id="github-author-slack-user-id" type="text" placeholder="USER ID (U123 / ou_...)" />
-    <input id="github-author-value" type="text" placeholder="Name <email@example.com>" />
-    <div style="display:flex; gap:8px; justify-content:flex-end;">
-      <button id="close-github-author-dialog" class="secondary">CANCEL</button>
-      <button id="submit-github-author-dialog">SAVE</button>
-    </div>
-    <div id="github-author-dialog-status" style="font-size:10px;"></div>
-  </div></dialog>
-
-  <script>
-    const refreshButton = document.getElementById("refresh-button");
-    const replaceStatus = document.getElementById("replace-status");
-    const deployStatus = document.getElementById("deploy-status");
-    const githubAuthorsStatus = document.getElementById("github-authors-status");
-    const lastRefresh = document.getElementById("last-refresh");
-    const sessionSearch = document.getElementById("session-search");
-    const sessionFilter = document.getElementById("session-filter");
-    const githubAuthorSearch = document.getElementById("github-author-search");
-    const addProfileDialog = document.getElementById("add-profile-dialog");
-    const githubAuthorDialog = document.getElementById("github-author-dialog");
-    const deployRefInput = document.getElementById("deploy-ref-input");
-    let latestStatus = null;
-
-    function esc(value) {
-      return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
-    }
-
-    function fmtTime(value) {
-      if (!value) return "—";
-      try { return new Date(value).toLocaleTimeString(); } catch { return String(value); }
-    }
-
-    function clampPercent(value) {
-      const number = Number(value);
-      return Math.max(0, Math.min(100, Math.round(number || 0)));
-    }
-
-    function formatWindowLabel(mins) {
-      const m = Number(mins);
-      if (m === 300) return "5h";
-      if (m === 10080) return "weekly";
-      if (m % 1440 === 0) return (m/1440) + "d";
-      if (m % 60 === 0) return (m/60) + "h";
-      return m + "m";
-    }
-
-    function formatRelativeDuration(ms) {
-      const absMs = Math.abs(ms);
-      const m = Math.round(absMs / 60000);
-      if (m < 60) return m + "m";
-      const h = Math.round(absMs / 3600000);
-      if (h < 48) return h + "h";
-      return Math.round(absMs / 86400000) + "d";
-    }
-
-    function formatResetTime(sec) {
-      if (sec == null) return "unknown reset";
-      const delta = (Number(sec) * 1000) - Date.now();
-      const rel = formatRelativeDuration(delta);
-      return delta > 0 ? "in " + rel : rel + " ago";
-    }
-
-    function fmtDuration(sec) {
-      const s = Number(sec || 0);
-      if (s <= 0) return "JUST STARTED";
-      const h = Math.floor(s / 3600);
-      const m = Math.floor((s % 3600) / 60);
-      return (h > 0 ? h + "h " : "") + m + "m";
-    }
-
-    function statusTone(status) {
-      const v = String(status || "").toLowerCase();
-      if (["running", "active", "ok", "completed"].includes(v)) return "good";
-      if (["pending", "inflight", "starting"].includes(v)) return "warn";
-      if (["failed", "error", "stopped"].includes(v)) return "danger";
-      return "";
-    }
-
-    function renderBadge(label, tone) {
-      return '<span class="badge ' + (tone || "") + '">' + esc(label) + "</span>";
-    }
-
-    function authHeaders(extra) {
-      return Object.assign({}, extra || {});
-    }
-
-    function renderSummary(data) {
-      const s = data.service || {};
-      const st = data.state || {};
-      const a = data.account || {};
-      const rl = data.rateLimits || {};
-      
-      document.getElementById("summary-service").textContent = "ONLINE";
-      document.getElementById("summary-service-detail").textContent = "PID " + (s.pid || "-") + " · UP " + fmtDuration(s.uptimeSeconds);
-      
-      document.getElementById("summary-account").textContent = a.ok ? (a.account?.planType || "LOGGED") : "ERROR";
-      document.getElementById("summary-account-detail").textContent = a.ok ? (a.account?.email || "NO EMAIL") : (a.error || "ERR");
-      
-      document.getElementById("summary-sessions").textContent = (st.activeCount || 0) + "/" + (st.sessionCount || 0);
-      document.getElementById("summary-sessions-detail").textContent = "INBOUND: " + (st.openInboundCount || 0);
-      
-      document.getElementById("summary-jobs").textContent = st.runningBackgroundJobCount || 0;
-      document.getElementById("summary-jobs-detail").textContent = "FAILED: " + (st.failedBackgroundJobCount || 0);
-    }
-
-    function renderService(data) {
-      const s = data.service || {};
-      document.getElementById("service-card").innerHTML = 
-        '<div style="display:grid; gap:4px;">' +
-        '<div>NAME: ' + esc(s.name) + '</div>' +
-        '<div>PORT: ' + esc(s.port) + '</div>' +
-        '<div>START: ' + esc(new Date(s.startedAt).toLocaleString()) + '</div>' +
-        '<div style="margin-top:8px; color:var(--muted); font-size:10px;">ROOTS:</div>' +
-        '<div style="word-break:break-all;">' + esc(s.sessionsRoot) + '</div>' +
-        '</div>';
-    }
-
-    function renderReleaseCard(label, release) {
-      if (!release?.targetPath) {
-        return '<div class="summary-detail">' + esc(label + ": none") + "</div>";
-      }
-      const metadata = release.metadata || {};
-      const heading = metadata.shortRevision || metadata.revision || release.targetPath.split("/").pop() || "release";
-      const detail = metadata.builtAt ? new Date(metadata.builtAt).toLocaleString() : release.targetPath;
-      return '<div class="profile-row">' +
-               '<div class="profile-line">' +
-                 '<span class="profile-account">' + esc(label + ": " + heading) + "</span>" +
-                 '<span class="profile-plan">' + esc(metadata.branch || "detached") + "</span>" +
-               "</div>" +
-               '<div class="summary-detail">' + esc(detail) + "</div>" +
-             "</div>";
-    }
-
-    function renderDeployment(data) {
-      const deployment = data.deployment;
-      const panel = document.getElementById("deploy-panel");
-      if (!deployment) {
-        panel.innerHTML = '<div class="summary-detail">WORKER DEPLOYMENT UNAVAILABLE</div>';
-        return;
-      }
-
-      const worker = deployment.worker || {};
-      panel.innerHTML =
-        '<div style="display:flex; gap:8px; flex-wrap:wrap;">' +
-          renderBadge(worker.launchdLoaded ? "WORKER LOADED" : "WORKER DOWN", worker.launchdLoaded ? "good" : "danger") +
-          renderBadge(worker.healthOk ? "HTTP OK" : "HTTP FAIL", worker.healthOk ? "good" : "danger") +
-          renderBadge(worker.readyOk ? "CODEX READY" : "CODEX FAIL", worker.readyOk ? "good" : "danger") +
-        "</div>" +
-        renderReleaseCard("CURRENT", deployment.currentRelease) +
-        renderReleaseCard("PREVIOUS", deployment.previousRelease);
-    }
-
-    function renderProfileQuota(rateLimits) {
-      if (!rateLimits || !rateLimits.ok) {
-        return '<div class="profile-quota">' + esc(rateLimits?.error || "quota unavailable") + "</div>";
-      }
-      const snapshot = rateLimits.rateLimits || {};
-      const primary = snapshot.primary;
-      const secondary = snapshot.secondary;
-      const primaryValue = primary ? String(100 - clampPercent(primary.usedPercent)) + "% LEFT" : "—";
-      const primaryReset = primary ? formatResetTime(primary.resetsAt) : "unavailable";
-      const secondaryValue = secondary ? String(100 - clampPercent(secondary.usedPercent)) + "% LEFT" : "—";
-      const secondaryReset = secondary ? formatResetTime(secondary.resetsAt) : "unavailable";
-      return '<div class="profile-quota">' +
-               '<div class="profile-quota-line">' +
-                 '<span class="profile-quota-label">5H</span>' +
-                 '<span class="profile-quota-value">' + esc(primaryValue) + '</span>' +
-                 '<span class="profile-quota-reset">' + esc(primaryReset) + '</span>' +
-               '</div>' +
-               '<div class="profile-quota-line">' +
-                 '<span class="profile-quota-label">WEEKLY</span>' +
-                 '<span class="profile-quota-value">' + esc(secondaryValue) + '</span>' +
-                 '<span class="profile-quota-reset">' + esc(secondaryReset) + '</span>' +
-               '</div>' +
-             "</div>";
-    }
-
-    function renderAuthProfiles(data) {
-      const authProfiles = data.authProfiles || {};
-      const profiles = [...(authProfiles.profiles || [])].sort((left, right) => {
-        if (left.active !== right.active) {
-          return left.active ? -1 : 1;
-        }
-        return String(right.mtime || "").localeCompare(String(left.mtime || ""));
-      });
-      const panel = document.getElementById("auth-profiles-panel");
-      if (!profiles.length) {
-        panel.innerHTML = '<div class="summary-detail" style="padding-top:12px;">NO AUTH PROFILES</div>';
-        return;
-      }
-
-      panel.innerHTML = profiles.map((profile) => {
-        const account = profile.account || {};
-        const email = account.ok ? (account.account?.email || "UNKNOWN ACCOUNT") : "ACCOUNT ERROR";
-        const plan = account.ok ? (account.account?.planType || account.account?.type || "CHATGPT") : (account.error || "account unavailable");
-        return '<div class="profile-row' + (profile.active ? " is-active" : "") + '">' +
-                 '<div class="profile-line">' +
-                   '<span class="profile-account">' + esc(email) + "</span>" +
-                   '<span class="profile-plan">' + esc(plan) + "</span>" +
-                 "</div>" +
-                 renderProfileQuota(profile.rateLimits) +
-                 '<div class="profile-actions">' +
-                   '<button class="secondary" data-activate-profile="' + esc(profile.name) + '"' +
-                     ' data-profile-email="' + esc(email) + '"' +
-                     (profile.active ? " disabled" : "") + ">USE</button>" +
-                   '<button class="danger" data-delete-profile="' + esc(profile.name) + '"' +
-                     ' data-profile-email="' + esc(email) + '"' +
-                     (profile.active ? " disabled" : "") + '>DELETE</button>' +
-                 "</div>" +
-               "</div>";
-      }).join("");
-
-      document.querySelectorAll("[data-activate-profile]").forEach((button) => {
-        button.addEventListener("click", async () => {
-          const name = button.getAttribute("data-activate-profile");
-          if (!name) {
-            return;
-          }
-          const activeCount = Number(latestStatus?.state?.activeCount || 0);
-          const allowActive =
-            activeCount > 0 ? window.confirm("ACTIVE SESSIONS EXIST. SWITCHING WILL INTERRUPT THEM. CONTINUE?") : false;
-          if (activeCount > 0 && !allowActive) {
-            return;
-          }
-          await activateProfile(name, allowActive);
-        });
-      });
-
-      document.querySelectorAll("[data-delete-profile]").forEach((button) => {
-        button.addEventListener("click", async () => {
-          const name = button.getAttribute("data-delete-profile");
-          const email = button.getAttribute("data-profile-email") || "this auth profile";
-          if (!name) {
-            return;
-          }
-          if (!window.confirm("DELETE " + email + "?")) {
-            return;
-          }
-          await deleteProfile(name);
-        });
-      });
-    }
-
-    function renderGitHubAuthors(data) {
-      const mappings = [...(data.githubAuthorMappings?.mappings || [])];
-      const panel = document.getElementById("github-authors-panel");
-      const query = String(githubAuthorSearch.value || "").toLowerCase();
-      const filtered = mappings.filter((mapping) => {
-        if (!query) {
-          return true;
-        }
-
-        return [
-          mapping.platform,
-          mapping.userId,
-          mapping.slackUserId,
-          mapping.githubAuthor,
-          mapping.identity?.displayName,
-          mapping.identity?.realName,
-          mapping.identity?.username,
-          mapping.identity?.email,
-          mapping.slackIdentity?.displayName,
-          mapping.slackIdentity?.realName,
-          mapping.slackIdentity?.username,
-          mapping.slackIdentity?.email
-        ].some((value) => String(value || "").toLowerCase().includes(query));
-      });
-
-      if (!filtered.length) {
-        panel.innerHTML = '<div class="summary-detail" style="padding-top:12px;">NO GITHUB AUTHOR MAPPINGS</div>';
-        return;
-      }
-
-      panel.innerHTML = filtered.map((mapping) => {
-        const platform = mapping.platform || "slack";
-        const userId = mapping.userId || mapping.slackUserId;
-        const identity = mapping.identity || mapping.slackIdentity || {};
-        const label = identity.realName || identity.displayName || identity.username || userId;
-        const detail = [String(platform).toUpperCase(), userId, identity.email].filter(Boolean).join(" · ");
-        return '<div class="profile-row">' +
-                 '<div class="profile-line">' +
-                   '<span class="profile-account">' + esc(label) + "</span>" +
-                   '<span class="profile-plan">' + esc(detail || userId) + "</span>" +
-                   renderBadge(platform, "") +
-                   renderBadge(mapping.source === "manual" ? "manual" : "auto", mapping.source === "manual" ? "good" : "warn") +
-                 "</div>" +
-                 '<div class="summary-detail">' + esc(mapping.githubAuthor) + "</div>" +
-                 '<div class="summary-detail">UPDATED: ' + esc(new Date(mapping.updatedAt).toLocaleString()) + "</div>" +
-                 '<div class="profile-actions">' +
-                   '<button class="secondary" data-edit-github-author="' + esc(userId) + '"' +
-                     ' data-edit-github-author-platform="' + esc(platform) + '"' +
-                     ' data-edit-github-author-value="' + esc(mapping.githubAuthor) + '">EDIT</button>' +
-                   '<button class="danger" data-delete-github-author="' + esc(userId) + '"' +
-                     ' data-delete-github-author-platform="' + esc(platform) + '">DELETE</button>' +
-                 "</div>" +
-               "</div>";
-      }).join("");
-
-      document.querySelectorAll("[data-edit-github-author]").forEach((button) => {
-        button.addEventListener("click", () => {
-          document.getElementById("github-author-dialog-status").textContent = "";
-          document.getElementById("github-author-platform").value = button.getAttribute("data-edit-github-author-platform") || "slack";
-          document.getElementById("github-author-slack-user-id").value = button.getAttribute("data-edit-github-author") || "";
-          document.getElementById("github-author-value").value = button.getAttribute("data-edit-github-author-value") || "";
-          githubAuthorDialog.showModal();
-        });
-      });
-
-      document.querySelectorAll("[data-delete-github-author]").forEach((button) => {
-        button.addEventListener("click", async () => {
-          const platform = button.getAttribute("data-delete-github-author-platform") || "slack";
-          const userId = button.getAttribute("data-delete-github-author");
-          if (!userId) {
-            return;
-          }
-
-          if (!window.confirm("DELETE GITHUB AUTHOR MAPPING FOR " + platform.toUpperCase() + " " + userId + "?")) {
-            return;
-          }
-
-          await deleteGitHubAuthorMapping(platform, userId);
-        });
-      });
-    }
-
-    function summarizeSessionLead(s) {
-      if (s.openInbound?.length) return s.openInbound[0].textPreview || "NEW MSG";
-      if (s.backgroundJobs?.length) {
-        const r = s.backgroundJobs.find(j => j.status === "running") || s.backgroundJobs[0];
-        return (r.kind || "JOB") + " (" + (r.status || "?") + ")";
-      }
-      return "IDLE";
-    }
-
-    function renderSessions(data) {
-      const panel = document.getElementById("sessions-panel");
-      const list = data.state?.sessions || [];
-      const query = (sessionSearch.value || "").toLowerCase();
-      const mode = sessionFilter.value;
-      
-      const filtered = list.filter(s => {
-         if (mode === "active" && !s.activeTurnId) return false;
-         if (mode === "platform:slack" && s.platform !== "slack") return false;
-         if (mode === "platform:feishu" && s.platform !== "feishu") return false;
-         if (mode === "inbound" && !s.openInboundCount) return false;
-        if (mode === "jobs" && !s.runningBackgroundJobCount) return false;
-        if (mode === "issues" && !s.failedBackgroundJobCount) return false;
-        if (!query) return true;
-         return [s.key, s.platform, s.channelId, s.conversationId, s.rootMessageId, s.workspacePath].some(v => String(v).toLowerCase().includes(query));
-      });
-
-      if (!filtered.length) {
-        panel.innerHTML = '<div style="padding:20px; text-align:center; color:var(--muted)">NO SESSIONS FOUND</div>';
-        return;
-      }
-
-      panel.innerHTML = filtered.map(s => {
-        const lead = summarizeSessionLead(s);
-        const isActive = !!s.activeTurnId;
-        return '<details class="session-row">' +
-          '<summary class="session-summary">' +
-             '<div class="session-key">' + esc(s.key) + '<div style="font-size:10px; font-weight:normal; color:var(--muted)">' + esc(s.conversationId || s.channelId) + '</div></div>' +
-             '<div>' + renderBadge(isActive ? "ACTIVE" : "IDLE", isActive ? "good" : "warn") + ' ' + renderBadge(s.platform || "slack", "") + '<div style="font-size:10px; color:var(--muted)">UP: ' + fmtTime(s.updatedAt) + '</div></div>' +
-            '<div>MSG: ' + (s.openInboundCount || 0) + ' / JOB: ' + (s.runningBackgroundJobCount || 0) + '</div>' +
-            '<div style="font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="' + esc(lead) + '">' + esc(lead) + '</div>' +
-            '<div><span style="color:var(--accent); font-size:10px;">EXPAND</span></div>' +
-          '</summary>' +
-          '<div class="session-body">' +
-             '<div style="margin-bottom:12px; font-size:11px; color:var(--muted)">PLATFORM: ' + esc(s.platform || "slack") + ' · CONVERSATION: ' + esc(s.conversationId || s.channelId) + ' · ROOT: ' + esc(s.rootMessageId || s.rootThreadTs) + '</div>' +
-             '<div style="margin-bottom:12px; font-size:11px; color:var(--muted)">CWD: ' + esc(s.workspacePath) + '</div>' +
-            '<div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">' +
-              '<div><div class="summary-label">INBOUND</div>' + renderInboundTable(s.openInbound) + '</div>' +
-              '<div><div class="summary-label">JOBS</div>' + renderJobsTable(s.backgroundJobs) + '</div>' +
-            '</div>' +
-          '</div>' +
-        '</details>';
-      }).join("");
-    }
-
-    function renderInboundTable(items) {
-      if (!items?.length) return '<div style="color:var(--muted); font-size:11px;">EMPTY</div>';
-      return '<table class="tui-table"><thead><tr><th>SRC</th><th>MSG</th></tr></thead><tbody>' +
-        items.map(i => '<tr><td>' + esc(i.source) + '</td><td>' + esc(i.textPreview) + '</td></tr>').join("") +
-        '</tbody></table>';
-    }
-
-    function renderJobsTable(jobs) {
-      if (!jobs?.length) return '<div style="color:var(--muted); font-size:11px;">EMPTY</div>';
-      return '<table class="tui-table"><thead><tr><th>STATUS</th><th>KIND</th></tr></thead><tbody>' +
-        jobs.slice(0, 5).map(j => '<tr><td>' + renderBadge(j.status, statusTone(j.status)) + '</td><td>' + esc(j.kind) + '</td></tr>').join("") +
-        '</tbody></table>';
-    }
-
-    function renderLogs(data) {
-      const logs = data.state?.recentBrokerLogs || [];
-      const panel = document.getElementById("logs-panel");
-      if (!logs.length) {
-        panel.innerHTML = '<div style="padding:12px; color:var(--muted)">NO LOGS</div>';
-        return;
-      }
-      panel.innerHTML = logs.map(e => {
-        const tone = statusTone(e.level);
-        return '<div class="log-entry ' + tone + '">[' + fmtTime(e.ts) + '] ' + esc(e.message || e.raw) + '</div>';
-      }).join("");
-    }
-
-    function render(data) {
-      latestStatus = data;
-      renderSummary(data);
-      renderService(data);
-      renderAuthProfiles(data);
-      renderGitHubAuthors(data);
-      renderDeployment(data);
-      renderSessions(data);
-      renderLogs(data);
-    }
-
-    async function parseResponse(response) {
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(payload.error || response.statusText || "REQUEST FAILED");
-      }
-      return payload;
-    }
-
-    async function activateProfile(name, allowActive) {
-      replaceStatus.textContent = "SWITCHING PROFILE...";
-      try {
-        const response = await fetch("/admin/api/auth-profiles/" + encodeURIComponent(name) + "/activate", {
-          method: "POST",
-          headers: authHeaders({ "content-type": "application/json" }),
-          body: JSON.stringify({ allow_active: allowActive })
-        });
-        const payload = await parseResponse(response);
-        render(payload.status);
-        replaceStatus.innerHTML = '<span style="color:var(--good)">ACTIVE PROFILE SWITCHED</span>';
-      } catch (error) {
-        replaceStatus.innerHTML = '<span style="color:var(--danger)">' + esc(error instanceof Error ? error.message : String(error)) + "</span>";
-      }
-    }
-
-    async function deleteProfile(name) {
-      replaceStatus.textContent = "DELETING PROFILE...";
-      try {
-        const response = await fetch("/admin/api/auth-profiles/" + encodeURIComponent(name), {
-          method: "DELETE",
-          headers: authHeaders()
-        });
-        const payload = await parseResponse(response);
-        render(payload.status);
-        replaceStatus.innerHTML = '<span style="color:var(--good)">PROFILE DELETED</span>';
-      } catch (error) {
-        replaceStatus.innerHTML = '<span style="color:var(--danger)">' + esc(error instanceof Error ? error.message : String(error)) + "</span>";
-      }
-    }
-
-    async function submitAddProfile() {
-      const status = document.getElementById("add-profile-status");
-      const fileInput = document.getElementById("profile-auth-file");
-      const textArea = document.getElementById("profile-auth-text");
-      const submitButton = document.getElementById("submit-add-profile-dialog");
-      status.textContent = "SAVING...";
-      submitButton.disabled = true;
-      try {
-        const content = textArea.value.trim() || (fileInput.files[0] ? await fileInput.files[0].text() : "");
-        if (!content) {
-          throw new Error("AUTH.JSON IS REQUIRED");
-        }
-        const response = await fetch("/admin/api/auth-profiles", {
-          method: "POST",
-          headers: authHeaders({ "content-type": "application/json" }),
-          body: JSON.stringify({
-            auth_json_content: content
-          })
-        });
-        const payload = await parseResponse(response);
-        render(payload.status);
-        replaceStatus.innerHTML = '<span style="color:var(--good)">PROFILE SAVED</span>';
-        status.innerHTML = '<span style="color:var(--good)">PROFILE SAVED</span>';
-        addProfileDialog.close();
-        fileInput.value = "";
-        textArea.value = "";
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        status.innerHTML = '<span style="color:var(--danger)">' + esc(message) + "</span>";
-      } finally {
-        submitButton.disabled = false;
-      }
-    }
-
-    async function deployRelease() {
-      const ref = deployRefInput.value.trim();
-      if (!ref) {
-        deployStatus.innerHTML = '<span style="color:var(--danger)">REF IS REQUIRED</span>';
-        return;
-      }
-      const activeCount = Number(latestStatus?.state?.activeCount || 0);
-      const allowActive =
-        activeCount > 0 ? window.confirm("ACTIVE SESSIONS EXIST. DEPLOYING WILL INTERRUPT THEM. CONTINUE?") : false;
-      if (activeCount > 0 && !allowActive) {
-        return;
-      }
-      deployStatus.textContent = "DEPLOYING...";
-      try {
-        const response = await fetch("/admin/api/deploy", {
-          method: "POST",
-          headers: authHeaders({ "content-type": "application/json" }),
-          body: JSON.stringify({
-            ref,
-            allow_active: allowActive
-          })
-        });
-        const payload = await parseResponse(response);
-        render(payload.status);
-        deployStatus.innerHTML = '<span style="color:var(--good)">DEPLOYED ' + esc(ref) + "</span>";
-      } catch (error) {
-        deployStatus.innerHTML = '<span style="color:var(--danger)">' + esc(error instanceof Error ? error.message : String(error)) + "</span>";
-      }
-    }
-
-    async function rollbackRelease() {
-      const activeCount = Number(latestStatus?.state?.activeCount || 0);
-      const allowActive =
-        activeCount > 0 ? window.confirm("ACTIVE SESSIONS EXIST. ROLLBACK WILL INTERRUPT THEM. CONTINUE?") : false;
-      if (activeCount > 0 && !allowActive) {
-        return;
-      }
-      deployStatus.textContent = "ROLLING BACK...";
-      try {
-        const response = await fetch("/admin/api/rollback", {
-          method: "POST",
-          headers: authHeaders({ "content-type": "application/json" }),
-          body: JSON.stringify({
-            allow_active: allowActive
-          })
-        });
-        const payload = await parseResponse(response);
-        render(payload.status);
-        deployStatus.innerHTML = '<span style="color:var(--good)">ROLLED BACK</span>';
-      } catch (error) {
-        deployStatus.innerHTML = '<span style="color:var(--danger)">' + esc(error instanceof Error ? error.message : String(error)) + "</span>";
-      }
-    }
-
-    async function refresh() {
-      refreshButton.disabled = true;
-      try {
-        const res = await fetch("/admin/api/status", { headers: authHeaders() });
-        const p = await parseResponse(res);
-        render(p);
-        lastRefresh.textContent = "SYNCED: " + new Date().toLocaleTimeString();
-      } catch (e) { lastRefresh.textContent = "ERROR: " + (e instanceof Error ? e.message : String(e)); }
-      finally { refreshButton.disabled = false; }
-    }
-
-    async function submitGitHubAuthorMapping() {
-      const platform = document.getElementById("github-author-platform").value || "slack";
-      const userId = document.getElementById("github-author-slack-user-id").value.trim();
-      const githubAuthor = document.getElementById("github-author-value").value.trim();
-      const status = document.getElementById("github-author-dialog-status");
-      const submitButton = document.getElementById("submit-github-author-dialog");
-      status.textContent = "SAVING...";
-      submitButton.disabled = true;
-
-      try {
-        if (!userId || !githubAuthor) {
-          throw new Error("USER ID AND GITHUB AUTHOR ARE REQUIRED");
-        }
-
-        const response = await fetch("/admin/api/github-authors", {
-          method: "POST",
-          headers: authHeaders({ "content-type": "application/json" }),
-          body: JSON.stringify({
-            platform,
-            user_id: userId,
-            slack_user_id: platform === "slack" ? userId : undefined,
-            github_author: githubAuthor
-          })
-        });
-        const payload = await parseResponse(response);
-        render(payload.status);
-        githubAuthorsStatus.innerHTML = '<span style="color:var(--good)">MAPPING SAVED</span>';
-        status.innerHTML = '<span style="color:var(--good)">MAPPING SAVED</span>';
-        githubAuthorDialog.close();
-      } catch (error) {
-        status.innerHTML = '<span style="color:var(--danger)">' + esc(error instanceof Error ? error.message : String(error)) + "</span>";
-      } finally {
-        submitButton.disabled = false;
-      }
-    }
-
-    async function deleteGitHubAuthorMapping(platform, userId) {
-      githubAuthorsStatus.textContent = "DELETING MAPPING...";
-      try {
-        const response = await fetch("/admin/api/github-authors/" + encodeURIComponent(userId) + "?platform=" + encodeURIComponent(platform), {
-          method: "DELETE",
-          headers: authHeaders()
-        });
-        const payload = await parseResponse(response);
-        render(payload.status);
-        githubAuthorsStatus.innerHTML = '<span style="color:var(--good)">MAPPING DELETED</span>';
-      } catch (error) {
-        githubAuthorsStatus.innerHTML = '<span style="color:var(--danger)">' + esc(error instanceof Error ? error.message : String(error)) + "</span>";
-      }
-    }
-
-    refreshButton.onclick = refresh;
-    sessionSearch.oninput = () => { if (latestStatus) renderSessions(latestStatus); };
-    sessionFilter.onchange = () => { if (latestStatus) renderSessions(latestStatus); };
-    githubAuthorSearch.oninput = () => { if (latestStatus) renderGitHubAuthors(latestStatus); };
-    document.getElementById("open-add-profile-dialog").onclick = () => {
-      document.getElementById("add-profile-status").textContent = "";
-      addProfileDialog.showModal();
-    };
-    document.getElementById("open-github-author-dialog").onclick = () => {
-      document.getElementById("github-author-dialog-status").textContent = "";
-      document.getElementById("github-author-platform").value = "slack";
-      document.getElementById("github-author-slack-user-id").value = "";
-      document.getElementById("github-author-value").value = "";
-      githubAuthorDialog.showModal();
-    };
-    document.getElementById("deploy-release-button").onclick = deployRelease;
-    document.getElementById("rollback-release-button").onclick = rollbackRelease;
-    document.getElementById("close-add-profile-dialog").onclick = () => addProfileDialog.close();
-    document.getElementById("close-github-author-dialog").onclick = () => githubAuthorDialog.close();
-    document.getElementById("submit-add-profile-dialog").onclick = submitAddProfile;
-    document.getElementById("submit-github-author-dialog").onclick = submitGitHubAuthorMapping;
-    addProfileDialog.onclick = (event) => {
-      if (event.target === addProfileDialog) {
-        addProfileDialog.close();
-      }
-    };
-    githubAuthorDialog.onclick = (event) => {
-      if (event.target === githubAuthorDialog) {
-        githubAuthorDialog.close();
-      }
-    };
-
-    refresh(); setInterval(refresh, 10000);
-  </script>
-</body>
-</html>`;
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
 }

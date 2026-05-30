@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import { SessionManager } from "../src/services/session-manager.js";
 import { JobManager } from "../src/services/job-manager.js";
 import { StateStore } from "../src/store/state-store.js";
+import type { PersistedBackgroundJob } from "../src/types.js";
 import { resolveRuntimeToolPath } from "../src/utils/runtime-paths.js";
 
 describe("JobManager", () => {
@@ -70,81 +71,119 @@ describe("JobManager", () => {
     await jobs.stop();
   });
 
-  it("registers platform-aware Feishu jobs and forwards events to chat coordinates", async () => {
-    const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "feishu-codex-state-"));
-    const jobsRoot = await fs.mkdtemp(path.join(os.tmpdir(), "feishu-codex-jobs-"));
-    const sessionsRoot = await fs.mkdtemp(path.join(os.tmpdir(), "feishu-codex-sessions-"));
-    const reposRoot = await fs.mkdtemp(path.join(os.tmpdir(), "feishu-codex-repos-"));
+  it("automatically cancels jobs that exceed the runtime limit", async () => {
+    const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "slack-codex-state-"));
+    const jobsRoot = await fs.mkdtemp(path.join(os.tmpdir(), "slack-codex-jobs-"));
+    const sessionsRoot = await fs.mkdtemp(path.join(os.tmpdir(), "slack-codex-sessions-"));
+    const reposRoot = await fs.mkdtemp(path.join(os.tmpdir(), "slack-codex-repos-"));
     const store = new StateStore(stateDir, sessionsRoot);
     const sessions = new SessionManager({
       stateStore: store,
       sessionsRoot
     });
     await sessions.load();
-    const session = await sessions.ensureChatSession({
-      platform: "feishu",
-      conversationId: "oc_group",
-      rootMessageId: "om_root"
-    }, {
-      conversationKind: "group"
-    });
+    const session = await sessions.ensureSession("C123", "111.333");
     await fs.mkdir(session.workspacePath, { recursive: true });
 
-    const capturePath = path.join(session.workspacePath, "job-env.txt");
-    const seenEvents: Array<{
-      platform: string;
-      conversationId: string;
-      rootMessageId: string;
-      summary: string;
-    }> = [];
+    const seenEvents: Array<{ payload: { summary: string; jobId: string; eventKind: string } }> = [];
     const jobs = new JobManager({
       sessions,
       jobsRoot,
       reposRoot,
       brokerHttpBaseUrl: "http://127.0.0.1:3000",
+      maxRuntimeMs: 100,
       onEvent: async (event) => {
         seenEvents.push({
-          platform: event.platform,
-          conversationId: event.conversationId,
-          rootMessageId: event.rootMessageId,
-          summary: event.payload.summary
+          payload: {
+            summary: event.payload.summary,
+            jobId: event.payload.jobId,
+            eventKind: event.payload.eventKind
+          }
         });
       }
     });
 
     const job = await jobs.registerJob({
-      platform: "feishu",
-      conversationId: "oc_group",
-      rootMessageId: "om_root",
+      channelId: "C123",
+      rootThreadTs: "111.333",
       kind: "watch_ci",
-      script: `#!/usr/bin/env bash\nprintf '%s' "$CHAT_PLATFORM|$CHAT_CONVERSATION_ID|$CHAT_ROOT_MESSAGE_ID|\${SLACK_CHANNEL_ID-unset}|\${SLACK_THREAD_TS-unset}" > ${shellQuote(capturePath)}\nsleep 30`
+      script: "#!/usr/bin/env bash\nsleep 30"
     });
 
-    expect(job).toMatchObject({
-      platform: "feishu",
-      conversationId: "oc_group",
-      rootMessageId: "om_root",
-      channelId: "oc_group",
-      rootThreadTs: "om_root",
-      status: "running"
-    });
-    await expect(waitForFileContents(capturePath)).resolves.toBe("feishu|oc_group|om_root|unset|unset");
-
-    await jobs.emitJobEvent(job.id, job.token, {
-      eventKind: "state_changed",
-      summary: "Feishu watcher changed state."
-    });
-
+    const timedOut = await waitForJobStatus(sessions, job.id, "cancelled");
+    expect(timedOut.cancelledAt).toEqual(expect.any(String));
+    expect(timedOut.completedAt).toEqual(expect.any(String));
+    expect(timedOut.error).toContain("runtime limit");
     expect(seenEvents).toEqual([
       {
-        platform: "feishu",
-        conversationId: "oc_group",
-        rootMessageId: "om_root",
-        summary: "Feishu watcher changed state."
+        payload: {
+          summary: expect.stringContaining("runtime limit"),
+          jobId: job.id,
+          eventKind: "job_cancelled"
+        }
       }
     ]);
 
-    await jobs.cancelJob(job.id, job.token);
+    await jobs.stop();
+  }, 15_000);
+
+  it("cancels restartable jobs that are already past the runtime limit on startup", async () => {
+    const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "slack-codex-state-"));
+    const jobsRoot = await fs.mkdtemp(path.join(os.tmpdir(), "slack-codex-jobs-"));
+    const sessionsRoot = await fs.mkdtemp(path.join(os.tmpdir(), "slack-codex-sessions-"));
+    const reposRoot = await fs.mkdtemp(path.join(os.tmpdir(), "slack-codex-repos-"));
+    const store = new StateStore(stateDir, sessionsRoot);
+    const sessions = new SessionManager({
+      stateStore: store,
+      sessionsRoot
+    });
+    await sessions.load();
+    const session = await sessions.ensureSession("C123", "111.444");
+    await fs.mkdir(session.workspacePath, { recursive: true });
+    const jobDir = path.join(jobsRoot, "expired-job");
+    const scriptPath = path.join(jobDir, "run.sh");
+    await fs.mkdir(jobDir, { recursive: true });
+    await fs.writeFile(scriptPath, "#!/usr/bin/env bash\nsleep 30\n", { mode: 0o755 });
+
+    await sessions.upsertBackgroundJob({
+      id: "expired-job",
+      token: "job-token",
+      sessionKey: session.key,
+      channelId: session.channelId,
+      rootThreadTs: session.rootThreadTs,
+      kind: "watch_ci",
+      shell: "bash",
+      cwd: session.workspacePath,
+      scriptPath,
+      restartOnBoot: true,
+      status: "running",
+      createdAt: new Date(Date.now() - 1_000).toISOString(),
+      updatedAt: new Date(Date.now() - 1_000).toISOString()
+    });
+
+    const seenEvents: string[] = [];
+    const jobs = new JobManager({
+      sessions,
+      jobsRoot,
+      reposRoot,
+      brokerHttpBaseUrl: "http://127.0.0.1:3000",
+      maxRuntimeMs: 100,
+      onEvent: async (event) => {
+        seenEvents.push(event.payload.eventKind);
+      }
+    });
+
+    await jobs.start();
+
+    expect(sessions.getBackgroundJob("expired-job")).toMatchObject({
+      id: "expired-job",
+      status: "cancelled",
+      cancelledAt: expect.any(String),
+      completedAt: expect.any(String),
+      error: expect.stringContaining("runtime limit")
+    });
+    expect(seenEvents).toEqual(["job_cancelled"]);
+
     await jobs.stop();
   });
 
@@ -246,6 +285,64 @@ describe("JobManager", () => {
     await jobs.stop();
   });
 
+  it("lets admin cancel a session-owned job without exposing the job token", async () => {
+    const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "slack-codex-state-"));
+    const jobsRoot = await fs.mkdtemp(path.join(os.tmpdir(), "slack-codex-jobs-"));
+    const sessionsRoot = await fs.mkdtemp(path.join(os.tmpdir(), "slack-codex-sessions-"));
+    const reposRoot = await fs.mkdtemp(path.join(os.tmpdir(), "slack-codex-repos-"));
+    const store = new StateStore(stateDir, sessionsRoot);
+    const sessions = new SessionManager({
+      stateStore: store,
+      sessionsRoot
+    });
+    await sessions.load();
+    const session = await sessions.ensureSession("C123", "444.555");
+    await fs.mkdir(session.workspacePath, { recursive: true });
+    const childPidPath = path.join(session.workspacePath, "child.pid");
+
+    const seenEvents: string[] = [];
+    const jobs = new JobManager({
+      sessions,
+      jobsRoot,
+      reposRoot,
+      brokerHttpBaseUrl: "http://127.0.0.1:3000",
+      onEvent: async (event) => {
+        seenEvents.push(event.payload.eventKind);
+      }
+    });
+
+    const job = await jobs.registerJob({
+      channelId: "C123",
+      rootThreadTs: "444.555",
+      kind: "watch_ci",
+      script: `#!/usr/bin/env bash\nsleep 30 &\necho $! > ${shellQuote(childPidPath)}\nwait`
+    });
+    const childPid = Number(await waitForFileContents(childPidPath));
+
+    await expect(jobs.cancelJobFromAdmin(job.id, {
+      sessionKey: "C999:000.000"
+    })).rejects.toThrow("job_session_mismatch");
+
+    const cancelled = await jobs.cancelJobFromAdmin(job.id, {
+      sessionKey: session.key
+    });
+
+    expect(cancelled).toMatchObject({
+      id: job.id,
+      sessionKey: session.key,
+      status: "cancelled",
+      cancelledAt: expect.any(String),
+      completedAt: expect.any(String)
+    });
+    expect(seenEvents).toEqual([]);
+    await waitForProcessExit(childPid);
+    await expect(jobs.cancelJobFromAdmin(job.id, {
+      sessionKey: session.key
+    })).rejects.toThrow("job_not_cancellable:cancelled");
+
+    await jobs.stop();
+  });
+
   it("injects a runtime-relative helper path into background jobs", async () => {
     const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "slack-codex-state-"));
     const jobsRoot = await fs.mkdtemp(path.join(os.tmpdir(), "slack-codex-jobs-"));
@@ -298,6 +395,44 @@ async function waitForFileContents(filePath: string): Promise<string> {
   throw new Error(`Timed out waiting for ${filePath}`);
 }
 
+async function waitForJobStatus(
+  sessions: SessionManager,
+  jobId: string,
+  status: string
+): Promise<PersistedBackgroundJob> {
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    const job = sessions.getBackgroundJob(jobId);
+    if (job?.status === status) {
+      return job;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+
+  throw new Error(`Timed out waiting for ${jobId} to become ${status}`);
+}
+
+async function waitForProcessExit(pid: number): Promise<void> {
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    if (!isProcessAlive(pid)) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+
+  throw new Error(`Timed out waiting for pid ${pid} to exit`);
+}
+
 function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'\"'\"'`)}'`;
+}
+
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
 }

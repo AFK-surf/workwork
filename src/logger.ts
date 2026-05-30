@@ -13,6 +13,7 @@ interface LoggerConfig {
   readonly rawFeishuEvents: boolean;
   readonly rawCodexRpc: boolean;
   readonly rawHttpRequests: boolean;
+  readonly rawMaxBytes?: number | undefined;
 }
 
 const LEVEL_ORDER: Record<LogLevel, number> = {
@@ -28,13 +29,33 @@ let currentConfig: LoggerConfig = {
   rawSlackEvents: false,
   rawFeishuEvents: false,
   rawCodexRpc: false,
-  rawHttpRequests: false
+  rawHttpRequests: false,
+  rawMaxBytes: 128 * 1024
 };
 
 const writeChains = new Map<string, Promise<void>>();
 
 export function configureLogger(config: LoggerConfig): void {
-  currentConfig = config;
+  currentConfig = {
+    ...config,
+    rawMaxBytes: config.rawMaxBytes ?? 128 * 1024
+  };
+}
+
+export async function flushLoggerForTests(): Promise<void> {
+  await Promise.all([...writeChains.values()]);
+}
+
+export function getBrokerLogDirectory(logDir: string): string {
+  return path.join(logDir, "broker");
+}
+
+export function getSessionLogDirectory(logDir: string, sessionKey: string): string {
+  return path.join(logDir, "sessions", encodeKey(sessionKey));
+}
+
+export function getJobLogDirectory(logDir: string, jobId: string): string {
+  return path.join(logDir, "jobs", encodeKey(jobId));
 }
 
 export async function flushLogger(): Promise<void> {
@@ -59,14 +80,15 @@ export const logger = {
       return;
     }
 
+    const ts = new Date().toISOString();
     const record = {
-      ts: new Date().toISOString(),
+      ts,
       type: "raw",
       stream,
-      payload,
+      payload: limitRawPayload(payload, currentConfig.rawMaxBytes ?? 128 * 1024),
       meta: sanitizeMeta(meta)
     };
-    queueFileWrites(record, meta, path.join("raw", `${stream}.jsonl`));
+    queueFileWrites(record, meta, path.join("raw", stream, `${getLogBucket(ts)}.jsonl`));
   }
 };
 
@@ -75,18 +97,19 @@ function writeLog(level: LogLevel, message: string, meta?: Record<string, unknow
     return;
   }
 
+  const ts = new Date().toISOString();
   const sanitizedMeta = sanitizeMeta(meta);
   const payload = sanitizedMeta ? ` ${JSON.stringify(sanitizedMeta)}` : "";
-  process.stdout.write(`${new Date().toISOString()} ${level.toUpperCase()} ${message}${payload}\n`);
+  process.stdout.write(`${ts} ${level.toUpperCase()} ${message}${payload}\n`);
 
   const record = {
-    ts: new Date().toISOString(),
+    ts,
     type: "log",
     level,
     message,
     meta: sanitizedMeta
   };
-  queueFileWrites(record, sanitizedMeta, "broker.jsonl");
+  queueFileWrites(record, sanitizedMeta, path.join("broker", `${getLogBucket(ts)}.jsonl`));
 }
 
 function queueFileWrites(record: Record<string, unknown>, meta: Record<string, unknown> | undefined, relativePath: string): void {
@@ -95,15 +118,28 @@ function queueFileWrites(record: Record<string, unknown>, meta: Record<string, u
   }
 
   const targets = new Set<string>([path.join(currentConfig.logDir, relativePath)]);
+  const legacyBrokerPath = relativePath.match(/^broker\/[^/]+\.jsonl$/);
+  const legacyRawPath = relativePath.match(/^raw\/([^/]+)\/[^/]+\.jsonl$/);
+  if (legacyBrokerPath) {
+    targets.add(path.join(currentConfig.logDir, "broker.jsonl"));
+  }
+  if (legacyRawPath?.[1]) {
+    targets.add(path.join(currentConfig.logDir, "raw", `${legacyRawPath[1]}.jsonl`));
+  }
   const sessionKey = resolveSessionKey(meta);
   const jobId = typeof meta?.jobId === "string" ? meta.jobId : undefined;
+  const bucket = getLogBucket(String(record.ts));
 
   if (sessionKey) {
-    targets.add(path.join(currentConfig.logDir, "sessions", `${encodeKey(sessionKey)}.jsonl`));
+    const encodedSessionKey = encodeKey(sessionKey);
+    targets.add(path.join(currentConfig.logDir, "sessions", encodedSessionKey, `${bucket}.jsonl`));
+    targets.add(path.join(currentConfig.logDir, "sessions", `${encodedSessionKey}.jsonl`));
   }
 
   if (jobId) {
-    targets.add(path.join(currentConfig.logDir, "jobs", `${encodeKey(jobId)}.jsonl`));
+    const encodedJobId = encodeKey(jobId);
+    targets.add(path.join(currentConfig.logDir, "jobs", encodedJobId, `${bucket}.jsonl`));
+    targets.add(path.join(currentConfig.logDir, "jobs", `${encodedJobId}.jsonl`));
   }
 
   for (const target of targets) {
@@ -152,8 +188,45 @@ function sanitizeMeta(meta?: Record<string, unknown>): Record<string, unknown> |
   return JSON.parse(JSON.stringify(meta)) as Record<string, unknown>;
 }
 
+function limitRawPayload(payload: unknown, maxBytes: number): unknown {
+  if (maxBytes <= 0) {
+    return payload;
+  }
+
+  const json = safeStringify(payload);
+  const byteLength = Buffer.byteLength(json, "utf8");
+  if (byteLength <= maxBytes) {
+    return JSON.parse(json) as unknown;
+  }
+
+  return {
+    truncated: true,
+    originalBytes: byteLength,
+    maxBytes,
+    preview: truncateUtf8(json, maxBytes)
+  };
+}
+
+function safeStringify(value: unknown): string {
+  try {
+    const encoded = JSON.stringify(value);
+    return typeof encoded === "string" ? encoded : "null";
+  } catch {
+    return JSON.stringify(String(value));
+  }
+}
+
+function truncateUtf8(value: string, maxBytes: number): string {
+  const buffer = Buffer.from(value, "utf8");
+  return buffer.subarray(0, Math.max(0, maxBytes)).toString("utf8");
+}
+
 function encodeKey(value: string): string {
   return Buffer.from(value, "utf8").toString("base64url");
+}
+
+function getLogBucket(timestamp: string): string {
+  return timestamp.slice(0, 13).replace("T", "-");
 }
 
 function isRawStreamEnabled(stream: RawStream): boolean {

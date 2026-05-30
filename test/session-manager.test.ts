@@ -18,7 +18,10 @@ describe("SessionManager", () => {
     });
 
     await manager.load();
-    const session = await manager.ensureSession("C123", "111.222");
+    const session = await manager.ensureSession("C123", "111.222", {
+      channelName: "deep-review",
+      channelType: "channel"
+    });
 
     expect(session.workspacePath).toBe(path.join(sessionsRoot, "C123-111-222", "workspace"));
 
@@ -29,15 +32,23 @@ describe("SessionManager", () => {
     });
     await reloadedManager.load();
 
-    expect(reloadedManager.getSession("C123", "111.222")?.key).toBe("C123:111.222");
     expect(reloadedManager.getSession("C123", "111.222")).toMatchObject({
-      platform: "slack",
-      conversationId: "C123",
-      rootMessageId: "111.222"
+      key: "C123:111.222",
+      channelName: "deep-review",
+      channelType: "channel"
+    });
+
+    await reloadedManager.setChannelMetadata("C123", "111.222", {
+      channelName: "admin-ui",
+      channelType: "group"
+    });
+    expect(reloadedManager.getSession("C123", "111.222")).toMatchObject({
+      channelName: "admin-ui",
+      channelType: "group"
     });
   });
 
-  it("creates platform-scoped Feishu chat sessions without changing Slack key compatibility", async () => {
+  it("records the session initiator once and never replaces it with later input", async () => {
     const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "slack-codex-state-"));
     const sessionsRoot = await fs.mkdtemp(path.join(os.tmpdir(), "slack-codex-sessions-"));
     const store = new StateStore(stateDir, sessionsRoot);
@@ -47,36 +58,31 @@ describe("SessionManager", () => {
     });
 
     await manager.load();
-    const slack = await manager.ensureChatSession({
-      platform: "slack",
-      conversationId: "C123",
-      rootMessageId: "111.222"
+    const created = await manager.ensureSession("C123", "111.222", {
+      channelName: "deep-review",
+      channelType: "channel",
+      initiatorUserId: "U_STARTER",
+      initiatorMessageTs: "111.223"
     });
-    const feishu = await manager.ensureChatSession(
-      {
-        platform: "feishu",
-        conversationId: "oc_group",
-        rootMessageId: "om_root"
-      },
-      {
-        conversationKind: "group",
-        platformThreadId: "omt_thread"
-      }
-    );
 
-    expect(slack.key).toBe("C123:111.222");
-    expect(slack.workspacePath).toBe(path.join(sessionsRoot, "C123-111-222", "workspace"));
-    expect(feishu).toMatchObject({
-      key: "feishu:b2NfZ3JvdXA:b21fcm9vdA",
-      platform: "feishu",
-      conversationId: "oc_group",
-      conversationKind: "group",
-      rootMessageId: "om_root",
-      platformThreadId: "omt_thread",
-      channelId: "oc_group",
-      rootThreadTs: "om_root"
+    expect(created).toMatchObject({
+      initiatorUserId: "U_STARTER",
+      initiatorMessageTs: "111.223",
+      initiatorCapturedAt: expect.any(String)
     });
-    expect(feishu.workspacePath).toBe(path.join(sessionsRoot, "feishu-oc-group-om-root", "workspace"));
+
+    const existing = await manager.ensureSession("C123", "111.222", {
+      channelName: "renamed",
+      initiatorUserId: "U_LATER",
+      initiatorMessageTs: "111.224"
+    });
+
+    expect(existing).toMatchObject({
+      channelName: "renamed",
+      initiatorUserId: "U_STARTER",
+      initiatorMessageTs: "111.223",
+      initiatorCapturedAt: created.initiatorCapturedAt
+    });
 
     const reloadedStore = new StateStore(stateDir, sessionsRoot);
     const reloadedManager = new SessionManager({
@@ -85,54 +91,11 @@ describe("SessionManager", () => {
     });
     await reloadedManager.load();
 
-    expect(
-      reloadedManager.getChatSession({
-        platform: "feishu",
-        conversationId: "oc_group",
-        rootMessageId: "om_root"
-      })
-    ).toMatchObject({
-      key: "feishu:b2NfZ3JvdXA:b21fcm9vdA",
-      platform: "feishu",
-      conversationKind: "group",
-      platformThreadId: "omt_thread"
+    expect(reloadedManager.getSession("C123", "111.222")).toMatchObject({
+      initiatorUserId: "U_STARTER",
+      initiatorMessageTs: "111.223",
+      initiatorCapturedAt: created.initiatorCapturedAt
     });
-  });
-
-  it("does not reinterpret legacy Slack sessions as Feishu sessions with matching coordinates", async () => {
-    const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "slack-codex-state-"));
-    const sessionsRoot = await fs.mkdtemp(path.join(os.tmpdir(), "slack-codex-sessions-"));
-    const store = new StateStore(stateDir, sessionsRoot);
-    const manager = new SessionManager({
-      stateStore: store,
-      sessionsRoot
-    });
-
-    await manager.load();
-    const legacySlack = await manager.ensureSession("C123", "111.222");
-
-    expect(manager.getChatSession({
-      platform: "feishu",
-      conversationId: "C123",
-      rootMessageId: "111.222"
-    })).toBeUndefined();
-
-    const feishu = await manager.ensureChatSession({
-      platform: "feishu",
-      conversationId: "C123",
-      rootMessageId: "111.222"
-    }, {
-      conversationKind: "group"
-    });
-
-    expect(feishu.key).toBe("feishu:QzEyMw:MTExLjIyMg");
-    expect(feishu.key).not.toBe(legacySlack.key);
-    expect(manager.getSession("C123", "111.222")?.platform).toBe("slack");
-    expect(manager.getChatSession({
-      platform: "feishu",
-      conversationId: "C123",
-      rootMessageId: "111.222"
-    })?.platform).toBe("feishu");
   });
 
   it("updates codex thread and active turn metadata", async () => {
@@ -146,20 +109,19 @@ describe("SessionManager", () => {
 
     await manager.load();
     await manager.ensureSession("C123", "111.222");
-    await manager.setCodexThreadId("C123", "111.222", "thread-1");
+    await manager.setAgentSessionId("C123", "111.222", "thread-1");
     const updated = await manager.setActiveTurnId("C123", "111.222", "turn-1");
 
-    expect(updated.codexThreadId).toBe("thread-1");
+    expect(updated.agentSessionId).toBe("thread-1");
     expect(updated.activeTurnId).toBe("turn-1");
     expect(updated.activeTurnStartedAt).toBeTruthy();
-    expect(updated.lastProgressReminderAt).toBeUndefined();
 
     const cleared = await manager.setActiveTurnId("C123", "111.222", undefined);
     expect(cleared.activeTurnId).toBeUndefined();
     expect(cleared.activeTurnStartedAt).toBeUndefined();
   });
 
-  it("updates Feishu codex thread and active turn metadata through chat coordinates", async () => {
+  it("persists auth profile binding and blocked state", async () => {
     const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "slack-codex-state-"));
     const sessionsRoot = await fs.mkdtemp(path.join(os.tmpdir(), "slack-codex-sessions-"));
     const store = new StateStore(stateDir, sessionsRoot);
@@ -167,24 +129,17 @@ describe("SessionManager", () => {
       stateStore: store,
       sessionsRoot
     });
-    const coordinates = {
-      platform: "feishu" as const,
-      conversationId: "oc_group",
-      rootMessageId: "om_root"
-    };
 
     await manager.load();
-    await manager.ensureChatSession(coordinates, {
-      conversationKind: "group"
+    const session = await manager.ensureSession("C123", "111.222");
+    await manager.setSessionAuthProfile(session.key, "profile-a", {
+      boundAt: "2026-05-09T00:00:00.000Z"
     });
-    await manager.setChatCodexThreadId(coordinates, "thread-1");
-    const updated = await manager.setChatActiveTurnId(coordinates, "turn-1");
-
-    expect(updated).toMatchObject({
-      key: "feishu:b2NfZ3JvdXA:b21fcm9vdA",
-      codexThreadId: "thread-1",
-      activeTurnId: "turn-1"
+    await manager.markSessionAuthBlocked(session.key, {
+      reason: "primary_quota_exhausted",
+      blockedAt: "2026-05-09T01:00:00.000Z"
     });
+    await manager.setSessionAuthBlockedNoticePostedAt(session.key, "2026-05-09T01:00:05.000Z");
 
     const reloadedStore = new StateStore(stateDir, sessionsRoot);
     const reloadedManager = new SessionManager({
@@ -193,9 +148,42 @@ describe("SessionManager", () => {
     });
     await reloadedManager.load();
 
-    expect(reloadedManager.getChatSession(coordinates)).toMatchObject({
-      codexThreadId: "thread-1",
-      activeTurnId: "turn-1"
+    expect(reloadedManager.getSession("C123", "111.222")).toMatchObject({
+      authProfileName: "profile-a",
+      authProfileBoundAt: "2026-05-09T00:00:00.000Z",
+      authBlockedAt: "2026-05-09T01:00:00.000Z",
+      authBlockReason: "primary_quota_exhausted",
+      authBlockedNoticePostedAt: "2026-05-09T01:00:05.000Z"
+    });
+
+    const switched = await reloadedManager.switchSessionAuthProfileAndClearBlock(session.key, "profile-b", {
+      boundAt: "2026-05-09T02:00:00.000Z"
+    });
+
+    expect(switched).toMatchObject({
+      authProfileName: "profile-b",
+      authProfileBoundAt: "2026-05-09T02:00:00.000Z",
+      authBlockedAt: undefined,
+      authBlockReason: undefined,
+      authBlockedNoticePostedAt: undefined,
+      agentSessionId: undefined,
+      activeTurnId: undefined
+    });
+
+    await reloadedManager.markSessionAuthBlocked(session.key, {
+      reason: "primary_quota_exhausted",
+      blockedAt: "2026-05-09T03:00:00.000Z"
+    });
+    await reloadedManager.setSessionAuthBlockedNoticePostedAt(session.key, "2026-05-09T03:00:05.000Z");
+
+    const recovered = await (reloadedManager as any).clearSessionAuthBlock(session.key);
+
+    expect(recovered).toMatchObject({
+      authProfileName: "profile-b",
+      authProfileBoundAt: "2026-05-09T02:00:00.000Z",
+      authBlockedAt: undefined,
+      authBlockReason: undefined,
+      authBlockedNoticePostedAt: undefined
     });
   });
 
@@ -251,36 +239,6 @@ describe("SessionManager", () => {
     ).toHaveLength(1);
   });
 
-  it("persists observed cursors for platform-aware chat sessions", async () => {
-    const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "slack-codex-state-"));
-    const sessionsRoot = await fs.mkdtemp(path.join(os.tmpdir(), "slack-codex-sessions-"));
-    const coordinates = {
-      platform: "feishu" as const,
-      conversationId: "oc_group",
-      rootMessageId: "om_root"
-    };
-    const manager = new SessionManager({
-      stateStore: new StateStore(stateDir, sessionsRoot),
-      sessionsRoot
-    });
-
-    await manager.load();
-    await manager.ensureChatSession(coordinates, {
-      conversationKind: "group"
-    });
-    await manager.setChatLastObservedMessageTs(coordinates, "1710000000000");
-
-    const reloadedManager = new SessionManager({
-      stateStore: new StateStore(stateDir, sessionsRoot),
-      sessionsRoot
-    });
-    await reloadedManager.load();
-
-    expect(reloadedManager.getChatSession(coordinates)).toMatchObject({
-      lastObservedMessageTs: "1710000000000"
-    });
-  });
-
   it("persists background job metadata", async () => {
     const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "slack-codex-state-"));
     const sessionsRoot = await fs.mkdtemp(path.join(os.tmpdir(), "slack-codex-sessions-"));
@@ -321,6 +279,26 @@ describe("SessionManager", () => {
       status: "running",
       sessionKey: "C123:111.222"
     });
+  });
+
+  it("deletes the session-owned workspace root with the session record", async () => {
+    const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "slack-codex-state-"));
+    const sessionsRoot = await fs.mkdtemp(path.join(os.tmpdir(), "slack-codex-sessions-"));
+    const store = new StateStore(stateDir, sessionsRoot);
+    const manager = new SessionManager({
+      stateStore: store,
+      sessionsRoot
+    });
+
+    await manager.load();
+    const session = await manager.ensureSession("C123", "333.444");
+    const sessionRoot = path.dirname(session.workspacePath);
+    await fs.writeFile(path.join(session.workspacePath, "marker.txt"), "owned workspace");
+
+    await expect(manager.deleteSessionByKey(session.key)).resolves.toBe(true);
+
+    expect(manager.getSessionByKey(session.key)).toBeUndefined();
+    await expect(fs.access(sessionRoot)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("does not restore a stale active turn when turn state and turn signal write concurrently", async () => {
@@ -372,18 +350,21 @@ describe("SessionManager", () => {
 
     session = await manager.confirmCoAuthors("C123", "999.000", {
       userIds: ["U1"],
-      candidateRevision: 1
+      candidateRevision: 1,
+      ignoreMissing: true
     });
     expect(session).toMatchObject({
       coAuthorConfirmedUserIds: ["U1"],
-      coAuthorConfirmedRevision: 1
+      coAuthorConfirmedRevision: 1,
+      coAuthorIgnoreMissingRevision: 1
     });
 
     session = await manager.addCoAuthorCandidates("C123", "999.000", ["U2"]);
     expect(session).toMatchObject({
       coAuthorCandidateUserIds: ["U1", "U2"],
       coAuthorCandidateRevision: 2,
-      coAuthorConfirmedRevision: 1
+      coAuthorConfirmedRevision: 1,
+      coAuthorIgnoreMissingRevision: undefined
     });
 
     const reloadedStore = new StateStore(stateDir, sessionsRoot);
@@ -396,7 +377,8 @@ describe("SessionManager", () => {
       coAuthorCandidateUserIds: ["U1", "U2"],
       coAuthorCandidateRevision: 2,
       coAuthorConfirmedUserIds: ["U1"],
-      coAuthorConfirmedRevision: 1
+      coAuthorConfirmedRevision: 1,
+      coAuthorIgnoreMissingRevision: undefined
     });
   });
 });

@@ -10,7 +10,7 @@ describe("SlackTurnReconciler", () => {
       channelId: "C123",
       rootThreadTs: "111.222",
       workspacePath: "/tmp/workspace",
-      codexThreadId: "thread-1",
+      agentSessionId: "thread-1",
       activeTurnId: "turn-1",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
@@ -19,7 +19,7 @@ describe("SlackTurnReconciler", () => {
     const setActiveTurnId = vi.fn();
     const resetTurnBatchToPending = vi.fn();
     const readTurnSnapshot = vi.fn(async () => null);
-    const ensureCodexThread = vi.fn(async () => session);
+    const ensureAgentSession = vi.fn(async () => session);
 
     const reconciler = new SlackTurnReconciler({
       sessions: {
@@ -29,18 +29,59 @@ describe("SlackTurnReconciler", () => {
         resetTurnBatchToPending
       } as never,
       turnRunner: {
-        ensureCodexThread,
+        ensureAgentSession,
         readTurnSnapshot
       } as never
     });
 
     await expect(reconciler.reconcileSingleActiveTurn(session)).resolves.toBe("retained");
-    expect(ensureCodexThread).toHaveBeenCalledWith(session);
+    expect(ensureAgentSession).toHaveBeenCalledWith(session);
     expect(readTurnSnapshot).toHaveBeenCalledWith(session, "turn-1", {
       syncActiveTurn: true,
       treatMissingAsStale: false
     });
     expect(resetTurnBatchToPending).not.toHaveBeenCalled();
     expect(setActiveTurnId).not.toHaveBeenCalled();
+  });
+
+  it("clears an active turn when startup reconciliation treats a missing snapshot turn as stale", async () => {
+    const session: SlackSessionRecord = {
+      key: "C123:111.222",
+      channelId: "C123",
+      rootThreadTs: "111.222",
+      workspacePath: "/tmp/workspace",
+      agentSessionId: "thread-1",
+      activeTurnId: "turn-1",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    const setActiveTurnId = vi.fn(async () => session);
+    const resetTurnBatchToPending = vi.fn();
+    const readTurnSnapshot = vi.fn(async () => null);
+    const ensureAgentSession = vi.fn(async () => session);
+
+    const reconciler = new SlackTurnReconciler({
+      sessions: {
+        setActiveTurnId
+      } as never,
+      inboundStore: {
+        resetTurnBatchToPending
+      } as never,
+      turnRunner: {
+        ensureAgentSession,
+        readTurnSnapshot
+      } as never
+    });
+
+    await expect(reconciler.reconcileSingleActiveTurn(session, {
+      treatMissingAsStale: true
+    })).resolves.toBe("cleared");
+    expect(readTurnSnapshot).toHaveBeenCalledWith(session, "turn-1", {
+      syncActiveTurn: true,
+      treatMissingAsStale: true
+    });
+    expect(resetTurnBatchToPending).toHaveBeenCalledWith(session, "turn-1");
+    expect(setActiveTurnId).toHaveBeenCalledWith("C123", "111.222", undefined);
   });
 });

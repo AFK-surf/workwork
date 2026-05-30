@@ -29,11 +29,48 @@ export interface SlackUploadedFile {
   readonly size?: number | undefined;
 }
 
+export interface SlackDownloadedFile {
+  readonly bytes: Buffer;
+  readonly contentType: string;
+}
+
+export interface SlackConversationInfo {
+  readonly channelId: string;
+  readonly name?: string | undefined;
+  readonly channelType?: string | undefined;
+}
+
+export class SlackApiError extends Error {
+  readonly path: string;
+  readonly status: number;
+  readonly statusText: string;
+  readonly retryAfterMs?: number | undefined;
+
+  constructor(options: {
+    readonly path: string;
+    readonly status: number;
+    readonly statusText: string;
+    readonly retryAfterMs?: number | undefined;
+  }) {
+    super(`Slack API request failed (${options.status} ${options.statusText}) for ${options.path}`);
+    this.name = "SlackApiError";
+    this.path = options.path;
+    this.status = options.status;
+    this.statusText = options.statusText;
+    this.retryAfterMs = options.retryAfterMs;
+  }
+}
+
+export function isSlackRateLimitError(error: unknown): error is SlackApiError {
+  return error instanceof SlackApiError && error.status === 429;
+}
+
 export class SlackApi {
   readonly #baseUrl: string;
   readonly #appToken: string;
   readonly #botToken: string;
   readonly #userIdentityCache = new Map<string, Promise<SlackUserIdentity | null>>();
+  readonly #conversationInfoCache = new Map<string, Promise<SlackConversationInfo | null>>();
 
   constructor(options: {
     readonly baseUrl: string;
@@ -287,6 +324,49 @@ export class SlackApi {
     }
   }
 
+  async getConversationInfo(channelId: string): Promise<SlackConversationInfo | null> {
+    const cached = this.#conversationInfoCache.get(channelId);
+    if (cached) {
+      return await cached;
+    }
+
+    const pending = this.#fetchConversationInfo(channelId);
+    this.#conversationInfoCache.set(channelId, pending);
+
+    try {
+      return await pending;
+    } catch (error) {
+      logger.warn("Failed to fetch Slack conversation info", {
+        channelId,
+        error: error instanceof Error ? error.message : String(error)
+      });
+      this.#conversationInfoCache.set(channelId, Promise.resolve(null));
+      return null;
+    }
+  }
+
+  async getPermalink(options: {
+    readonly channelId: string;
+    readonly messageTs: string;
+  }): Promise<string> {
+    const response = await this.#post<{
+      permalink?: string;
+    }>(
+      "chat.getPermalink",
+      {
+        channel: options.channelId,
+        message_ts: options.messageTs
+      },
+      this.#botToken
+    );
+
+    if (!response.permalink) {
+      throw new Error("Slack chat.getPermalink response did not include permalink");
+    }
+
+    return response.permalink;
+  }
+
   async listThreadMessages(options: {
     readonly channelId: string;
     readonly rootThreadTs: string;
@@ -308,7 +388,7 @@ export class SlackApi {
       const author = resolveSlackMessageAuthor(message);
       const messageTs = typeof message.ts === "string" ? message.ts : undefined;
       const text = typeof message.text === "string" ? message.text : "";
-      const images = normalizeSlackImageAttachments(message.files);
+      const images = normalizeSlackFileAttachments(message.files);
       const isSupportedSubtype = isSupportedSlackMessageSubtype(message.subtype);
       const slackMessage = normalizeSlackJson(message);
 
@@ -335,8 +415,8 @@ export class SlackApi {
     });
   }
 
-  async downloadImageAsDataUrl(image: SlackImageAttachment): Promise<string> {
-    const response = await fetch(image.url, {
+  async downloadFileAttachment(file: SlackImageAttachment): Promise<SlackDownloadedFile> {
+    const response = await fetch(file.url, {
       method: "GET",
       headers: {
         authorization: `Bearer ${this.#botToken}`
@@ -345,18 +425,21 @@ export class SlackApi {
 
     if (!response.ok) {
       throw new Error(
-        `Slack image download failed (${response.status} ${response.statusText}) for ${image.fileId}`
+        `Slack file download failed (${response.status} ${response.statusText}) for ${file.fileId}`
       );
     }
 
     const rawContentType = response.headers.get("content-type");
-    const mediaType =
+    const contentType =
       rawContentType?.split(";")[0]?.trim() ||
-      image.mimetype ||
+      file.mimetype ||
       "application/octet-stream";
     const bytes = Buffer.from(await response.arrayBuffer());
 
-    return `data:${mediaType};base64,${bytes.toString("base64")}`;
+    return {
+      bytes,
+      contentType
+    };
   }
 
   async #uploadExternalFile(
@@ -427,6 +510,36 @@ export class SlackApi {
     };
   }
 
+  async #fetchConversationInfo(channelId: string): Promise<SlackConversationInfo | null> {
+    const response = await this.#post<{
+      channel?: {
+        id?: string;
+        name?: string;
+        name_normalized?: string;
+        is_im?: boolean;
+        is_mpim?: boolean;
+        is_group?: boolean;
+        is_channel?: boolean;
+      };
+    }>(
+      "conversations.info",
+      {
+        channel: channelId
+      },
+      this.#botToken
+    );
+
+    if (!response.channel?.id) {
+      return null;
+    }
+
+    return {
+      channelId: response.channel.id,
+      name: normalizeSlackField(response.channel.name) ?? normalizeSlackField(response.channel.name_normalized),
+      channelType: conversationType(response.channel)
+    };
+  }
+
   async #post<T extends Record<string, unknown>>(
     path: string,
     body: Record<string, unknown>,
@@ -452,7 +565,12 @@ export class SlackApi {
     });
 
     if (!response.ok) {
-      throw new Error(`Slack API request failed (${response.status} ${response.statusText}) for ${path}`);
+      throw new SlackApiError({
+        path,
+        status: response.status,
+        statusText: response.statusText,
+        retryAfterMs: parseRetryAfterMs(response.headers.get("retry-after"))
+      });
     }
 
     const payload = await response.json() as SlackApiResponse<T> & T;
@@ -465,7 +583,18 @@ export class SlackApi {
   }
 }
 
-export function normalizeSlackImageAttachments(files: unknown): SlackImageAttachment[] {
+function parseRetryAfterMs(header: string | null): number | undefined {
+  if (!header) {
+    return undefined;
+  }
+  const seconds = Number(header);
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    return undefined;
+  }
+  return Math.ceil(seconds * 1_000);
+}
+
+export function normalizeSlackFileAttachments(files: unknown): SlackImageAttachment[] {
   if (!Array.isArray(files)) {
     return [];
   }
@@ -479,11 +608,11 @@ export function normalizeSlackImageAttachments(files: unknown): SlackImageAttach
     const fileId = normalizeSlackField(file.id);
     const mimetype = normalizeSlackField(file.mimetype);
 
-    if (!fileId || !mimetype?.startsWith("image/")) {
+    if (!fileId) {
       return [];
     }
 
-    const url = pickSlackImageUrl(file);
+    const url = pickSlackFileUrl(file);
     if (!url) {
       return [];
     }
@@ -494,6 +623,8 @@ export function normalizeSlackImageAttachments(files: unknown): SlackImageAttach
         name: normalizeSlackField(file.name),
         title: normalizeSlackField(file.title),
         mimetype,
+        filetype: normalizeSlackField(file.filetype),
+        size: normalizeSlackNumber(file.size),
         width: normalizeSlackNumber(
           file.original_w ??
             file.thumb_1024_w ??
@@ -515,6 +646,8 @@ export function normalizeSlackImageAttachments(files: unknown): SlackImageAttach
     ];
   });
 }
+
+export const normalizeSlackImageAttachments = normalizeSlackFileAttachments;
 
 export function normalizeSlackJson(value: unknown): JsonLike | undefined {
   if (value === null) {
@@ -617,7 +750,7 @@ function isSupportedSlackMessageSubtype(value: unknown): boolean {
   ].includes(subtype);
 }
 
-function pickSlackImageUrl(file: Record<string, unknown>): string | undefined {
+function pickSlackFileUrl(file: Record<string, unknown>): string | undefined {
   const candidates = [
     file.thumb_1024,
     file.thumb_960,
@@ -645,6 +778,27 @@ function normalizeSlackField(value: unknown): string | undefined {
 
   const trimmed = value.trim();
   return trimmed ? trimmed : undefined;
+}
+
+function conversationType(channel: {
+  readonly is_im?: boolean;
+  readonly is_mpim?: boolean;
+  readonly is_group?: boolean;
+  readonly is_channel?: boolean;
+}): string | undefined {
+  if (channel.is_im) {
+    return "im";
+  }
+  if (channel.is_mpim) {
+    return "mpim";
+  }
+  if (channel.is_group) {
+    return "group";
+  }
+  if (channel.is_channel) {
+    return "channel";
+  }
+  return undefined;
 }
 
 function normalizeSlackNumber(value: unknown): number | undefined {

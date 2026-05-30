@@ -23,15 +23,19 @@ interface BackgroundJobCoordinates {
 
 interface RuntimeBackgroundJob {
   readonly process: ChildProcessByStdio<null, Readable, Readable>;
+  readonly timeoutTimer: ReturnType<typeof setTimeout>;
   stderrTail: string;
   stopping: boolean;
 }
+
+const DEFAULT_BACKGROUND_JOB_MAX_RUNTIME_MS = 5 * 60 * 60 * 1000;
 
 export class JobManager {
   readonly #sessions: SessionManager;
   readonly #jobsRoot: string;
   readonly #reposRoot: string;
   readonly #brokerHttpBaseUrl: string;
+  readonly #maxRuntimeMs: number;
   readonly #runtimeJobs = new Map<string, RuntimeBackgroundJob>();
   readonly #onEvent: (event: {
     readonly platform: ChatPlatform;
@@ -45,6 +49,7 @@ export class JobManager {
     readonly jobsRoot: string;
     readonly reposRoot: string;
     readonly brokerHttpBaseUrl: string;
+    readonly maxRuntimeMs?: number | undefined;
     readonly onEvent: (event: {
       readonly platform: ChatPlatform;
       readonly conversationId: string;
@@ -56,6 +61,7 @@ export class JobManager {
     this.#jobsRoot = options.jobsRoot;
     this.#reposRoot = options.reposRoot;
     this.#brokerHttpBaseUrl = options.brokerHttpBaseUrl;
+    this.#maxRuntimeMs = options.maxRuntimeMs ?? DEFAULT_BACKGROUND_JOB_MAX_RUNTIME_MS;
     this.#onEvent = options.onEvent;
   }
 
@@ -71,7 +77,7 @@ export class JobManager {
         continue;
       }
 
-      await this.#startExistingJob(job);
+      await this.#startExistingJob(job, { respectExistingRuntimeAge: true });
     }
   }
 
@@ -136,7 +142,7 @@ export class JobManager {
     };
 
     await this.#sessions.upsertBackgroundJob(job);
-    await this.#startExistingJob(job);
+    await this.#startExistingJob(job, { respectExistingRuntimeAge: false });
 
     return this.#requireJob(id);
   }
@@ -259,9 +265,13 @@ export class JobManager {
     options?: {
       readonly skipTokenCheck?: boolean | undefined;
       readonly skipEvent?: boolean | undefined;
+      readonly expectedSessionKey?: string | undefined;
     }
   ): Promise<PersistedBackgroundJob> {
     const job = options?.skipTokenCheck ? this.#requireJob(id) : this.#authorizeJob(id, token);
+    if (options?.expectedSessionKey && job.sessionKey !== options.expectedSessionKey) {
+      throw new Error("job_session_mismatch");
+    }
     const now = new Date().toISOString();
     const updated = await this.#persistJob({
       ...job,
@@ -283,8 +293,38 @@ export class JobManager {
     return updated;
   }
 
-  async #startExistingJob(job: PersistedBackgroundJob): Promise<void> {
+  async cancelJobFromAdmin(
+    id: string,
+    options: {
+      readonly sessionKey: string;
+    }
+  ): Promise<PersistedBackgroundJob> {
+    const job = this.#requireJob(id);
+    if (job.sessionKey !== options.sessionKey) {
+      throw new Error("job_session_mismatch");
+    }
+    if (!isCancellableJobStatus(job.status)) {
+      throw new Error(`job_not_cancellable:${job.status}`);
+    }
+    return await this.cancelJob(id, undefined, {
+      skipTokenCheck: true,
+      skipEvent: true,
+      expectedSessionKey: options.sessionKey
+    });
+  }
+
+  async #startExistingJob(
+    job: PersistedBackgroundJob,
+    options: {
+      readonly respectExistingRuntimeAge: boolean;
+    }
+  ): Promise<void> {
     if (this.#runtimeJobs.has(job.id)) {
+      return;
+    }
+
+    if (options.respectExistingRuntimeAge && this.#jobRuntimeRemainingMs(job) <= 0) {
+      await this.#cancelTimedOutJob(job);
       return;
     }
 
@@ -313,6 +353,7 @@ export class JobManager {
       const child = spawn(job.scriptPath, [], {
         cwd: job.cwd,
         env,
+        detached: process.platform !== "win32",
         stdio: ["ignore", "pipe", "pipe"]
       });
       await new Promise<void>((resolve, reject) => {
@@ -322,6 +363,7 @@ export class JobManager {
 
       const runtime: RuntimeBackgroundJob = {
         process: child,
+        timeoutTimer: this.#createTimeoutTimer(job, options),
         stderrTail: "",
         stopping: false
       };
@@ -382,6 +424,9 @@ export class JobManager {
     signal: NodeJS.Signals | null
   ): Promise<void> {
     const runtime = this.#runtimeJobs.get(jobId);
+    if (runtime) {
+      clearTimeout(runtime.timeoutTimer);
+    }
     this.#runtimeJobs.delete(jobId);
 
     const job = this.#sessions.getBackgroundJob(jobId);
@@ -442,6 +487,7 @@ export class JobManager {
       return;
     }
 
+    clearTimeout(runtime.timeoutTimer);
     runtime.stopping = true;
     const child = runtime.process;
 
@@ -450,16 +496,88 @@ export class JobManager {
       return;
     }
 
-    child.kill("SIGTERM");
+    killRuntimeJobProcess(child, "SIGTERM");
     const exited = await waitForChildExit(child, 5_000);
     if (exited) {
       this.#runtimeJobs.delete(jobId);
       return;
     }
 
-    child.kill("SIGKILL");
+    killRuntimeJobProcess(child, "SIGKILL");
     await waitForChildExit(child, 2_000);
     this.#runtimeJobs.delete(jobId);
+  }
+
+  #createTimeoutTimer(
+    job: PersistedBackgroundJob,
+    options: {
+      readonly respectExistingRuntimeAge: boolean;
+    }
+  ): ReturnType<typeof setTimeout> {
+    const delayMs = Math.max(
+      0,
+      options.respectExistingRuntimeAge ? this.#jobRuntimeRemainingMs(job) : this.#maxRuntimeMs
+    );
+    const timeoutTimer = setTimeout(() => {
+      void this.#handleJobTimeout(job.id);
+    }, delayMs);
+    timeoutTimer.unref?.();
+    return timeoutTimer;
+  }
+
+  async #handleJobTimeout(jobId: string): Promise<void> {
+    try {
+      const job = this.#sessions.getBackgroundJob(jobId);
+      if (!job || !isCancellableJobStatus(job.status)) {
+        return;
+      }
+
+      await this.#cancelTimedOutJob(job);
+    } catch (error) {
+      logger.warn("Failed to stop background job after runtime limit", {
+        jobId,
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+
+  async #cancelTimedOutJob(job: PersistedBackgroundJob): Promise<PersistedBackgroundJob> {
+    if (!isCancellableJobStatus(job.status)) {
+      return job;
+    }
+
+    const now = new Date().toISOString();
+    const summary = `Background job ${job.id} exceeded the runtime limit (${formatRuntimeLimit(this.#maxRuntimeMs)}) and was cancelled.`;
+    const updated = await this.#persistJob({
+      ...job,
+      status: "cancelled",
+      cancelledAt: now,
+      completedAt: now,
+      error: summary
+    });
+
+    if (!this.#shouldSuppressEventForFinalizedSession(updated)) {
+      await this.#emitEvent(updated, {
+        jobId: updated.id,
+        jobKind: updated.kind,
+        eventKind: "job_cancelled",
+        summary
+      });
+    }
+
+    await this.#stopRuntimeJob(updated.id);
+    return updated;
+  }
+
+  #jobRuntimeRemainingMs(job: PersistedBackgroundJob): number {
+    // Use createdAt rather than startedAt so restartable jobs that were already
+    // over the runtime limit while the broker was down are cancelled on boot.
+    const createdAtMs = Date.parse(job.createdAt);
+    if (!Number.isFinite(createdAtMs)) {
+      return this.#maxRuntimeMs;
+    }
+
+    return this.#maxRuntimeMs - (Date.now() - createdAtMs);
   }
 
   async #emitEvent(
@@ -569,6 +687,54 @@ function resolveJobCwd(workspacePath: string, cwd?: string | undefined): string 
   return path.isAbsolute(trimmed)
     ? path.resolve(trimmed)
     : path.resolve(workspacePath, trimmed);
+}
+
+function isCancellableJobStatus(status: PersistedBackgroundJob["status"]): boolean {
+  return status === "registered" || status === "running";
+}
+
+function formatRuntimeLimit(limitMs: number): string {
+  if (limitMs < 1000) {
+    return `${Math.max(0, limitMs)} ms`;
+  }
+
+  if (limitMs < 60_000) {
+    const seconds = Math.round(limitMs / 1000);
+    return `${seconds} second${seconds === 1 ? "" : "s"}`;
+  }
+
+  const hours = limitMs / (60 * 60 * 1000);
+  if (Number.isInteger(hours)) {
+    return `${hours} hour${hours === 1 ? "" : "s"}`;
+  }
+
+  const minutes = Math.round(limitMs / 60_000);
+  return `${minutes} minute${minutes === 1 ? "" : "s"}`;
+}
+
+function killRuntimeJobProcess(
+  child: ChildProcessByStdio<null, Readable, Readable>,
+  signal: NodeJS.Signals
+): void {
+  if (process.platform !== "win32" && child.pid) {
+    try {
+      process.kill(-child.pid, signal);
+      return;
+    } catch (error) {
+      if (!isMissingProcessError(error)) {
+        throw error;
+      }
+    }
+  }
+
+  child.kill(signal);
+}
+
+function isMissingProcessError(error: unknown): boolean {
+  return typeof error === "object"
+    && error !== null
+    && "code" in error
+    && (error as { readonly code?: unknown }).code === "ESRCH";
 }
 
 async function waitForChildExit(

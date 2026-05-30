@@ -4,7 +4,12 @@ import fs from "node:fs/promises";
 import WebSocket from "ws";
 
 import { logger } from "../../logger.js";
-import type { CodexTurnResult, SlackUserIdentity } from "../../types.js";
+import type {
+  AgentTurnTokenUsage,
+  GeneratedImageArtifact,
+  JsonLike,
+  SlackUserIdentity
+} from "../../types.js";
 import { buildSlackThreadBaseInstructions } from "./slack-thread-base-instructions.js";
 
 type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
@@ -39,20 +44,43 @@ interface ActiveTurn {
   readonly threadId: string;
   readonly turnId: string;
   text: string;
+  generatedImages: GeneratedImageArtifact[];
+  usage?: AgentTurnTokenUsage | undefined;
+  lastTokenCountCumulativeTokens?: number | undefined;
   resolve: (result: CodexTurnResult) => void;
   reject: (error: Error) => void;
 }
 
-interface BufferedTurn {
+interface BufferedTurnEvents {
   text: string;
-  result?: {
-    readonly aborted: boolean;
-  } | undefined;
+  terminalState: "completed" | "aborted" | null;
+  generatedImages: GeneratedImageArtifact[];
+  usage?: AgentTurnTokenUsage | undefined;
+  lastTokenCountCumulativeTokens?: number | undefined;
+}
+
+interface CodexTokenCountUsageEvent {
+  readonly usage: AgentTurnTokenUsage;
+  readonly cumulativeTotalTokens?: number | undefined;
+}
+
+interface ThreadRuntimeDefaults {
+  readonly model?: string | undefined;
+  readonly effort?: string | undefined;
 }
 
 export interface StartedTurn {
   readonly turnId: string;
   readonly completion: Promise<CodexTurnResult>;
+}
+
+export interface CodexTurnResult {
+  readonly threadId: string;
+  readonly turnId: string;
+  readonly finalMessage: string;
+  readonly aborted: boolean;
+  readonly generatedImages?: readonly GeneratedImageArtifact[] | undefined;
+  readonly usage?: AgentTurnTokenUsage | undefined;
 }
 
 export interface CodexTextInputItem {
@@ -78,6 +106,8 @@ export interface ReadTurnResult {
   readonly status: "completed" | "failed" | "interrupted" | "inProgress" | "unknown";
   readonly finalMessage: string;
   readonly errorMessage?: string | undefined;
+  readonly generatedImages: readonly GeneratedImageArtifact[];
+  readonly usage?: AgentTurnTokenUsage | undefined;
 }
 
 export interface ReadTurnResultOptions {
@@ -125,7 +155,10 @@ export class AppServerClient extends EventEmitter {
   #requestCounter = 0;
   readonly #pendingRequests = new Map<string, PendingRequest>();
   readonly #activeTurns = new Map<string, ActiveTurn>();
-  readonly #bufferedTurns = new Map<string, BufferedTurn>();
+  readonly #bufferedTurnEvents = new Map<string, BufferedTurnEvents>();
+  readonly #threadRuntimeDefaults = new Map<string, ThreadRuntimeDefaults>();
+  #pendingAnonymousTokenUsage: AgentTurnTokenUsage | undefined;
+  #pendingAnonymousTokenUsageCumulativeTokens: number | undefined;
   #connected = false;
   #disconnectHandled = false;
   #slackBotIdentity: SlackUserIdentity | null = null;
@@ -138,6 +171,7 @@ export class AppServerClient extends EventEmitter {
       readonly serviceName: string;
       readonly brokerHttpBaseUrl: string;
       readonly reposRoot: string;
+      readonly codexGeneratedImagesRoot?: string | undefined;
       readonly openAiApiKey?: string | undefined;
       readonly personalMemoryFilePath?: string | undefined;
       readonly heartbeatIntervalMs?: number | undefined;
@@ -267,18 +301,18 @@ export class AppServerClient extends EventEmitter {
   }
 
   async ensureThread(session: {
-    readonly codexThreadId?: string | undefined;
+    readonly agentSessionId?: string | undefined;
     readonly workspacePath: string;
     readonly channelId: string;
     readonly rootThreadTs: string;
   }): Promise<string> {
-    if (session.codexThreadId) {
+    if (session.agentSessionId) {
       logger.debug("Resuming Codex thread", {
-        threadId: session.codexThreadId,
+        threadId: session.agentSessionId,
         cwd: session.workspacePath
       });
       const result = await this.request("thread/resume", {
-        threadId: session.codexThreadId,
+        threadId: session.agentSessionId,
         cwd: session.workspacePath,
         approvalPolicy: "never",
         sandbox: "danger-full-access",
@@ -291,8 +325,13 @@ export class AppServerClient extends EventEmitter {
         persistExtendedHistory: true
       }) as {
         thread: { id: string };
+        model?: unknown;
+        reasoningEffort?: unknown;
+        reasoning_effort?: unknown;
+        effort?: unknown;
       };
 
+      this.#rememberThreadRuntimeDefaults(result.thread.id, result);
       return result.thread.id;
     }
 
@@ -309,11 +348,21 @@ export class AppServerClient extends EventEmitter {
       developerInstructions: null,
       personality: null,
       ephemeral: false,
-      experimentalRawEvents: false,
+      experimentalRawEvents: true,
       persistExtendedHistory: true
     }) as {
       thread: { id: string };
+      model?: unknown;
+      reasoningEffort?: unknown;
+      reasoning_effort?: unknown;
+      effort?: unknown;
     };
+    this.#rememberThreadRuntimeDefaults(result.thread.id, result);
+    this.emit("notification", "broker/system_prompt", {
+      threadId: result.thread.id,
+      cwd: session.workspacePath,
+      baseInstructions
+    });
     logger.debug("Started Codex thread", {
       threadId: result.thread.id,
       cwd: session.workspacePath
@@ -351,27 +400,21 @@ export class AppServerClient extends EventEmitter {
       turn: { id: string };
     };
 
-    const buffered = this.#bufferedTurns.get(result.turn.id);
-    this.#bufferedTurns.delete(result.turn.id);
     const completion = new Promise<CodexTurnResult>((resolve, reject) => {
-      if (buffered?.result) {
-        resolve({
-          threadId,
-          turnId: result.turn.id,
-          finalMessage: buffered.text.trim(),
-          aborted: buffered.result.aborted
-        });
-        return;
-      }
-
       this.#activeTurns.set(result.turn.id, {
         threadId,
         turnId: result.turn.id,
-        text: buffered?.text ?? "",
+        text: "",
+        generatedImages: [],
         resolve,
         reject
       });
     });
+    this.#applyPendingAnonymousTurnUsage(result.turn.id);
+    this.#applyBufferedTurnEvents(result.turn.id);
+    // A websocket disconnect can reject the turn before the caller gets to `await completion`.
+    // Keep a no-op rejection handler attached so Node does not treat that window as unhandled.
+    void completion.catch(() => {});
 
     return {
       turnId: result.turn.id,
@@ -414,7 +457,6 @@ export class AppServerClient extends EventEmitter {
   }
 
   async #buildBaseInstructions(session: {
-    readonly platform?: "slack" | "feishu" | undefined;
     readonly channelId: string;
     readonly rootThreadTs: string;
     readonly workspacePath: string;
@@ -422,11 +464,11 @@ export class AppServerClient extends EventEmitter {
     const personalMemory = await this.#readPersonalMemory();
     return await buildSlackThreadBaseInstructions({
       brokerHttpBaseUrl: this.options.brokerHttpBaseUrl,
-      platform: session.platform,
       channelId: session.channelId,
       rootThreadTs: session.rootThreadTs,
       workspacePath: session.workspacePath,
       reposRoot: this.options.reposRoot,
+      codexGeneratedImagesRoot: this.options.codexGeneratedImagesRoot ?? "$CODEX_HOME/generated_images",
       slackBotIdentity: this.#slackBotIdentity,
       personalMemory
     });
@@ -455,13 +497,23 @@ export class AppServerClient extends EventEmitter {
         turns?: Array<{
           id?: string;
           status?: string;
+          usage?: unknown;
+          token_usage?: unknown;
+          tokenUsage?: unknown;
           error?: {
             message?: string;
             additionalDetails?: string | null;
           } | null;
           items?: Array<{
             type?: string;
+            id?: string;
             text?: string;
+            status?: string;
+            result?: string;
+            savedPath?: string | null;
+            saved_path?: string | null;
+            revisedPrompt?: string | null;
+            revised_prompt?: string | null;
           }>;
         }>;
       };
@@ -478,22 +530,28 @@ export class AppServerClient extends EventEmitter {
 
     const agentMessages = (turn.items ?? []).filter((item) => item.type === "agentMessage");
     const lastAgentMessage = agentMessages.at(-1);
+    const generatedImages = (turn.items ?? [])
+      .map((item, index) => normalizeGeneratedImageArtifact(item, index))
+      .filter((item): item is GeneratedImageArtifact => item !== null);
     const status = normalizeTurnStatus(turn.status);
+    const usage = this.#withThreadRuntimeDefaults(threadId, normalizeAgentTurnUsageFromThreadTurn(turn));
 
-    const normalizedResult = {
+    const normalizedResult: ReadTurnResult = {
       status,
       finalMessage: String(lastAgentMessage?.text ?? "").trim(),
+      generatedImages,
       errorMessage:
         turn.error?.additionalDetails ??
         turn.error?.message ??
         undefined
     };
+    const resultWithUsage = usage ? { ...normalizedResult, usage } : normalizedResult;
 
     if (options?.syncActiveTurn) {
-      this.#syncActiveTurn(turnId, normalizedResult);
+      this.#syncActiveTurn(turnId, resultWithUsage);
     }
 
-    return normalizedResult;
+    return resultWithUsage;
   }
 
   async request(method: string, params?: JsonValue): Promise<JsonValue> {
@@ -589,37 +647,97 @@ export class AppServerClient extends EventEmitter {
         return;
       }
 
+      const delta = String(params.delta ?? "");
       const turn = this.#activeTurns.get(turnId);
       if (turn) {
-        turn.text += String(params.delta ?? "");
-        return;
+        turn.text += delta;
+      } else if (delta) {
+        this.#bufferTurnText(turnId, delta);
       }
-
-      this.#getBufferedTurn(turnId).text += String(params.delta ?? "");
       return;
     }
 
-    if (method === "turn/completed") {
-      const turnId = params.turn?.id as string | undefined;
+    if (method === "item/completed") {
+      const turnId = params.turnId as string | undefined;
       if (!turnId) {
         return;
       }
 
-      const turn = this.#activeTurns.get(turnId);
-      if (!turn) {
-        this.#getBufferedTurn(turnId).result = {
-          aborted: false
-        };
+      const image = normalizeGeneratedImageArtifact(params.item as Record<string, unknown> | undefined);
+      if (!image) {
         return;
       }
 
-      this.#activeTurns.delete(turnId);
-      turn.resolve({
-        threadId: turn.threadId,
-        turnId,
-        finalMessage: turn.text.trim(),
-        aborted: false
-      });
+      const turn = this.#activeTurns.get(turnId);
+      if (turn) {
+        upsertGeneratedImage(turn.generatedImages, image);
+      } else {
+        this.#bufferGeneratedImage(turnId, image);
+      }
+      return;
+    }
+
+    if (method === "codex/event/token_count") {
+      const usageEvent = normalizeAgentTurnUsageFromTokenCountEvent(params);
+      if (!usageEvent) {
+        return;
+      }
+
+      const turnId = readCodexEventTurnId(params);
+      if (turnId) {
+        this.#applyTurnUsage(turnId, usageEvent.usage, usageEvent.cumulativeTotalTokens);
+        return;
+      }
+
+      if (this.#activeTurns.size === 0) {
+        this.#applyPendingAnonymousTokenUsage(usageEvent);
+        return;
+      }
+      if (this.#activeTurns.size > 1) {
+        return;
+      }
+
+      const turn = this.#activeTurns.values().next().value;
+      if (!turn) {
+        this.#applyPendingAnonymousTokenUsage(usageEvent);
+        return;
+      }
+      this.#applyTurnUsage(turn.turnId, usageEvent.usage, usageEvent.cumulativeTotalTokens);
+      return;
+    }
+
+    if (method === "thread/tokenUsage/updated") {
+      const usageEvent = normalizeAgentTurnUsageFromThreadTokenUsageUpdated(params);
+      if (!usageEvent) {
+        return;
+      }
+
+      const turnId = normalizeOptionalString(params.turnId) ?? normalizeOptionalString(params.turn_id);
+      if (!turnId) {
+        return;
+      }
+
+      this.#applyTurnUsage(turnId, usageEvent.usage, usageEvent.cumulativeTotalTokens);
+      return;
+    }
+
+    if (method === "turn/completed") {
+      const turnId = (params.turn?.id ?? params.turnId) as string | undefined;
+      if (!turnId) {
+        return;
+      }
+      const usage = normalizeAgentTurnUsageFromTurnEvent(params);
+
+      const turn = this.#activeTurns.get(turnId);
+      if (!turn) {
+        this.#bufferTurnTerminalState(turnId, "completed", usage);
+        return;
+      }
+
+      if (usage) {
+        turn.usage = usage;
+      }
+      this.#resolveActiveTurn(turn, false);
       return;
     }
 
@@ -631,32 +749,12 @@ export class AppServerClient extends EventEmitter {
 
       const turn = this.#activeTurns.get(turnId);
       if (!turn) {
-        this.#getBufferedTurn(turnId).result = {
-          aborted: true
-        };
+        this.#bufferTurnTerminalState(turnId, "aborted");
         return;
       }
 
-      this.#activeTurns.delete(turnId);
-      turn.resolve({
-        threadId: turn.threadId,
-        turnId,
-        finalMessage: turn.text.trim(),
-        aborted: true
-      });
+      this.#resolveActiveTurn(turn, true);
     }
-  }
-
-  #getBufferedTurn(turnId: string): BufferedTurn {
-    let buffered = this.#bufferedTurns.get(turnId);
-    if (!buffered) {
-      buffered = {
-        text: ""
-      };
-      this.#bufferedTurns.set(turnId, buffered);
-    }
-
-    return buffered;
   }
 
   #handleDisconnect(error: Error): void {
@@ -668,6 +766,8 @@ export class AppServerClient extends EventEmitter {
     this.#connected = false;
     this.#clearHeartbeat();
     this.#socket = undefined;
+    this.#pendingAnonymousTokenUsage = undefined;
+    this.#pendingAnonymousTokenUsageCumulativeTokens = undefined;
 
     for (const [requestId, pending] of this.#pendingRequests) {
       this.#pendingRequests.delete(requestId);
@@ -678,8 +778,40 @@ export class AppServerClient extends EventEmitter {
       this.#activeTurns.delete(turnId);
       turn.reject(error);
     }
+    this.#bufferedTurnEvents.clear();
 
     this.emit("disconnected", error);
+  }
+
+  #rememberThreadRuntimeDefaults(threadId: string, value: unknown): void {
+    const defaults = normalizeThreadRuntimeDefaults(value);
+    if (defaults) {
+      this.#threadRuntimeDefaults.set(threadId, defaults);
+    }
+  }
+
+  #withThreadRuntimeDefaults(
+    threadId: string,
+    usage: AgentTurnTokenUsage | undefined
+  ): AgentTurnTokenUsage | undefined {
+    if (!usage) {
+      return undefined;
+    }
+
+    const defaults = this.#threadRuntimeDefaults.get(threadId);
+    if (!defaults) {
+      return usage;
+    }
+
+    if ((usage.model || !defaults.model) && (usage.effort || !defaults.effort)) {
+      return usage;
+    }
+
+    return {
+      ...usage,
+      model: usage.model ?? defaults.model,
+      effort: usage.effort ?? defaults.effort
+    };
   }
 
   #syncActiveTurn(turnId: string, result: ReadTurnResult): void {
@@ -693,24 +825,27 @@ export class AppServerClient extends EventEmitter {
     }
 
     this.#activeTurns.delete(turnId);
+    this.#bufferedTurnEvents.delete(turnId);
 
     if (result.status === "completed") {
-      turn.resolve({
+      turn.resolve(withOptionalUsage({
         threadId: turn.threadId,
         turnId,
         finalMessage: result.finalMessage,
-        aborted: false
-      });
+        aborted: false,
+        generatedImages: result.generatedImages
+      }, result.usage));
       return;
     }
 
     if (result.status === "interrupted") {
-      turn.resolve({
+      turn.resolve(withOptionalUsage({
         threadId: turn.threadId,
         turnId,
         finalMessage: result.finalMessage,
-        aborted: true
-      });
+        aborted: true,
+        generatedImages: result.generatedImages
+      }, result.usage));
       return;
     }
 
@@ -724,7 +859,154 @@ export class AppServerClient extends EventEmitter {
     }
 
     this.#activeTurns.delete(turnId);
+    this.#bufferedTurnEvents.delete(turnId);
     turn.reject(new Error("Codex turn missing from thread snapshot"));
+  }
+
+  #bufferTurnText(turnId: string, delta: string): void {
+    const buffered = this.#bufferedTurnEvents.get(turnId) ?? {
+      text: "",
+      terminalState: null,
+      generatedImages: []
+    };
+    buffered.text += delta;
+    this.#bufferedTurnEvents.set(turnId, buffered);
+  }
+
+  #bufferTurnTerminalState(
+    turnId: string,
+    terminalState: "completed" | "aborted",
+    usage?: AgentTurnTokenUsage | undefined
+  ): void {
+    const buffered = this.#bufferedTurnEvents.get(turnId) ?? {
+      text: "",
+      terminalState: null,
+      generatedImages: []
+    };
+    buffered.terminalState = terminalState;
+    if (usage) {
+      buffered.usage = usage;
+    }
+    this.#bufferedTurnEvents.set(turnId, buffered);
+  }
+
+  #applyTurnUsage(
+    turnId: string,
+    usage: AgentTurnTokenUsage,
+    cumulativeTotalTokens?: number | undefined
+  ): void {
+    const turn = this.#activeTurns.get(turnId);
+    if (turn) {
+      if (!shouldApplyTokenCountUsage(turn.lastTokenCountCumulativeTokens, cumulativeTotalTokens)) {
+        return;
+      }
+      turn.usage = addCodexTurnUsage(turn.usage, usage);
+      turn.lastTokenCountCumulativeTokens = updateTokenCountCumulativeTotal(
+        turn.lastTokenCountCumulativeTokens,
+        cumulativeTotalTokens
+      );
+      return;
+    }
+
+    const buffered = this.#bufferedTurnEvents.get(turnId) ?? {
+      text: "",
+      terminalState: null,
+      generatedImages: []
+    };
+    if (!shouldApplyTokenCountUsage(buffered.lastTokenCountCumulativeTokens, cumulativeTotalTokens)) {
+      return;
+    }
+    buffered.usage = addCodexTurnUsage(buffered.usage, usage);
+    buffered.lastTokenCountCumulativeTokens = updateTokenCountCumulativeTotal(
+      buffered.lastTokenCountCumulativeTokens,
+      cumulativeTotalTokens
+    );
+    this.#bufferedTurnEvents.set(turnId, buffered);
+  }
+
+  #applyPendingAnonymousTokenUsage(usageEvent: CodexTokenCountUsageEvent): void {
+    if (!shouldApplyTokenCountUsage(
+      this.#pendingAnonymousTokenUsageCumulativeTokens,
+      usageEvent.cumulativeTotalTokens
+    )) {
+      return;
+    }
+
+    this.#pendingAnonymousTokenUsage = addCodexTurnUsage(this.#pendingAnonymousTokenUsage, usageEvent.usage);
+    this.#pendingAnonymousTokenUsageCumulativeTokens = updateTokenCountCumulativeTotal(
+      this.#pendingAnonymousTokenUsageCumulativeTokens,
+      usageEvent.cumulativeTotalTokens
+    );
+  }
+
+  #applyPendingAnonymousTurnUsage(turnId: string): void {
+    if (!this.#pendingAnonymousTokenUsage) {
+      return;
+    }
+
+    const usage = this.#pendingAnonymousTokenUsage;
+    const cumulativeTotalTokens = this.#pendingAnonymousTokenUsageCumulativeTokens;
+    this.#pendingAnonymousTokenUsage = undefined;
+    this.#pendingAnonymousTokenUsageCumulativeTokens = undefined;
+    this.#applyTurnUsage(turnId, usage, cumulativeTotalTokens);
+  }
+
+  #bufferGeneratedImage(turnId: string, image: GeneratedImageArtifact): void {
+    const buffered = this.#bufferedTurnEvents.get(turnId) ?? {
+      text: "",
+      terminalState: null,
+      generatedImages: []
+    };
+    upsertGeneratedImage(buffered.generatedImages, image);
+    this.#bufferedTurnEvents.set(turnId, buffered);
+  }
+
+  #applyBufferedTurnEvents(turnId: string): void {
+    const turn = this.#activeTurns.get(turnId);
+    if (!turn) {
+      return;
+    }
+
+    const buffered = this.#bufferedTurnEvents.get(turnId);
+    if (!buffered) {
+      return;
+    }
+
+    this.#bufferedTurnEvents.delete(turnId);
+    if (buffered.text) {
+      turn.text += buffered.text;
+    }
+    for (const image of buffered.generatedImages) {
+      upsertGeneratedImage(turn.generatedImages, image);
+    }
+    if (buffered.usage) {
+      turn.usage = this.#withThreadRuntimeDefaults(turn.threadId, buffered.usage);
+    }
+    turn.lastTokenCountCumulativeTokens = updateTokenCountCumulativeTotal(
+      turn.lastTokenCountCumulativeTokens,
+      buffered.lastTokenCountCumulativeTokens
+    );
+
+    if (buffered.terminalState === "completed") {
+      this.#resolveActiveTurn(turn, false);
+      return;
+    }
+
+    if (buffered.terminalState === "aborted") {
+      this.#resolveActiveTurn(turn, true);
+    }
+  }
+
+  #resolveActiveTurn(turn: ActiveTurn, aborted: boolean): void {
+    this.#activeTurns.delete(turn.turnId);
+    this.#bufferedTurnEvents.delete(turn.turnId);
+    turn.resolve(withOptionalUsage({
+      threadId: turn.threadId,
+      turnId: turn.turnId,
+      finalMessage: turn.text.trim(),
+      aborted,
+      generatedImages: [...turn.generatedImages]
+    }, this.#withThreadRuntimeDefaults(turn.threadId, turn.usage)));
   }
 
   #startHeartbeat(socket: WebSocket, intervalMs = 30_000): void {
@@ -758,6 +1040,414 @@ export class AppServerClient extends EventEmitter {
     clearInterval(this.#heartbeatTimer);
     this.#heartbeatTimer = undefined;
   }
+}
+
+function withOptionalUsage(
+  result: Omit<CodexTurnResult, "usage">,
+  usage: AgentTurnTokenUsage | undefined
+): CodexTurnResult {
+  return usage ? { ...result, usage } : result;
+}
+
+function normalizeAgentTurnUsageFromTurnEvent(params: Record<string, any>): AgentTurnTokenUsage | undefined {
+  const turn = isRecord(params.turn) ? params.turn : {};
+  return (
+    normalizeAgentTurnTokenUsage(turn.usage) ??
+    normalizeAgentTurnTokenUsage(turn.token_usage) ??
+    normalizeAgentTurnTokenUsage(turn.tokenUsage) ??
+    normalizeAgentTurnTokenUsage(params.usage) ??
+    normalizeAgentTurnTokenUsage(params.token_usage) ??
+    normalizeAgentTurnTokenUsage(params.tokenUsage)
+  );
+}
+
+function normalizeAgentTurnUsageFromTokenCountEvent(params: Record<string, any>): CodexTokenCountUsageEvent | undefined {
+  const event =
+    isRecord(params.msg) ? params.msg :
+      isRecord(params.payload) ? params.payload :
+        params;
+  const info = isRecord(event.info) ? event.info : isRecord(params.info) ? params.info : undefined;
+
+  const usage = (
+    normalizeAgentTurnTokenUsage(info?.last_token_usage) ??
+    normalizeAgentTurnTokenUsage(info?.lastTokenUsage) ??
+    normalizeAgentTurnTokenUsage(event.last_token_usage) ??
+    normalizeAgentTurnTokenUsage(event.lastTokenUsage) ??
+    normalizeAgentTurnTokenUsage(params.last_token_usage) ??
+    normalizeAgentTurnTokenUsage(params.lastTokenUsage) ??
+    normalizeAgentTurnTokenUsage(event.usage) ??
+    normalizeAgentTurnTokenUsage(params.usage)
+  );
+  if (!usage) {
+    return undefined;
+  }
+
+  const totalUsage = isRecord(info?.total_token_usage) ? info.total_token_usage :
+    isRecord(info?.totalTokenUsage) ? info.totalTokenUsage :
+      isRecord(event.total_token_usage) ? event.total_token_usage :
+        isRecord(event.totalTokenUsage) ? event.totalTokenUsage :
+          isRecord(params.total_token_usage) ? params.total_token_usage :
+            isRecord(params.totalTokenUsage) ? params.totalTokenUsage :
+              undefined;
+
+  return {
+    usage,
+    cumulativeTotalTokens: totalUsage ? readTokenNumber(totalUsage, ["total_tokens", "totalTokens"]) : undefined
+  };
+}
+
+function normalizeAgentTurnUsageFromThreadTokenUsageUpdated(params: Record<string, any>): CodexTokenCountUsageEvent | undefined {
+  const tokenUsage =
+    isRecord(params.tokenUsage) ? params.tokenUsage :
+      isRecord(params.token_usage) ? params.token_usage :
+        undefined;
+  if (!tokenUsage) {
+    return undefined;
+  }
+
+  const lastUsage =
+    isRecord(tokenUsage.last) ? tokenUsage.last :
+      isRecord(tokenUsage.last_token_usage) ? tokenUsage.last_token_usage :
+        isRecord(tokenUsage.lastTokenUsage) ? tokenUsage.lastTokenUsage :
+          tokenUsage;
+  const usage = normalizeAgentTurnTokenUsage(lastUsage);
+  if (!usage) {
+    return undefined;
+  }
+
+  const totalUsage =
+    isRecord(tokenUsage.total) ? tokenUsage.total :
+      isRecord(tokenUsage.total_token_usage) ? tokenUsage.total_token_usage :
+        isRecord(tokenUsage.totalTokenUsage) ? tokenUsage.totalTokenUsage :
+          undefined;
+
+  return {
+    usage,
+    cumulativeTotalTokens: totalUsage ? readTokenNumber(totalUsage, ["total_tokens", "totalTokens"]) : undefined
+  };
+}
+
+function readCodexEventTurnId(params: Record<string, any>): string | undefined {
+  const event =
+    isRecord(params.msg) ? params.msg :
+      isRecord(params.payload) ? params.payload :
+        params;
+
+  return normalizeOptionalString(params.turnId) ??
+    normalizeOptionalString(params.turn_id) ??
+    normalizeOptionalString(event.turnId) ??
+    normalizeOptionalString(event.turn_id);
+}
+
+function addCodexTurnUsage(
+  current: AgentTurnTokenUsage | undefined,
+  next: AgentTurnTokenUsage
+): AgentTurnTokenUsage {
+  if (!current) {
+    return next;
+  }
+  const aggregate = {
+    source: current.source === "exact" || next.source === "exact" ? "exact" as const : next.source,
+    inputTokens: current.inputTokens + next.inputTokens,
+    cachedInputTokens: current.cachedInputTokens + next.cachedInputTokens,
+    outputTokens: current.outputTokens + next.outputTokens,
+    reasoningTokens: current.reasoningTokens + next.reasoningTokens,
+    totalTokens: current.totalTokens + next.totalTokens,
+    model: next.model ?? current.model,
+    effort: next.effort ?? current.effort
+  };
+
+  return {
+    ...aggregate,
+    rawUsage: aggregateRawTokenUsage(current.rawUsage, next.rawUsage, aggregate)
+  };
+}
+
+function aggregateRawTokenUsage(
+  current: JsonLike | undefined,
+  next: JsonLike | undefined,
+  aggregate: Omit<AgentTurnTokenUsage, "rawUsage">
+): JsonLike | undefined {
+  if (current === undefined && next === undefined) {
+    return undefined;
+  }
+
+  const events = [...rawTokenUsageEvents(current), ...rawTokenUsageEvents(next)];
+  return {
+    kind: "aggregated_token_usage",
+    eventCount: rawTokenUsageEventCount(current) + rawTokenUsageEventCount(next),
+    totalTokens: aggregate.totalTokens,
+    inputTokens: aggregate.inputTokens,
+    cachedInputTokens: aggregate.cachedInputTokens,
+    outputTokens: aggregate.outputTokens,
+    reasoningTokens: aggregate.reasoningTokens,
+    latest: next ?? rawTokenUsageLatest(current) ?? null,
+    events: events.slice(-20)
+  };
+}
+
+function rawTokenUsageEvents(value: JsonLike | undefined): JsonLike[] {
+  if (value === undefined) {
+    return [];
+  }
+  if (isAggregatedRawTokenUsage(value)) {
+    const events = value.events;
+    return Array.isArray(events) ? events.filter(isJsonLike) : [];
+  }
+  return [value];
+}
+
+function rawTokenUsageEventCount(value: JsonLike | undefined): number {
+  if (value === undefined) {
+    return 0;
+  }
+  if (isAggregatedRawTokenUsage(value)) {
+    const count = value.eventCount;
+    return typeof count === "number" && Number.isFinite(count) ? count : rawTokenUsageEvents(value).length;
+  }
+  return 1;
+}
+
+function rawTokenUsageLatest(value: JsonLike | undefined): JsonLike | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (isAggregatedRawTokenUsage(value)) {
+    return isJsonLike(value.latest) ? value.latest : undefined;
+  }
+  return value;
+}
+
+function isAggregatedRawTokenUsage(value: JsonLike | undefined): value is Record<string, JsonLike> {
+  return isRecord(value) && value.kind === "aggregated_token_usage";
+}
+
+function isJsonLike(value: unknown): value is JsonLike {
+  if (value === null) {
+    return true;
+  }
+  const type = typeof value;
+  if (type === "string" || type === "number" || type === "boolean") {
+    return true;
+  }
+  if (Array.isArray(value)) {
+    return value.every(isJsonLike);
+  }
+  if (!isRecord(value)) {
+    return false;
+  }
+  return Object.values(value).every(isJsonLike);
+}
+
+function shouldApplyTokenCountUsage(
+  previousCumulativeTotalTokens: number | undefined,
+  nextCumulativeTotalTokens: number | undefined
+): boolean {
+  return nextCumulativeTotalTokens === undefined ||
+    previousCumulativeTotalTokens === undefined ||
+    nextCumulativeTotalTokens > previousCumulativeTotalTokens;
+}
+
+function updateTokenCountCumulativeTotal(
+  previousCumulativeTotalTokens: number | undefined,
+  nextCumulativeTotalTokens: number | undefined
+): number | undefined {
+  if (nextCumulativeTotalTokens === undefined) {
+    return previousCumulativeTotalTokens;
+  }
+  if (previousCumulativeTotalTokens === undefined) {
+    return nextCumulativeTotalTokens;
+  }
+  return Math.max(previousCumulativeTotalTokens, nextCumulativeTotalTokens);
+}
+
+function normalizeThreadRuntimeDefaults(value: unknown): ThreadRuntimeDefaults | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const thread = isRecord(value.thread) ? value.thread : {};
+  const model =
+    normalizeOptionalString(value.model) ??
+    normalizeOptionalString(thread.model) ??
+    normalizeOptionalString(value.modelName) ??
+    normalizeOptionalString(thread.modelName);
+  const effort =
+    normalizeOptionalString(value.reasoningEffort) ??
+    normalizeOptionalString(value.reasoning_effort) ??
+    normalizeOptionalString(value.effort) ??
+    normalizeOptionalString(thread.reasoningEffort) ??
+    normalizeOptionalString(thread.reasoning_effort) ??
+    normalizeOptionalString(thread.effort);
+
+  if (!model && !effort) {
+    return undefined;
+  }
+
+  return {
+    ...(model ? { model } : {}),
+    ...(effort ? { effort } : {})
+  };
+}
+
+function normalizeAgentTurnUsageFromThreadTurn(turn: {
+  readonly usage?: unknown;
+  readonly token_usage?: unknown;
+  readonly tokenUsage?: unknown;
+}): AgentTurnTokenUsage | undefined {
+  return (
+    normalizeAgentTurnTokenUsage(turn.usage) ??
+    normalizeAgentTurnTokenUsage(turn.token_usage) ??
+    normalizeAgentTurnTokenUsage(turn.tokenUsage)
+  );
+}
+
+function normalizeAgentTurnTokenUsage(value: unknown): AgentTurnTokenUsage | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const inputTokenValue = readTokenNumber(value, [
+    "input_tokens",
+    "inputTokens",
+    "prompt_tokens",
+    "promptTokens"
+  ]);
+  const cachedTokenValue =
+    readTokenNumber(value, [
+      "cached_input_tokens",
+      "cachedInputTokens",
+      "cached_tokens",
+      "cachedTokens"
+    ]) ??
+    readNestedTokenNumber(value, [
+      ["input_token_details", "cached_tokens"],
+      ["inputTokenDetails", "cachedTokens"],
+      ["input_tokens_details", "cached_tokens"],
+      ["inputTokensDetails", "cachedTokens"]
+    ]);
+  const outputTokenValue = readTokenNumber(value, [
+    "output_tokens",
+    "outputTokens",
+    "completion_tokens",
+    "completionTokens"
+  ]);
+  const reasoningTokenValue =
+    readTokenNumber(value, [
+      "reasoning_tokens",
+      "reasoningTokens",
+      "reasoning_output_tokens",
+      "reasoningOutputTokens"
+    ]) ??
+    readNestedTokenNumber(value, [
+      ["output_token_details", "reasoning_tokens"],
+      ["output_token_details", "reasoning_output_tokens"],
+      ["outputTokenDetails", "reasoningTokens"],
+      ["outputTokenDetails", "reasoningOutputTokens"],
+      ["output_tokens_details", "reasoning_tokens"],
+      ["output_tokens_details", "reasoning_output_tokens"],
+      ["outputTokensDetails", "reasoningTokens"],
+      ["outputTokensDetails", "reasoningOutputTokens"]
+    ]);
+  const totalTokenValue = readTokenNumber(value, [
+    "total_tokens",
+    "totalTokens"
+  ]);
+
+  if (
+    inputTokenValue === undefined &&
+    cachedTokenValue === undefined &&
+    outputTokenValue === undefined &&
+    reasoningTokenValue === undefined &&
+    totalTokenValue === undefined
+  ) {
+    return undefined;
+  }
+
+  const computedTotal = (inputTokenValue ?? 0) + (outputTokenValue ?? 0) + (reasoningTokenValue ?? 0);
+  const totalTokens = totalTokenValue ?? (computedTotal > 0 ? computedTotal : cachedTokenValue ?? 0);
+
+  return {
+    source: "exact",
+    inputTokens: inputTokenValue ?? 0,
+    cachedInputTokens: cachedTokenValue ?? 0,
+    outputTokens: outputTokenValue ?? 0,
+    reasoningTokens: reasoningTokenValue ?? 0,
+    totalTokens,
+    model: normalizeOptionalString(value.model) ?? normalizeOptionalString(value.modelName),
+    effort:
+      normalizeOptionalString(value.effort) ??
+      normalizeOptionalString(value.reasoning_effort) ??
+      normalizeOptionalString(value.reasoningEffort),
+    rawUsage: toJsonLike(value)
+  };
+}
+
+function readTokenNumber(record: Record<string, unknown>, keys: readonly string[]): number | undefined {
+  for (const key of keys) {
+    const normalized = normalizeTokenNumber(record[key]);
+    if (normalized !== undefined) {
+      return normalized;
+    }
+  }
+  return undefined;
+}
+
+function readNestedTokenNumber(
+  record: Record<string, unknown>,
+  paths: readonly (readonly [string, string])[]
+): number | undefined {
+  for (const [objectKey, valueKey] of paths) {
+    const container = record[objectKey];
+    if (!isRecord(container)) {
+      continue;
+    }
+    const normalized = normalizeTokenNumber(container[valueKey]);
+    if (normalized !== undefined) {
+      return normalized;
+    }
+  }
+  return undefined;
+}
+
+function normalizeTokenNumber(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.max(0, Math.trunc(value));
+  }
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return Math.max(0, Math.trunc(parsed));
+    }
+  }
+  return undefined;
+}
+
+function toJsonLike(value: unknown): JsonLike | undefined {
+  if (value === null || typeof value === "boolean" || typeof value === "string") {
+    return value;
+  }
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : undefined;
+  }
+  if (Array.isArray(value)) {
+    return value.map((entry) => toJsonLike(entry) ?? null);
+  }
+  if (isRecord(value)) {
+    const normalized: Record<string, JsonLike> = {};
+    for (const [key, entry] of Object.entries(value)) {
+      const normalizedEntry = toJsonLike(entry);
+      if (normalizedEntry !== undefined) {
+        normalized[key] = normalizedEntry;
+      }
+    }
+    return normalized;
+  }
+  return undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function normalizeTurnStatus(status: unknown): ReadTurnResult["status"] {
@@ -812,5 +1502,83 @@ function normalizeCreditsSnapshot(credits: RawCreditsSnapshot | null | undefined
     hasCredits: Boolean(credits.hasCredits),
     unlimited: Boolean(credits.unlimited),
     balance: credits.balance ?? null
+  };
+}
+
+function normalizeGeneratedImageArtifact(
+  item: Record<string, unknown> | undefined,
+  index = 0
+): GeneratedImageArtifact | null {
+  if (!item) {
+    return null;
+  }
+
+  const type = normalizeOptionalString(item.type);
+  if (type !== "imageGeneration" && type !== "image_generation_call") {
+    return null;
+  }
+
+  const savedPath = normalizeOptionalString(item.savedPath) ?? normalizeOptionalString(item.saved_path);
+  const result = normalizeOptionalString(item.result);
+  const { contentBase64, contentType } = normalizeImageResult(result);
+  const id = normalizeOptionalString(item.id) ?? savedPath ?? `generated-image-${index + 1}`;
+  const revisedPrompt = normalizeOptionalString(item.revisedPrompt) ?? normalizeOptionalString(item.revised_prompt);
+
+  if (!savedPath && !contentBase64) {
+    return null;
+  }
+
+  return {
+    id,
+    contentBase64,
+    contentType,
+    savedPath,
+    revisedPrompt
+  };
+}
+
+function normalizeImageResult(
+  value: string | undefined
+): {
+  readonly contentBase64?: string;
+  readonly contentType?: string;
+} {
+  const normalized = value?.trim();
+  if (!normalized) {
+    return {};
+  }
+
+  const dataUrlMatch = normalized.match(/^data:(image\/[^;]+);base64,(.+)$/i);
+  if (dataUrlMatch) {
+    return {
+      contentType: dataUrlMatch[1]!,
+      contentBase64: dataUrlMatch[2]!.replace(/\s+/g, "")
+    };
+  }
+
+  if (!/^[A-Za-z0-9+/=\s]+$/.test(normalized)) {
+    return {};
+  }
+
+  return {
+    contentType: "image/png",
+    contentBase64: normalized.replace(/\s+/g, "")
+  };
+}
+
+function normalizeOptionalString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function upsertGeneratedImage(target: GeneratedImageArtifact[], image: GeneratedImageArtifact): void {
+  const existingIndex = target.findIndex((entry) => entry.id === image.id);
+  if (existingIndex === -1) {
+    target.push(image);
+    return;
+  }
+
+  target[existingIndex] = {
+    ...target[existingIndex],
+    ...image
   };
 }

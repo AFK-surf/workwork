@@ -2804,12 +2804,31 @@ class FakeCodex {
 }
 
 async function readJsonl(filePath: string): Promise<unknown[]> {
-  const raw = await fs.readFile(filePath, "utf8");
+  const raw = await readLogFileOrBucket(filePath);
   return raw
     .trim()
     .split("\n")
     .filter(Boolean)
     .map((line) => JSON.parse(line) as unknown);
+}
+
+async function readLogFileOrBucket(filePath: string): Promise<string> {
+  try {
+    return await fs.readFile(filePath, "utf8");
+  } catch (error) {
+    if (!isNodeError(error) || error.code !== "ENOENT") {
+      throw error;
+    }
+  }
+
+  const bucketDir = path.basename(filePath) === "broker.jsonl"
+    ? path.join(path.dirname(filePath), "broker")
+    : path.join(path.dirname(filePath), path.basename(filePath, ".jsonl"));
+  const files = (await fs.readdir(bucketDir))
+    .filter((file) => file.endsWith(".jsonl"))
+    .sort();
+  const chunks = await Promise.all(files.map((file) => fs.readFile(path.join(bucketDir, file), "utf8")));
+  return chunks.join("");
 }
 
 async function waitForJsonlRecords(

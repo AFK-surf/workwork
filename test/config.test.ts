@@ -22,29 +22,25 @@ describe("loadConfig", () => {
     expect(config.reposRoot.endsWith(".data/repos")).toBe(true);
     expect(config.logDir.endsWith(".data/logs")).toBe(true);
     expect(config.codexHostHomePath).toBeUndefined();
+    expect(config.codexTeamHomePath.endsWith(".data/team-codex-home")).toBe(true);
     expect(config.slackInitialThreadHistoryCount).toBe(8);
     expect(config.slackHistoryApiMaxLimit).toBe(50);
     expect(config.slackActiveTurnReconcileIntervalMs).toBe(15_000);
-    expect(config.slackProgressReminderAfterMs).toBe(120_000);
-    expect(config.slackProgressReminderRepeatMs).toBe(120_000);
-    expect(config.feishuEnabled).toBe(false);
-    expect(config.feishuAppId).toBeUndefined();
-    expect(config.feishuAppSecret).toBeUndefined();
-    expect(config.feishuBotOpenId).toBeUndefined();
-    expect(config.feishuBotUserId).toBeUndefined();
-    expect(config.feishuBotUnionId).toBeUndefined();
-    expect(config.feishuApiBaseUrl).toBe("https://open.feishu.cn/open-apis");
-    expect(config.feishuDomain).toBe("feishu");
-    expect(config.feishuInitialThreadHistoryCount).toBe(8);
-    expect(config.feishuHistoryApiMaxLimit).toBe(50);
-    expect(config.feishuGroupMessageMode).toBe("all");
-    expect(config.feishuAllMessageDeliveryVerified).toBe(false);
-    expect(config.feishuStartupRequired).toBe(true);
+    expect(config.slackMissedThreadRecoveryIntervalMs).toBe(5 * 60_000);
     expect(config.logLevel).toBe("info");
     expect(config.logRawSlackEvents).toBe(true);
-    expect(config.logRawFeishuEvents).toBe(false);
     expect(config.logRawCodexRpc).toBe(true);
     expect(config.logRawHttpRequests).toBe(true);
+    expect(config.logRawMaxBytes).toBe(128 * 1024);
+    expect(config.diskCleanupEnabled).toBe(true);
+    expect(config.diskCleanupDryRun).toBe(true);
+    expect(config.diskCleanupCheckIntervalMs).toBe(300_000);
+    expect(config.diskCleanupMinFreeBytes).toBe(10 * 1024 * 1024 * 1024);
+    expect(config.diskCleanupTargetFreeBytes).toBe(20 * 1024 * 1024 * 1024);
+    expect(config.diskCleanupSessionCacheTtlMs).toBe(7 * 24 * 60 * 60 * 1000);
+    expect(config.diskCleanupInactiveSessionMs).toBe(24 * 60 * 60 * 1000);
+    expect(config.diskCleanupJobProtectionMs).toBe(48 * 60 * 60 * 1000);
+    expect(config.diskCleanupOldLogMs).toBe(24 * 60 * 60 * 1000);
     expect(config.brokerAdminToken).toBeUndefined();
     expect(config.geminiHostHomePath).toBeUndefined();
     expect(config.geminiHttpProxy).toBeUndefined();
@@ -53,6 +49,11 @@ describe("loadConfig", () => {
     expect(config.isolatedMcpServers).toEqual(["linear", "notion"]);
     expect(config.codexDisabledMcpServers).toEqual(["*", "linear", "notion"]);
     expect(config.tempadLinkServiceUrl).toBeUndefined();
+    expect(config.githubApiBaseUrl).toBe("https://api.github.com");
+    expect(config.githubOAuthScopes).toEqual(["repo", "read:user", "user:email"]);
+    expect(config.defaultGitHubLogin).toBeUndefined();
+    expect(config.defaultGitHubToken).toBeUndefined();
+    expect(config.adminBaseUrl).toBe("http://127.0.0.1:3000");
   });
 
   it("rejects invalid numeric values", () => {
@@ -65,99 +66,15 @@ describe("loadConfig", () => {
     ).toThrowError("Invalid numeric environment variable: PORT");
   });
 
-  it("requires Feishu credentials only when Feishu is enabled", () => {
-    expect(() =>
-      loadConfig({
-        SLACK_APP_TOKEN: "xapp-test",
-        SLACK_BOT_TOKEN: "xoxb-test",
-        FEISHU_ENABLED: "true",
-        FEISHU_APP_ID: "cli-test"
-      } as NodeJS.ProcessEnv)
-    ).toThrowError("Missing required environment variable: FEISHU_APP_SECRET");
 
-    expect(() =>
-      loadConfig({
-        SLACK_APP_TOKEN: "xapp-test",
-        SLACK_BOT_TOKEN: "xoxb-test",
-        FEISHU_ENABLED: "true",
-        FEISHU_APP_ID: "cli-test",
-        FEISHU_APP_SECRET: "secret-test"
-      } as NodeJS.ProcessEnv)
-    ).toThrowError(
-      "Missing required environment variable: one of FEISHU_BOT_OPEN_ID, FEISHU_BOT_USER_ID, FEISHU_BOT_UNION_ID"
-    );
-  });
-
-  it("loads China Feishu configuration", () => {
+  it("loads an explicit team codex home path", () => {
     const config = loadConfig({
       SLACK_APP_TOKEN: "xapp-test",
       SLACK_BOT_TOKEN: "xoxb-test",
-      FEISHU_ENABLED: "true",
-      FEISHU_APP_ID: "cli-test",
-      FEISHU_APP_SECRET: "secret-test",
-      FEISHU_BOT_OPEN_ID: "ou_bot",
-      FEISHU_INITIAL_THREAD_HISTORY_COUNT: "12",
-      FEISHU_HISTORY_API_MAX_LIMIT: "40",
-      FEISHU_GROUP_MESSAGE_MODE: "at_only",
-      FEISHU_ALL_MESSAGE_DELIVERY_VERIFIED: "true",
-      FEISHU_STARTUP_REQUIRED: "false"
+      CODEX_TEAM_HOME: "/team-codex-home"
     } as NodeJS.ProcessEnv);
 
-    expect(config.feishuEnabled).toBe(true);
-    expect(config.feishuAppId).toBe("cli-test");
-    expect(config.feishuAppSecret).toBe("secret-test");
-    expect(config.feishuBotOpenId).toBe("ou_bot");
-    expect(config.feishuBotUserId).toBeUndefined();
-    expect(config.feishuBotUnionId).toBeUndefined();
-    expect(config.feishuDomain).toBe("feishu");
-    expect(config.feishuInitialThreadHistoryCount).toBe(12);
-    expect(config.feishuHistoryApiMaxLimit).toBe(40);
-    expect(config.feishuGroupMessageMode).toBe("at_only");
-    expect(config.feishuAllMessageDeliveryVerified).toBe(true);
-    expect(config.feishuStartupRequired).toBe(false);
-  });
-
-  it("rejects non-China Feishu domains for the first implementation", () => {
-    expect(() =>
-      loadConfig({
-        SLACK_APP_TOKEN: "xapp-test",
-        SLACK_BOT_TOKEN: "xoxb-test",
-        FEISHU_DOMAIN: "lark"
-      } as NodeJS.ProcessEnv)
-    ).toThrowError("Invalid FEISHU_DOMAIN: expected feishu");
-  });
-
-  it("validates Feishu API base URL shape", () => {
-    const baseEnv = {
-      SLACK_APP_TOKEN: "xapp-test",
-      SLACK_BOT_TOKEN: "xoxb-test"
-    };
-
-    expect(loadConfig({
-      ...baseEnv,
-      FEISHU_API_BASE_URL: "https://open.feishu.cn/"
-    } as NodeJS.ProcessEnv).feishuApiBaseUrl).toBe("https://open.feishu.cn");
-
-    expect(() =>
-      loadConfig({
-        ...baseEnv,
-        FEISHU_API_BASE_URL: "https://open.feishu.cn/open-apis/im/v1"
-      } as NodeJS.ProcessEnv)
-    ).toThrowError("Invalid FEISHU_API_BASE_URL: expected origin or /open-apis path");
-
-    expect(() =>
-      loadConfig({
-        ...baseEnv,
-        FEISHU_API_BASE_URL: "https://open.larksuite.com/open-apis"
-      } as NodeJS.ProcessEnv)
-    ).toThrowError("Invalid FEISHU_API_BASE_URL: expected https://open.feishu.cn");
-
-    expect(() =>
-      loadConfig({
-        ...baseEnv,
-        FEISHU_API_BASE_URL: "not-a-url"
-      } as NodeJS.ProcessEnv)
-    ).toThrowError("Invalid FEISHU_API_BASE_URL: expected an absolute URL");
+    expect(config.codexTeamHomePath).toBe("/team-codex-home");
   });
 
   it("loads an explicit host codex home path", () => {
@@ -214,16 +131,16 @@ describe("loadConfig", () => {
       SLACK_BOT_TOKEN: "xoxb-test",
       LOG_LEVEL: "debug",
       LOG_RAW_SLACK_EVENTS: "false",
-      LOG_RAW_FEISHU_EVENTS: "true",
       LOG_RAW_CODEX_RPC: "false",
-      LOG_RAW_HTTP_REQUESTS: "true"
+      LOG_RAW_HTTP_REQUESTS: "true",
+      LOG_RAW_MAX_BYTES: "4096"
     } as NodeJS.ProcessEnv);
 
     expect(config.logLevel).toBe("debug");
     expect(config.logRawSlackEvents).toBe(false);
-    expect(config.logRawFeishuEvents).toBe(true);
     expect(config.logRawCodexRpc).toBe(false);
     expect(config.logRawHttpRequests).toBe(true);
+    expect(config.logRawMaxBytes).toBe(4096);
   });
 
   it("loads an optional broker admin token", () => {
@@ -234,5 +151,47 @@ describe("loadConfig", () => {
     } as NodeJS.ProcessEnv);
 
     expect(config.brokerAdminToken).toBe("secret-admin-token");
+  });
+
+  it("loads GitHub PR identity configuration", () => {
+    const config = loadConfig({
+      SLACK_APP_TOKEN: "xapp-test",
+      SLACK_BOT_TOKEN: "xoxb-test",
+      GITHUB_API_BASE_URL: "https://github.enterprise.test/api/v3",
+      GITHUB_OAUTH_SCOPES: "repo, read:user, workflow",
+      BROKER_DEFAULT_GITHUB_LOGIN: "default-bot",
+      BROKER_DEFAULT_GITHUB_TOKEN: "default-token"
+    } as NodeJS.ProcessEnv);
+
+    expect(config.githubApiBaseUrl).toBe("https://github.enterprise.test/api/v3");
+    expect(config.githubOAuthScopes).toEqual(["repo", "read:user", "workflow"]);
+    expect(config.defaultGitHubLogin).toBe("default-bot");
+    expect(config.defaultGitHubToken).toBe("default-token");
+  });
+
+  it("parses disk cleanup configuration", () => {
+    const config = loadConfig({
+      SLACK_APP_TOKEN: "xapp-test",
+      SLACK_BOT_TOKEN: "xoxb-test",
+      DISK_CLEANUP_ENABLED: "false",
+      DISK_CLEANUP_DRY_RUN: "false",
+      DISK_CLEANUP_CHECK_INTERVAL_MS: "60000",
+      DISK_CLEANUP_MIN_FREE_BYTES: "123",
+      DISK_CLEANUP_TARGET_FREE_BYTES: "456",
+      DISK_CLEANUP_SESSION_CACHE_TTL_MS: "654",
+      DISK_CLEANUP_INACTIVE_SESSION_MS: "789",
+      DISK_CLEANUP_JOB_PROTECTION_MS: "101112",
+      DISK_CLEANUP_OLD_LOG_MS: "131415"
+    } as NodeJS.ProcessEnv);
+
+    expect(config.diskCleanupEnabled).toBe(false);
+    expect(config.diskCleanupDryRun).toBe(false);
+    expect(config.diskCleanupCheckIntervalMs).toBe(60_000);
+    expect(config.diskCleanupMinFreeBytes).toBe(123);
+    expect(config.diskCleanupTargetFreeBytes).toBe(456);
+    expect(config.diskCleanupSessionCacheTtlMs).toBe(654);
+    expect(config.diskCleanupInactiveSessionMs).toBe(789);
+    expect(config.diskCleanupJobProtectionMs).toBe(101_112);
+    expect(config.diskCleanupOldLogMs).toBe(131_415);
   });
 });

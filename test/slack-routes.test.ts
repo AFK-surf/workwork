@@ -1,436 +1,269 @@
-import http from "node:http";
+import { PassThrough, Writable } from "node:stream";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { createHttpHandler } from "../src/http/router.js";
+import { handleSlackRequest } from "../src/http/slack-routes.js";
 
-describe("legacy Slack routes", () => {
-  const cleanups: Array<() => Promise<void>> = [];
+function createJsonRequest(body: unknown) {
+  const request = new PassThrough() as PassThrough & {
+    headers: Record<string, string>;
+  };
+  request.headers = {
+    "content-type": "application/json"
+  };
+  request.end(JSON.stringify(body));
+  return request;
+}
 
-  afterEach(async () => {
-    while (cleanups.length > 0) {
-      await cleanups.pop()?.();
+function createResponse() {
+  const chunks: Buffer[] = [];
+
+  const response = new Writable({
+    write(chunk, _encoding, callback) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      callback();
     }
+  }) as Writable & {
+    statusCode: number;
+    writeHead: (code: number) => typeof response;
+    end: (chunk?: string | Uint8Array) => typeof response;
+    bodyText?: string;
+  };
+
+  response.statusCode = 200;
+  response.writeHead = (code) => {
+    response.statusCode = code;
+    return response;
+  };
+  response.end = (chunk) => {
+    if (chunk) {
+      chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : Buffer.from(chunk));
+    }
+    response.bodyText = Buffer.concat(chunks).toString("utf8");
+    return response;
+  };
+
+  return response;
+}
+
+describe("handleSlackRequest", () => {
+  it("routes internal session delete requests through the bridge", async () => {
+    const deleteSession = vi.fn(async () => ({
+      deleted: true,
+      interruptedActiveTurn: true,
+      clearedInboundCount: 2
+    }));
+    const response = createResponse();
+
+    const handled = await handleSlackRequest(
+      "DELETE",
+      new URL(`http://localhost/slack/sessions/${encodeURIComponent("C123:111.222")}`),
+      createJsonRequest({}) as never,
+      response as never,
+      {
+        bridge: {
+          deleteSession
+        } as never,
+        config: {} as never
+      }
+    );
+
+    expect(handled).toBe(true);
+    expect(deleteSession).toHaveBeenCalledWith("C123:111.222");
+    expect(response.statusCode).toBe(200);
+    expect(JSON.parse(response.bodyText || "{}")).toMatchObject({
+      ok: true,
+      sessionKey: "C123:111.222",
+      delete: {
+        deleted: true,
+        interruptedActiveTurn: true,
+        clearedInboundCount: 2
+      }
+    });
   });
 
-  it("delegates Slack thread history to generic chat coordinates", async () => {
-    const calls: unknown[] = [];
-    const server = http.createServer(
-      createHttpHandler({
+  it("returns 404 for internal session delete requests when the worker session is unknown", async () => {
+    const deleteSession = vi.fn(async () => {
+      throw new Error("Unknown session runtime key: C123:missing");
+    });
+    const response = createResponse();
+
+    const handled = await handleSlackRequest(
+      "DELETE",
+      new URL(`http://localhost/slack/sessions/${encodeURIComponent("C123:missing")}`),
+      createJsonRequest({}) as never,
+      response as never,
+      {
         bridge: {
-          readChatThreadHistory: async (payload: unknown) => {
-            calls.push(payload);
-            return {
-              messages: [
-                {
-                  messageId: "111.221"
-                }
-              ],
-              formattedText: "older Slack context",
-              hasMore: true
-            };
-          }
+          deleteSession
         } as never,
-        config: {
-          serviceName: "test-broker",
-          slackHistoryApiMaxLimit: 50
-        } as never
-      })
-    );
-    const baseUrl = await listen(server);
-    cleanups.push(() => close(server));
-
-    const response = await fetch(
-      `${baseUrl}/slack/thread-history?channel_id=C123&thread_ts=111.222&before_ts=111.221&channel_type=im&limit=20&format=json`
+        config: {} as never
+      }
     );
 
-    expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({
-      ok: true,
+    expect(handled).toBe(true);
+    expect(response.statusCode).toBe(404);
+    expect(JSON.parse(response.bodyText || "{}")).toMatchObject({
+      ok: false,
+      error: "Unknown session runtime key: C123:missing"
+    });
+  });
+
+  it("treats blank co-author arrays as omitted in configure-session", async () => {
+    const configureSessionCoauthors = vi.fn(async () => ({
+      sessionKey: "session-key",
       channelId: "C123",
       rootThreadTs: "111.222",
-      beforeMessageTs: "111.221",
-      returnedCount: 1,
-      hasMore: true,
-      maxLimit: 50,
-      formattedText: "older Slack context"
+      workspacePath: "/tmp/workspace",
+      selectionMode: "default_all_candidates",
+      ignoreMissing: false,
+      needsUserInput: false,
+      canCommitDirectly: true,
+      selectedUserIds: [],
+      resolvedCoAuthors: [],
+      missingSelectedUserIds: [],
+      candidates: []
+    }));
+
+    const request = createJsonRequest({
+      cwd: "/tmp/workspace",
+      coauthors: ["   "],
+      user_ids: [""]
     });
-    expect(calls).toEqual([
+    const response = createResponse();
+
+    const handled = await handleSlackRequest(
+      "POST",
+      new URL("http://localhost/slack/git-coauthors/configure-session"),
+      request as never,
+      response as never,
       {
-        platform: "slack",
-        conversationId: "C123",
-        rootMessageId: "111.222",
-        beforeMessageId: "111.221",
-        channelType: "im",
-        limit: 20
+        bridge: {
+          configureSessionCoauthors
+        } as never,
+        config: {} as never
       }
-    ]);
-  });
-
-  it("rejects non-positive or fractional Slack thread history limits before delegation", async () => {
-    const calls: unknown[] = [];
-    const server = http.createServer(
-      createHttpHandler({
-        bridge: {
-          readChatThreadHistory: async (payload: unknown) => {
-            calls.push(payload);
-            return {
-              messages: [],
-              hasMore: false
-            };
-          }
-        } as never,
-        config: {
-          serviceName: "test-broker",
-          slackHistoryApiMaxLimit: 50
-        } as never
-      })
     );
-    const baseUrl = await listen(server);
-    cleanups.push(() => close(server));
 
-    for (const limit of ["abc", "0", "-1", "1.5"]) {
-      const response = await fetch(
-        `${baseUrl}/slack/thread-history?channel_id=C123&thread_ts=111.222&limit=${encodeURIComponent(limit)}`
-      );
-
-      expect(response.status).toBe(400);
-      await expect(response.json()).resolves.toEqual({
-        ok: false,
-        error: "invalid_limit",
-        message: "limit must be a positive integer"
-      });
-    }
-
-    expect(calls).toEqual([]);
-  });
-
-  it("rejects invalid Slack thread history response formats before delegation", async () => {
-    const calls: unknown[] = [];
-    const server = http.createServer(
-      createHttpHandler({
-        bridge: {
-          readChatThreadHistory: async (payload: unknown) => {
-            calls.push(payload);
-            return {
-              messages: [],
-              hasMore: false
-            };
-          }
-        } as never,
-        config: {
-          serviceName: "test-broker",
-          slackHistoryApiMaxLimit: 50
-        } as never
-      })
-    );
-    const baseUrl = await listen(server);
-    cleanups.push(() => close(server));
-
-    for (const format of ["markdown", "JSON", ""]) {
-      const response = await fetch(
-        `${baseUrl}/slack/thread-history?channel_id=C123&thread_ts=111.222&format=${encodeURIComponent(format)}`
-      );
-
-      expect(response.status).toBe(400);
-      await expect(response.json()).resolves.toEqual({
-        ok: false,
-        error: "invalid_format",
-        allowed: ["json", "text"]
-      });
-    }
-
-    expect(calls).toEqual([]);
-  });
-
-  it("delegates Slack post-message to generic chat coordinates", async () => {
-    const calls: unknown[] = [];
-    const server = http.createServer(
-      createHttpHandler({
-        bridge: {
-          postChatMessage: async (payload: unknown) => {
-            calls.push(payload);
-          }
-        } as never,
-        config: {
-          serviceName: "test-broker"
-        } as never
-      })
-    );
-    const baseUrl = await listen(server);
-    cleanups.push(() => close(server));
-
-    const response = await postForm(`${baseUrl}/slack/post-message`, {
-      channel_id: "C123",
-      thread_ts: "111.222",
-      text: "done",
-      kind: "final"
+    expect(handled).toBe(true);
+    expect(configureSessionCoauthors).toHaveBeenCalledWith({
+      cwd: "/tmp/workspace",
+      coauthors: undefined,
+      userIds: undefined,
+      ignoreMissing: undefined,
+      mappings: undefined
     });
+    expect(response.statusCode).toBe(200);
+  });
 
-    expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({ ok: true });
-    expect(calls).toEqual([
+  it("rejects legacy co-author GitHub author mappings in configure-session", async () => {
+    const configureSessionCoauthors = vi.fn();
+
+    const request = createJsonRequest({
+      cwd: "/tmp/workspace",
+      mappings: [
+        {
+          slack_user: "Alice Example",
+          github_author: "Alice Example <alice@example.com>"
+        }
+      ]
+    });
+    const response = createResponse();
+
+    const handled = await handleSlackRequest(
+      "POST",
+      new URL("http://localhost/slack/git-coauthors/configure-session"),
+      request as never,
+      response as never,
       {
-        platform: "slack",
-        conversationId: "C123",
-        rootMessageId: "111.222",
-        text: "done",
-        kind: "final",
-        reason: undefined
+        bridge: {
+          configureSessionCoauthors
+        } as never,
+        config: {} as never
       }
-    ]);
+    );
+
+    expect(handled).toBe(true);
+    expect(configureSessionCoauthors).not.toHaveBeenCalled();
+    expect(response.statusCode).toBe(400);
+    expect(JSON.parse(response.bodyText || "{}")).toMatchObject({
+      ok: false,
+      error: "Manual co-author mappings are no longer supported. Bind GitHub OAuth for Slack users instead."
+    });
   });
 
-  it("delegates Slack post-state to generic chat coordinates", async () => {
-    const calls: unknown[] = [];
-    const server = http.createServer(
-      createHttpHandler({
-        bridge: {
-          postChatState: async (payload: unknown) => {
-            calls.push(payload);
-          }
-        } as never,
-        config: {
-          serviceName: "test-broker"
-        } as never
-      })
-    );
-    const baseUrl = await listen(server);
-    cleanups.push(() => close(server));
-
-    const response = await postForm(`${baseUrl}/slack/post-state`, {
-      channel_id: "C123",
-      thread_ts: "111.222",
-      kind: "wait",
-      reason: "waiting for CI"
-    });
-
-    expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({ ok: true });
-    expect(calls).toEqual([
-      {
-        platform: "slack",
-        conversationId: "C123",
-        rootMessageId: "111.222",
-        kind: "wait",
-        reason: "waiting for CI"
-      }
-    ]);
-  });
-
-  it("delegates Slack post-file to generic chat coordinates", async () => {
-    const calls: unknown[] = [];
-    const server = http.createServer(
-      createHttpHandler({
-        bridge: {
-          postChatFile: async (payload: unknown) => {
-            calls.push(payload);
-            return {
-              platform: "slack",
-              fileId: "F123",
-              title: "report"
-            };
-          }
-        } as never,
-        config: {
-          serviceName: "test-broker"
-        } as never
-      })
-    );
-    const baseUrl = await listen(server);
-    cleanups.push(() => close(server));
-
-    const response = await postForm(`${baseUrl}/slack/post-file`, {
-      channel_id: "C123",
-      thread_ts: "111.222",
-      file_path: "/tmp/report.txt",
-      title: "report",
-      initial_comment: "see attached"
-    });
-
-    expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({
+  it("resolves GitHub PR tokens through the bridge", async () => {
+    const resolveGitHubPrToken = vi.fn(async () => ({
       ok: true,
-      file: {
-        platform: "slack",
-        fileId: "F123",
-        title: "report"
-      }
+      mode: "initiator",
+      slackUserId: "U_STARTER",
+      githubLogin: "alice",
+      token: "alice-token"
+    }));
+    const request = createJsonRequest({
+      cwd: "/tmp/session/workspace",
+      command: ["pr", "create", "--fill"]
     });
-    expect(calls).toEqual([
+    const response = createResponse();
+
+    const handled = await handleSlackRequest(
+      "POST",
+      new URL("http://localhost/slack/github-token/resolve"),
+      request as never,
+      response as never,
       {
-        platform: "slack",
-        conversationId: "C123",
-        rootMessageId: "111.222",
-        filePath: "/tmp/report.txt",
-        contentBase64: undefined,
-        filename: undefined,
-        title: "report",
-        initialComment: "see attached",
-        altText: undefined,
-        snippetType: undefined,
-        contentType: undefined
+        bridge: {
+          resolveGitHubPrToken
+        } as never,
+        config: {} as never
       }
-    ]);
+    );
+
+    expect(handled).toBe(true);
+    expect(resolveGitHubPrToken).toHaveBeenCalledWith({
+      cwd: "/tmp/session/workspace",
+      command: ["pr", "create", "--fill"]
+    });
+    expect(response.statusCode).toBe(200);
+    expect(JSON.parse(response.bodyText || "{}")).toMatchObject({
+      ok: true,
+      githubLogin: "alice",
+      token: "alice-token"
+    });
   });
 
-  it("validates Slack post-file file sources before delegation", async () => {
-    const calls: unknown[] = [];
-    const server = http.createServer(
-      createHttpHandler({
+  it("returns a blocking status when GitHub PR token resolution is blocked", async () => {
+    const resolveGitHubPrToken = vi.fn(async () => ({
+      ok: false,
+      mode: "blocked",
+      reason: "initiator_token_invalid",
+      message: "GitHub token for alice is invalid."
+    }));
+    const request = createJsonRequest({
+      cwd: "/tmp/session/workspace",
+      command: ["pr", "create"]
+    });
+    const response = createResponse();
+
+    const handled = await handleSlackRequest(
+      "POST",
+      new URL("http://localhost/slack/github-token/resolve"),
+      request as never,
+      response as never,
+      {
         bridge: {
-          postChatFile: async (payload: unknown) => {
-            calls.push(payload);
-            return {
-              platform: "slack",
-              fileId: "F123"
-            };
-          }
+          resolveGitHubPrToken
         } as never,
-        config: {
-          serviceName: "test-broker"
-        } as never
-      })
+        config: {} as never
+      }
     );
-    const baseUrl = await listen(server);
-    cleanups.push(() => close(server));
 
-    const missingSource = await postForm(`${baseUrl}/slack/post-file`, {
-      channel_id: "C123",
-      thread_ts: "111.222"
-    });
-    expect(missingSource.status).toBe(400);
-    await expect(missingSource.json()).resolves.toEqual({
+    expect(handled).toBe(true);
+    expect(response.statusCode).toBe(409);
+    expect(JSON.parse(response.bodyText || "{}")).toMatchObject({
       ok: false,
-      error: "provide_exactly_one_file_source",
-      required: [
-        "filePath (alias: file_path)",
-        "contentBase64 (alias: content_base64)"
-      ]
+      reason: "initiator_token_invalid",
+      message: "GitHub token for alice is invalid."
     });
-
-    const duplicateSource = await postForm(`${baseUrl}/slack/post-file`, {
-      channel_id: "C123",
-      thread_ts: "111.222",
-      file_path: "/tmp/report.txt",
-      content_base64: Buffer.from("report").toString("base64")
-    });
-    expect(duplicateSource.status).toBe(400);
-    await expect(duplicateSource.json()).resolves.toEqual({
-      ok: false,
-      error: "provide_exactly_one_file_source",
-      required: [
-        "filePath (alias: file_path)",
-        "contentBase64 (alias: content_base64)"
-      ]
-    });
-
-    expect(calls).toEqual([]);
-  });
-
-  it("rejects Slack inline file uploads without a filename before delegation", async () => {
-    const calls: unknown[] = [];
-    const server = http.createServer(
-      createHttpHandler({
-        bridge: {
-          postChatFile: async (payload: unknown) => {
-            calls.push(payload);
-            return {
-              platform: "slack",
-              fileId: "F123"
-            };
-          }
-        } as never,
-        config: {
-          serviceName: "test-broker"
-        } as never
-      })
-    );
-    const baseUrl = await listen(server);
-    cleanups.push(() => close(server));
-
-    const response = await postForm(`${baseUrl}/slack/post-file`, {
-      channel_id: "C123",
-      thread_ts: "111.222",
-      content_base64: Buffer.from("report").toString("base64")
-    });
-
-    expect(response.status).toBe(400);
-    await expect(response.json()).resolves.toEqual({
-      ok: false,
-      error: "missing_required_body",
-      message: "filename is required when using contentBase64 (alias: content_base64)",
-      required: ["filename"]
-    });
-    expect(calls).toEqual([]);
-  });
-
-  it("rejects invalid Slack inline file content before delegation", async () => {
-    const calls: unknown[] = [];
-    const server = http.createServer(
-      createHttpHandler({
-        bridge: {
-          postChatFile: async (payload: unknown) => {
-            calls.push(payload);
-            return {
-              platform: "slack",
-              fileId: "F123"
-            };
-          }
-        } as never,
-        config: {
-          serviceName: "test-broker"
-        } as never
-      })
-    );
-    const baseUrl = await listen(server);
-    cleanups.push(() => close(server));
-
-    const response = await postForm(`${baseUrl}/slack/post-file`, {
-      channel_id: "C123",
-      thread_ts: "111.222",
-      content_base64: "!!!!",
-      filename: "report.pdf"
-    });
-
-    expect(response.status).toBe(400);
-    await expect(response.json()).resolves.toEqual({
-      ok: false,
-      error: "invalid_content_base64",
-      message: "contentBase64 (alias: content_base64) must decode to non-empty file content",
-      required: ["contentBase64 (alias: content_base64)"]
-    });
-    expect(calls).toEqual([]);
   });
 });
-
-async function listen(server: http.Server): Promise<string> {
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const address = server.address();
-  if (!address || typeof address === "string") {
-    throw new Error("failed to bind test server");
-  }
-  return `http://127.0.0.1:${address.port}`;
-}
-
-async function close(server: http.Server): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
-    server.close((error) => {
-      if (error) {
-        reject(error);
-        return;
-      }
-      resolve();
-    });
-  });
-}
-
-async function postForm(url: string, body: Record<string, string>): Promise<Response> {
-  return await fetch(url, {
-    method: "POST",
-    headers: {
-      "content-type": "application/x-www-form-urlencoded"
-    },
-    body: new URLSearchParams(body)
-  });
-}

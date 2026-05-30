@@ -1,4 +1,6 @@
 import { EventEmitter } from "node:events";
+import fs from "node:fs";
+import path from "node:path";
 
 import { AppServerClient } from "./app-server-client.js";
 import { AppServerProcess } from "./app-server-process.js";
@@ -24,6 +26,7 @@ export class CodexBroker extends EventEmitter {
   readonly #codexAppServerUrl?: string | undefined;
   readonly #personalMemoryFilePath: string;
   readonly #reposRoot: string;
+  readonly #codexGeneratedImagesRoot: string;
   #slackBotIdentity: SlackUserIdentity | null = null;
   #reconnectPromise: Promise<void> | undefined;
   #connectQueue: Promise<void> = Promise.resolve();
@@ -34,6 +37,7 @@ export class CodexBroker extends EventEmitter {
     readonly serviceName: string;
     readonly brokerHttpBaseUrl: string;
     readonly codexHome: string;
+    readonly teamCodexHomePath?: string | undefined;
     readonly reposRoot: string;
     readonly hostCodexHomePath?: string | undefined;
     readonly hostGeminiHomePath?: string | undefined;
@@ -52,8 +56,12 @@ export class CodexBroker extends EventEmitter {
     this.#brokerHttpBaseUrl = options.brokerHttpBaseUrl;
     this.#openAiApiKey = options.openAiApiKey;
     this.#codexAppServerUrl = options.codexAppServerUrl;
-    this.#personalMemoryFilePath = getPersonalMemoryPath(options.codexHome);
+    this.#personalMemoryFilePath = choosePersonalMemoryFilePath({
+      codexHome: options.codexHome,
+      teamCodexHomePath: options.teamCodexHomePath
+    });
     this.#reposRoot = options.reposRoot;
+    this.#codexGeneratedImagesRoot = path.join(options.codexHome, "generated_images");
 
     if (options.codexAppServerUrl) {
       this.#client = this.#createClient(options.codexAppServerUrl);
@@ -64,6 +72,7 @@ export class CodexBroker extends EventEmitter {
     this.#appServerProcess = new AppServerProcess({
       brokerHttpBaseUrl: options.brokerHttpBaseUrl,
       codexHome: options.codexHome,
+      teamCodexHomePath: options.teamCodexHomePath,
       hostCodexHomePath: options.hostCodexHomePath,
       hostGeminiHomePath: options.hostGeminiHomePath,
       port: options.codexAppServerPort,
@@ -102,8 +111,8 @@ export class CodexBroker extends EventEmitter {
   }
 
   async ensureThread(session: SlackSessionRecord): Promise<string> {
-    if (session.codexThreadId && this.#loadedThreadIds.has(session.codexThreadId)) {
-      return session.codexThreadId;
+    if (session.agentSessionId && this.#loadedThreadIds.has(session.agentSessionId)) {
+      return session.agentSessionId;
     }
 
     const threadId = await this.#withRecovery(() => this.#client.ensureThread(session));
@@ -112,23 +121,23 @@ export class CodexBroker extends EventEmitter {
   }
 
   async startTurn(session: SlackSessionRecord, input: readonly CodexInputItem[]): Promise<StartedTurn> {
-    if (!session.codexThreadId) {
+    if (!session.agentSessionId) {
       throw new Error(`Session ${session.key} has no Codex thread id`);
     }
 
     return await this.#withRecovery(() =>
-      this.#client.startTurn(session.codexThreadId!, session.workspacePath, input)
+      this.#client.startTurn(session.agentSessionId!, session.workspacePath, input)
     );
   }
 
   async steer(session: SlackSessionRecord, input: readonly CodexInputItem[]): Promise<void> {
-    if (!session.codexThreadId || !session.activeTurnId) {
+    if (!session.agentSessionId || !session.activeTurnId) {
       throw new Error(`Session ${session.key} has no active Codex turn to steer`);
     }
 
     await this.#withRecovery(() =>
       this.#client.steerTurn({
-        threadId: session.codexThreadId!,
+        threadId: session.agentSessionId!,
         turnId: session.activeTurnId!,
         input
       })
@@ -136,11 +145,11 @@ export class CodexBroker extends EventEmitter {
   }
 
   async interrupt(session: SlackSessionRecord): Promise<void> {
-    if (!session.codexThreadId || !session.activeTurnId) {
+    if (!session.agentSessionId || !session.activeTurnId) {
       return;
     }
 
-    await this.#withRecovery(() => this.#client.interruptTurn(session.codexThreadId!, session.activeTurnId!));
+    await this.#withRecovery(() => this.#client.interruptTurn(session.agentSessionId!, session.activeTurnId!));
   }
 
   async readTurnResult(
@@ -148,11 +157,11 @@ export class CodexBroker extends EventEmitter {
     turnId: string,
     options?: ReadTurnResultOptions
   ): Promise<ReadTurnResult | null> {
-    if (!session.codexThreadId) {
+    if (!session.agentSessionId) {
       return null;
     }
 
-    return await this.#withRecovery(() => this.#client.readTurnResult(session.codexThreadId!, turnId, options));
+    return await this.#withRecovery(() => this.#client.readTurnResult(session.agentSessionId!, turnId, options));
   }
 
   async readAccountSummary(refreshToken = false): Promise<AppServerAccountSummary> {
@@ -177,7 +186,8 @@ export class CodexBroker extends EventEmitter {
       brokerHttpBaseUrl: this.#brokerHttpBaseUrl,
       openAiApiKey: this.#openAiApiKey,
       personalMemoryFilePath: this.#personalMemoryFilePath,
-      reposRoot: this.#reposRoot
+      reposRoot: this.#reposRoot,
+      codexGeneratedImagesRoot: this.#codexGeneratedImagesRoot
     });
     client.setSlackBotIdentity(this.#slackBotIdentity);
     return client;
@@ -326,7 +336,24 @@ export class CodexBroker extends EventEmitter {
   }
 }
 
-function isRecoverableCodexConnectionError(error: unknown): boolean {
+function choosePersonalMemoryFilePath(options: {
+  readonly codexHome: string;
+  readonly teamCodexHomePath?: string | undefined;
+}): string {
+  if (!options.teamCodexHomePath) {
+    return getPersonalMemoryPath(options.codexHome);
+  }
+
+  const teamMemoryPath = getPersonalMemoryPath(options.codexHome, {
+    teamCodexHomePath: options.teamCodexHomePath
+  });
+  const teamMemory = fs.existsSync(teamMemoryPath)
+    ? fs.readFileSync(teamMemoryPath, "utf8").trim()
+    : "";
+  return teamMemory ? teamMemoryPath : getPersonalMemoryPath(options.codexHome);
+}
+
+export function isRecoverableCodexConnectionError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   return [
     "Codex app-server websocket is not connected",
@@ -334,6 +361,7 @@ function isRecoverableCodexConnectionError(error: unknown): boolean {
     "readyState 3",
     "socket hang up",
     "ECONNREFUSED",
+    "EPIPE",
     "closed"
   ].some((pattern) => message.includes(pattern));
 }

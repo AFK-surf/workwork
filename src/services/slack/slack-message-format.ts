@@ -25,20 +25,24 @@ interface SlackRenderableMessage {
   readonly unexpectedTurnStop?: UnexpectedTurnStopPayload | undefined;
 }
 
-export function formatSlackMessageForCodex(
+export function formatSlackMessageForAgent(
   message: SlackInputMessage,
   sender: SlackUserIdentity | null
 ): string {
   if (message.source === "background_job_event" && message.backgroundJob) {
-    return formatBackgroundJobEventForCodex(message);
+    return formatBackgroundJobEventForAgent(message);
   }
 
   if (message.source === "unexpected_turn_stop" && message.unexpectedTurnStop) {
-    return formatUnexpectedTurnStopForCodex(message);
+    return formatUnexpectedTurnStopForAgent(message);
+  }
+
+  if (message.source === "admin_session_reset") {
+    return formatAdminSessionResetForAgent(message);
   }
 
   if (message.batchMessages && message.batchMessages.length > 0) {
-    return formatRecoveredSlackBatchForCodex(message);
+    return formatRecoveredSlackBatchForAgent(message);
   }
 
   const currentMessageBlock = formatSlackMessageBlock(message, sender);
@@ -54,7 +58,7 @@ export function formatSlackMessageForCodex(
   ].join("\n\n");
 }
 
-export function formatSlackHistoryContextForCodex(
+export function formatSlackHistoryContextForAgent(
   history: readonly ResolvedSlackThreadMessage[]
 ): string | undefined {
   if (history.length === 0) {
@@ -105,7 +109,7 @@ function formatSlackMessageBlock(
   return `${header}\nstructured_message_json:\n\`\`\`json\n${JSON.stringify(payload, null, 2)}\n\`\`\``;
 }
 
-function formatBackgroundJobEventForCodex(message: SlackInputMessage): string {
+function formatBackgroundJobEventForAgent(message: SlackInputMessage): string {
   const payload = {
     source: message.source,
     message_ts: message.messageTs,
@@ -132,7 +136,7 @@ function formatBackgroundJobEventForCodex(message: SlackInputMessage): string {
   ].join("\n");
 }
 
-function formatUnexpectedTurnStopForCodex(message: SlackInputMessage): string {
+function formatUnexpectedTurnStopForAgent(message: SlackInputMessage): string {
   const payload = {
     source: message.source,
     message_ts: message.messageTs,
@@ -162,7 +166,43 @@ function formatUnexpectedTurnStopForCodex(message: SlackInputMessage): string {
   ].join("\n");
 }
 
-function formatRecoveredSlackBatchForCodex(message: SlackInputMessage): string {
+function formatAdminSessionResetForAgent(message: SlackInputMessage): string {
+  const payload = {
+    source: message.source,
+    message_ts: message.messageTs,
+    reason: message.text.trim() || "The broker admin reset this session."
+  };
+  const sections = [
+    "The broker admin manually reset this Slack session.",
+    "The previous agent thread/history was intentionally discarded. Treat this as a fresh agent session.",
+    "Use the Slack thread context below as the only prior context, continue from the latest user intent, and reply only if the current Slack state requires it."
+  ];
+
+  if (message.contextText?.trim()) {
+    sections.push(
+      "",
+      "Current Slack thread context:",
+      message.contextText.trim()
+    );
+  } else {
+    sections.push(
+      "",
+      "No Slack thread context was available from the broker at reset time."
+    );
+  }
+
+  sections.push(
+    "",
+    "admin_session_reset_json:",
+    "```json",
+    JSON.stringify(payload, null, 2),
+    "```"
+  );
+
+  return sections.join("\n");
+}
+
+function formatRecoveredSlackBatchForAgent(message: SlackInputMessage): string {
   const batchMessages = message.batchMessages ?? [];
   const payload = {
     source: message.source,
@@ -209,18 +249,45 @@ function buildSlackMessagePayload(
       : undefined,
     text: message.text || "[no text body]",
     text_with_resolved_mentions: resolveMentionText(message.text || "[no text body]", message.mentionedUsers),
-    images: (message.images ?? []).map((image) => ({
-      file_id: image.fileId,
-      name: image.name,
-      title: image.title,
-      mimetype: image.mimetype,
-      width: image.width,
-      height: image.height,
-      dimensions: formatImageDimensions(image)
+    attachments: (message.images ?? []).map((attachment) => ({
+      file_id: attachment.fileId,
+      name: attachment.name,
+      title: attachment.title,
+      mimetype: attachment.mimetype,
+      filetype: attachment.filetype,
+      size: attachment.size,
+      width: attachment.width,
+      height: attachment.height,
+      dimensions: formatImageDimensions(attachment),
+      local_path: attachment.localPath,
+      download_error: attachment.downloadError
     })),
-    slack_message: message.slackMessage,
+    slack_message: buildSelectedSlackPayload(message),
     unexpected_turn_stop: message.unexpectedTurnStop
   };
+}
+
+function buildSelectedSlackPayload(message: SlackRenderableMessage): JsonLike | undefined {
+  if (message.senderKind !== "bot" && message.senderKind !== "app") {
+    return undefined;
+  }
+
+  const raw = toRecord(message.slackMessage);
+  if (!raw) {
+    return undefined;
+  }
+
+  const selected = pickJsonFields(raw, [
+    "subtype",
+    "bot_id",
+    "app_id",
+    "username",
+    "text",
+    "attachments",
+    "blocks",
+    "files"
+  ]);
+  return Object.keys(selected).length > 0 ? selected : undefined;
 }
 
 function buildSenderPayload(
@@ -255,7 +322,24 @@ function formatImageDimensions(image: SlackImageAttachment): string | undefined 
   return `${image.width}x${image.height}`;
 }
 
-function resolveMentionText(
+function pickJsonFields(value: Record<string, JsonLike>, keys: readonly string[]): Record<string, JsonLike> {
+  const picked: Record<string, JsonLike> = {};
+  for (const key of keys) {
+    if (value[key] !== undefined) {
+      picked[key] = value[key]!;
+    }
+  }
+  return picked;
+}
+
+function toRecord(value: JsonLike | undefined): Record<string, JsonLike> | undefined {
+  if (!value || Array.isArray(value) || typeof value !== "object") {
+    return undefined;
+  }
+  return value as Record<string, JsonLike>;
+}
+
+export function resolveMentionText(
   text: string,
   mentionedUsers?: readonly SlackUserIdentity[] | undefined
 ): string {

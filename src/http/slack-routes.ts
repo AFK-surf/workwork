@@ -3,20 +3,17 @@ import { URL } from "node:url";
 
 import type { AppConfig } from "../config.js";
 import { logger } from "../logger.js";
+import type { SlackAgentBridge } from "../services/slack/slack-agent-bridge.js";
 import {
-  CHAT_FILE_SOURCE_FIELD_DESCRIPTIONS,
-  CHAT_INLINE_FILE_CONTENT_REQUIREMENT_MESSAGE,
-  CHAT_INLINE_FILE_FILENAME_REQUIREMENT_MESSAGE,
-  isNonEmptyBase64Content
-} from "../services/chat/chat-types.js";
-import type { SlackCodexBridge } from "../services/slack/slack-codex-bridge.js";
-import {
+  readBoolean,
   readJsonBody,
   readFormBody,
-  readPositiveIntegerQueryParam,
+  readString,
   respondJson
 } from "./common.js";
 import { redactHttpRequestBody } from "./request-log-redaction.js";
+
+const LEGACY_COAUTHOR_MAPPING_ERROR = "Manual co-author mappings are no longer supported. Bind GitHub OAuth for Slack users instead.";
 
 export async function handleSlackRequest(
   method: string,
@@ -24,7 +21,7 @@ export async function handleSlackRequest(
   request: http.IncomingMessage,
   response: http.ServerResponse,
   options: {
-    readonly bridge: SlackCodexBridge;
+    readonly bridge: SlackAgentBridge;
     readonly config: AppConfig;
   }
 ): Promise<boolean> {
@@ -38,8 +35,21 @@ export async function handleSlackRequest(
     return true;
   }
 
-  if (method === "POST" && url.pathname === "/slack/resume-pending-session") {
-    await handleSlackResumePendingSessionRequest(request, response, options);
+  const matchedResumeSession = matchResumeSessionPath(url.pathname);
+  if (method === "POST" && matchedResumeSession) {
+    await handleSlackResumePendingSessionRequest(response, options, matchedResumeSession.sessionKey);
+    return true;
+  }
+
+  const matchedResetSession = matchResetSessionPath(url.pathname);
+  if (method === "POST" && matchedResetSession) {
+    await handleSlackResetSessionRequest(response, options, matchedResetSession.sessionKey);
+    return true;
+  }
+
+  const matchedDeleteSession = matchDeleteSessionPath(url.pathname);
+  if (method === "DELETE" && matchedDeleteSession) {
+    await handleSlackDeleteSessionRequest(response, options, matchedDeleteSession.sessionKey);
     return true;
   }
 
@@ -63,14 +73,96 @@ export async function handleSlackRequest(
     return true;
   }
 
+  if (method === "GET" && url.pathname === "/slack/git-coauthors/session-status") {
+    await handleGetCommitCoauthorStatusRequest(url, response, options);
+    return true;
+  }
+
+  if (method === "POST" && url.pathname === "/slack/git-coauthors/configure-session") {
+    await handleConfigureCommitCoauthorsRequest(request, response, options);
+    return true;
+  }
+
+  if (method === "POST" && url.pathname === "/slack/github-token/resolve") {
+    await handleResolveGitHubTokenRequest(request, response, options);
+    return true;
+  }
+
   return false;
+}
+
+async function handleSlackResumePendingSessionRequest(
+  response: http.ServerResponse,
+  options: {
+    readonly bridge: SlackAgentBridge;
+  },
+  sessionKey: string
+): Promise<void> {
+  try {
+    const resumedCount = await options.bridge.resumePendingSession(sessionKey);
+    respondJson(response, 200, {
+      ok: true,
+      sessionKey,
+      resumedCount
+    });
+  } catch (error) {
+    respondJson(response, 500, {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error)
+    });
+  }
+}
+
+async function handleSlackResetSessionRequest(
+  response: http.ServerResponse,
+  options: {
+    readonly bridge: SlackAgentBridge;
+  },
+  sessionKey: string
+): Promise<void> {
+  try {
+    const reset = await options.bridge.resetSession(sessionKey);
+    respondJson(response, 200, {
+      ok: true,
+      sessionKey,
+      reset
+    });
+  } catch (error) {
+    respondJson(response, 500, {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error)
+    });
+  }
+}
+
+async function handleSlackDeleteSessionRequest(
+  response: http.ServerResponse,
+  options: {
+    readonly bridge: SlackAgentBridge;
+  },
+  sessionKey: string
+): Promise<void> {
+  try {
+    const deleted = await options.bridge.deleteSession(sessionKey);
+    respondJson(response, 200, {
+      ok: true,
+      sessionKey,
+      delete: deleted
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    respondJson(response, message.includes("Unknown session") ? 404 : 500, {
+      ok: false,
+      error: message
+    });
+  }
 }
 
 async function handleSlackThreadHistoryRequest(
   url: URL,
   response: http.ServerResponse,
   options: {
-    readonly bridge: SlackCodexBridge;
+    readonly bridge: SlackAgentBridge;
     readonly config: AppConfig;
   }
 ): Promise<void> {
@@ -87,37 +179,22 @@ async function handleSlackThreadHistoryRequest(
   }
 
   const limitParam = url.searchParams.get("limit");
-  const parsedLimit = readPositiveIntegerQueryParam(limitParam);
-  const formatParam = url.searchParams.get("format");
-  const responseFormat = readHistoryResponseFormat(formatParam);
+  const parsedLimit = limitParam == null ? undefined : Number(limitParam);
 
-  if (limitParam != null && parsedLimit == null) {
-    respondJson(response, 400, {
-      ok: false,
-      error: "invalid_limit",
-      message: "limit must be a positive integer"
-    });
-    return;
-  }
-
-  if (formatParam != null && !responseFormat) {
-    respondJson(response, 400, {
-      ok: false,
-      error: "invalid_format",
-      allowed: ["json", "text"]
-    });
+  if (limitParam != null && !Number.isFinite(parsedLimit)) {
+    respondJson(response, 400, { ok: false, error: "invalid_limit" });
     return;
   }
 
   try {
-    const result = await options.bridge.readChatThreadHistory({
-      platform: "slack",
-      conversationId: channelId,
-      rootMessageId: rootThreadTs,
-      beforeMessageId: url.searchParams.get("before_ts") ?? undefined,
+    const result = await options.bridge.readThreadHistory({
+      channelId,
+      rootThreadTs,
+      beforeMessageTs: url.searchParams.get("before_ts") ?? undefined,
       channelType: url.searchParams.get("channel_type") ?? undefined,
       limit: parsedLimit
     });
+    const responseFormat = url.searchParams.get("format") ?? "json";
 
     if (responseFormat === "text") {
       response.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
@@ -148,7 +225,7 @@ async function handleSlackReplayThreadMessageRequest(
   url: URL,
   response: http.ServerResponse,
   options: {
-    readonly bridge: SlackCodexBridge;
+    readonly bridge: SlackAgentBridge;
   }
 ): Promise<void> {
   const channelId = url.searchParams.get("channel_id");
@@ -195,7 +272,7 @@ async function handleSlackPostMessageRequest(
   request: http.IncomingMessage,
   response: http.ServerResponse,
   options: {
-    readonly bridge: SlackCodexBridge;
+    readonly bridge: SlackAgentBridge;
   }
 ): Promise<void> {
   let body: Record<string, string>;
@@ -252,14 +329,28 @@ async function handleSlackPostMessageRequest(
   }
 
   try {
-    await options.bridge.postChatMessage({
-      platform: "slack",
-      conversationId: channelId,
-      rootMessageId: rootThreadTs,
-      text,
-      kind: kind as "progress" | "final" | "block" | "wait" | undefined,
-      reason
-    });
+    const bridge = options.bridge as SlackAgentBridge & {
+      readonly postSlackMessage?: SlackAgentBridge["postSlackMessage"];
+      readonly postChatMessage?: SlackAgentBridge["postChatMessage"];
+    };
+    if (typeof bridge.postSlackMessage === "function") {
+      await bridge.postSlackMessage({
+        channelId,
+        rootThreadTs,
+        text,
+        kind: kind as "progress" | "final" | "block" | "wait" | undefined,
+        reason
+      });
+    } else {
+      await bridge.postChatMessage!({
+        platform: "slack",
+        conversationId: channelId,
+        rootMessageId: rootThreadTs,
+        text,
+        kind: kind as "progress" | "final" | "block" | "wait" | undefined,
+        reason
+      });
+    }
     respondJson(response, 200, { ok: true });
   } catch (error) {
     respondJson(response, 500, {
@@ -273,7 +364,7 @@ async function handleSlackPostStateRequest(
   request: http.IncomingMessage,
   response: http.ServerResponse,
   options: {
-    readonly bridge: SlackCodexBridge;
+    readonly bridge: SlackAgentBridge;
   }
 ): Promise<void> {
   let body: Record<string, string>;
@@ -330,82 +421,27 @@ async function handleSlackPostStateRequest(
   }
 
   try {
-    await options.bridge.postChatState({
-      platform: "slack",
-      conversationId: channelId,
-      rootMessageId: rootThreadTs,
-      kind: kind as "wait" | "block" | "final",
-      reason
-    });
-    respondJson(response, 200, { ok: true });
-  } catch (error) {
-    respondJson(response, 500, {
-      ok: false,
-      error: error instanceof Error ? error.message : String(error)
-    });
-  }
-}
-
-async function handleSlackResumePendingSessionRequest(
-  request: http.IncomingMessage,
-  response: http.ServerResponse,
-  options: {
-    readonly bridge: SlackCodexBridge;
-  }
-): Promise<void> {
-  let body: Record<string, string>;
-
-  try {
-    body = await readFormBody(request);
-  } catch (error) {
-    respondJson(response, 400, {
-      ok: false,
-      error: error instanceof Error ? error.message : String(error)
-    });
-    return;
-  }
-
-  logger.raw("http-requests", {
-    method: "POST",
-    path: "/slack/resume-pending-session",
-    body
-  }, {
-    channelId: body.channel_id,
-    rootThreadTs: body.thread_ts
-  });
-
-  const channelId = body.channel_id;
-  const rootThreadTs = body.thread_ts;
-  const forceReset = body.force_reset !== "false";
-
-  if (!channelId || !rootThreadTs) {
-    respondJson(response, 400, {
-      ok: false,
-      error: "missing_required_body",
-      required: ["channel_id", "thread_ts"]
-    });
-    return;
-  }
-
-  try {
-    const result = await options.bridge.resumePendingSession({
-      channelId,
-      rootThreadTs,
-      forceReset
-    });
-
-    if (!result) {
-      respondJson(response, 404, {
-        ok: false,
-        error: "session_not_found"
+    const bridge = options.bridge as SlackAgentBridge & {
+      readonly postSlackState?: SlackAgentBridge["postSlackState"];
+      readonly postChatState?: SlackAgentBridge["postChatState"];
+    };
+    if (typeof bridge.postSlackState === "function") {
+      await bridge.postSlackState({
+        channelId,
+        rootThreadTs,
+        kind: kind as "wait" | "block" | "final",
+        reason
       });
-      return;
+    } else {
+      await bridge.postChatState!({
+        platform: "slack",
+        conversationId: channelId,
+        rootMessageId: rootThreadTs,
+        kind: kind as "wait" | "block" | "final",
+        reason
+      });
     }
-
-    respondJson(response, 200, {
-      ok: true,
-      ...result
-    });
+    respondJson(response, 200, { ok: true });
   } catch (error) {
     respondJson(response, 500, {
       ok: false,
@@ -418,7 +454,7 @@ async function handleSlackPostFileRequest(
   request: http.IncomingMessage,
   response: http.ServerResponse,
   options: {
-    readonly bridge: SlackCodexBridge;
+    readonly bridge: SlackAgentBridge;
   }
 ): Promise<void> {
   let body: Record<string, string>;
@@ -448,49 +484,21 @@ async function handleSlackPostFileRequest(
   const filename = body.filename?.trim() || undefined;
   const initialComment = (body.initial_comment ?? body.text)?.trim() || undefined;
 
-  if (!channelId || !rootThreadTs) {
+  if (!channelId || !rootThreadTs || (!filePath && !contentBase64)) {
     respondJson(response, 400, {
       ok: false,
       error: "missing_required_body",
-      required: ["channel_id", "thread_ts", ...CHAT_FILE_SOURCE_FIELD_DESCRIPTIONS]
-    });
-    return;
-  }
-
-  if (Boolean(filePath) === Boolean(contentBase64)) {
-    respondJson(response, 400, {
-      ok: false,
-      error: "provide_exactly_one_file_source",
-      required: CHAT_FILE_SOURCE_FIELD_DESCRIPTIONS
-    });
-    return;
-  }
-
-  if (contentBase64 && !filename) {
-    respondJson(response, 400, {
-      ok: false,
-      error: "missing_required_body",
-      message: CHAT_INLINE_FILE_FILENAME_REQUIREMENT_MESSAGE,
-      required: ["filename"]
-    });
-    return;
-  }
-
-  if (contentBase64 && !isNonEmptyBase64Content(contentBase64)) {
-    respondJson(response, 400, {
-      ok: false,
-      error: "invalid_content_base64",
-      message: CHAT_INLINE_FILE_CONTENT_REQUIREMENT_MESSAGE,
-      required: ["contentBase64 (alias: content_base64)"]
+      required: ["channel_id", "thread_ts", "file_path|content_base64"]
     });
     return;
   }
 
   try {
-    const uploaded = await options.bridge.postChatFile({
-      platform: "slack",
-      conversationId: channelId,
-      rootMessageId: rootThreadTs,
+    const bridge = options.bridge as SlackAgentBridge & {
+      readonly postSlackFile?: SlackAgentBridge["postSlackFile"];
+      readonly postChatFile?: SlackAgentBridge["postChatFile"];
+    };
+    const fileOptions = {
       filePath,
       contentBase64,
       filename,
@@ -499,7 +507,19 @@ async function handleSlackPostFileRequest(
       altText: body.alt_text?.trim() || undefined,
       snippetType: body.snippet_type?.trim() || undefined,
       contentType: body.content_type?.trim() || undefined
-    });
+    };
+    const uploaded = typeof bridge.postSlackFile === "function"
+      ? await bridge.postSlackFile({
+        channelId,
+        rootThreadTs,
+        ...fileOptions
+      })
+      : await bridge.postChatFile!({
+        platform: "slack",
+        conversationId: channelId,
+        rootMessageId: rootThreadTs,
+        ...fileOptions
+      });
     respondJson(response, 200, {
       ok: true,
       file: uploaded
@@ -516,7 +536,7 @@ async function handleResolveCommitCoauthorsRequest(
   request: http.IncomingMessage,
   response: http.ServerResponse,
   options: {
-    readonly bridge: SlackCodexBridge;
+    readonly bridge: SlackAgentBridge;
   }
 ): Promise<void> {
   try {
@@ -541,16 +561,6 @@ async function handleResolveCommitCoauthorsRequest(
       primaryAuthorEmail
     });
 
-    if (result.status === "blocked") {
-      respondJson(response, 409, {
-        ok: false,
-        error: result.errorCode ?? "coauthor_resolution_blocked",
-        message: result.message,
-        sessionKey: result.sessionKey
-      });
-      return;
-    }
-
     respondJson(response, 200, {
       ok: true,
       ...result
@@ -563,10 +573,206 @@ async function handleResolveCommitCoauthorsRequest(
   }
 }
 
-function readHistoryResponseFormat(value: string | null): "json" | "text" | undefined {
-  if (value == null) {
-    return "json";
+async function handleResolveGitHubTokenRequest(
+  request: http.IncomingMessage,
+  response: http.ServerResponse,
+  options: {
+    readonly bridge: SlackAgentBridge;
+  }
+): Promise<void> {
+  try {
+    const body = await readJsonBody(request);
+    const cwd = readString(body.cwd);
+    const command = normalizeStringArray(body.command) ?? [];
+    if (!cwd) {
+      respondJson(response, 400, {
+        ok: false,
+        error: "missing_required_body",
+        required: ["cwd"]
+      });
+      return;
+    }
+
+    const result = await options.bridge.resolveGitHubPrToken({
+      cwd,
+      command
+    });
+    respondJson(response, result.ok ? 200 : 409, result);
+  } catch (error) {
+    respondJson(response, 500, {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error)
+    });
+  }
+}
+
+async function handleGetCommitCoauthorStatusRequest(
+  url: URL,
+  response: http.ServerResponse,
+  options: {
+    readonly bridge: SlackAgentBridge;
+  }
+): Promise<void> {
+  const cwd = url.searchParams.get("cwd")?.trim();
+  if (!cwd) {
+    respondJson(response, 400, {
+      ok: false,
+      error: "missing_required_query",
+      required: ["cwd"]
+    });
+    return;
   }
 
-  return value === "json" || value === "text" ? value : undefined;
+  try {
+    const status = await options.bridge.getCommitCoauthorStatus(cwd);
+    if (!status) {
+      respondJson(response, 404, {
+        ok: false,
+        error: "session_not_found"
+      });
+      return;
+    }
+
+    respondJson(response, 200, {
+      ok: true,
+      status
+    });
+  } catch (error) {
+    respondJson(response, 500, {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error)
+    });
+  }
+}
+
+async function handleConfigureCommitCoauthorsRequest(
+  request: http.IncomingMessage,
+  response: http.ServerResponse,
+  options: {
+    readonly bridge: SlackAgentBridge;
+  }
+): Promise<void> {
+  try {
+    const body = await readJsonBody(request);
+    const cwd = readString(body.cwd);
+    if (!cwd) {
+      respondJson(response, 400, {
+        ok: false,
+        error: "missing_required_body",
+        required: ["cwd"]
+      });
+      return;
+    }
+
+    const coauthors = normalizeStringArray(body.coauthors);
+    const userIds = normalizeStringArray(body.user_ids);
+    const mappings = normalizeMappings(body.mappings);
+    if (mappings) {
+      respondJson(response, 400, {
+        ok: false,
+        error: LEGACY_COAUTHOR_MAPPING_ERROR
+      });
+      return;
+    }
+    const ignoreMissing =
+      Object.prototype.hasOwnProperty.call(body, "ignore_missing") ||
+      Object.prototype.hasOwnProperty.call(body, "ignoreMissing")
+        ? readBoolean(body.ignore_missing ?? body.ignoreMissing, false)
+        : undefined;
+    const status = await options.bridge.configureSessionCoauthors({
+      cwd,
+      coauthors,
+      userIds,
+      ignoreMissing,
+      mappings
+    });
+
+    if (!status) {
+      respondJson(response, 404, {
+        ok: false,
+        error: "session_not_found"
+      });
+      return;
+    }
+
+    respondJson(response, 200, {
+      ok: true,
+      status
+    });
+  } catch (error) {
+    respondJson(response, 500, {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error)
+    });
+  }
+}
+
+function normalizeStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const normalized = value
+    .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+    .filter(Boolean);
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function matchResumeSessionPath(pathname: string): { readonly sessionKey: string } | null {
+  const prefix = "/slack/sessions/";
+  const suffix = "/resume-pending";
+  if (!pathname.startsWith(prefix) || !pathname.endsWith(suffix)) {
+    return null;
+  }
+
+  const encodedKey = pathname.slice(prefix.length, -suffix.length);
+  if (!encodedKey) {
+    return null;
+  }
+
+  return {
+    sessionKey: decodeURIComponent(encodedKey)
+  };
+}
+
+function matchResetSessionPath(pathname: string): { readonly sessionKey: string } | null {
+  const prefix = "/slack/sessions/";
+  const suffix = "/reset";
+  if (!pathname.startsWith(prefix) || !pathname.endsWith(suffix)) {
+    return null;
+  }
+
+  const encodedKey = pathname.slice(prefix.length, -suffix.length);
+  if (!encodedKey) {
+    return null;
+  }
+
+  return {
+    sessionKey: decodeURIComponent(encodedKey)
+  };
+}
+
+function matchDeleteSessionPath(pathname: string): { readonly sessionKey: string } | null {
+  const prefix = "/slack/sessions/";
+  if (!pathname.startsWith(prefix)) {
+    return null;
+  }
+
+  const encodedKey = pathname.slice(prefix.length);
+  if (!encodedKey || encodedKey.includes("/")) {
+    return null;
+  }
+
+  return {
+    sessionKey: decodeURIComponent(encodedKey)
+  };
+}
+
+function normalizeMappings(value: unknown): readonly unknown[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const entries = value.filter((entry) => Boolean(entry));
+  return entries.length > 0 ? entries : undefined;
 }
