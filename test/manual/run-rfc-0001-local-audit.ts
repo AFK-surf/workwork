@@ -241,9 +241,14 @@ export const RFC0001_REQUIRED_LOCAL_EVIDENCE_PATTERNS: ReadonlyArray<{
     snippets: ["starts Slack Socket Mode and a real Feishu bridge in one broker runtime", "keeps Slack ready when optional Feishu startup degrades", "reports at_only as degraded after Feishu long connection starts", "fails fast before Slack Socket Mode when required Feishu startup fails"],
   },
   {
-    id: "prompt.feishu_platform_runtime_instructions",
+    id: "prompt.platform_aware_template",
     file: "src/services/codex/prompts/slack-thread-base-instructions.md",
-    snippets: ["BROKER_JOB_HELPER", "SLACK_CHANNEL_ID", "SLACK_THREAD_TS", "/slack/post-state"],
+    snippets: ["{{chat_surface_name}}", "{{thread_coordinates_section}}", "{{post_state_route_label}}", "{{registered_job_env_vars}}"],
+  },
+  {
+    id: "prompt.feishu_platform_runtime_instructions",
+    file: "src/services/codex/slack-thread-base-instructions.ts",
+    snippets: ['const postStateRoute = isSlack ? "/slack/post-state" : "/chat/post-state"', "SLACK_CHANNEL_ID", "SLACK_THREAD_TS", "CHAT_PLATFORM", "CHAT_CONVERSATION_ID", "CHAT_ROOT_MESSAGE_ID"],
   },
   {
     id: "smoke.final_evidence_gates",

@@ -391,7 +391,7 @@ describe("RFC 0001 local audit", () => {
         expect.objectContaining({
           id: "local.behavior_evidence",
           status: "missing",
-          evidence: expect.arrayContaining([expect.stringContaining("prompt.feishu_platform_runtime_instructions:src/services/codex/prompts/slack-thread-base-instructions.md:missing_snippet=")]),
+          evidence: expect.arrayContaining([expect.stringContaining("prompt.feishu_platform_runtime_instructions:src/services/codex/slack-thread-base-instructions.ts:missing_snippet=")]),
         }),
       ]),
     );

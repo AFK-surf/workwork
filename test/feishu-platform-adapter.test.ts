@@ -154,6 +154,91 @@ describe("FeishuPlatformAdapter", () => {
     ]);
   });
 
+  it("filters chat-wide Feishu history to the requested root when no thread id is available", async () => {
+    const adapter = new FeishuPlatformAdapter({
+      appId: "cli-test",
+      appSecret: "secret-test",
+      api: createFakeApi([], {
+        listMessages: {
+          has_more: false,
+          items: [
+            {
+              message_id: "om_root",
+              msg_type: "text",
+              create_time: "1710000000000",
+              chat_id: "oc_group",
+              body: {
+                content: JSON.stringify({
+                  text: "root message",
+                }),
+              },
+              raw: {
+                sender: {
+                  id_type: "open_id",
+                  id: "ou_user",
+                  sender_type: "user",
+                },
+              },
+            },
+            {
+              message_id: "om_reply",
+              root_id: "om_root",
+              parent_id: "om_root",
+              msg_type: "text",
+              create_time: "1710000001000",
+              chat_id: "oc_group",
+              body: {
+                content: JSON.stringify({
+                  text: "same root reply",
+                }),
+              },
+              raw: {
+                sender: {
+                  id_type: "open_id",
+                  id: "ou_user",
+                  sender_type: "user",
+                },
+              },
+            },
+            {
+              message_id: "om_other",
+              root_id: "om_other",
+              parent_id: "om_other",
+              msg_type: "text",
+              create_time: "1710000002000",
+              chat_id: "oc_group",
+              body: {
+                content: JSON.stringify({
+                  text: "other root",
+                }),
+              },
+              raw: {
+                sender: {
+                  id_type: "open_id",
+                  id: "ou_user",
+                  sender_type: "user",
+                },
+              },
+            },
+          ],
+        },
+      }),
+      wsClient: new FakeWsClient(),
+    });
+
+    await expect(
+      adapter.listThreadMessagePage({
+        platform: "feishu",
+        conversationId: "oc_group",
+        conversationKind: "group",
+        rootMessageId: "om_root",
+        limit: 20,
+      }),
+    ).resolves.toMatchObject({
+      messages: [expect.objectContaining({ messageId: "om_root" }), expect.objectContaining({ messageId: "om_reply" })],
+    });
+  });
+
   it("starts a long-connection dispatcher and forwards group mention events", async () => {
     const wsClient = new FakeWsClient();
     const seen: unknown[] = [];

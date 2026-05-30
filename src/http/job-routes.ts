@@ -88,7 +88,7 @@ async function handleJobRegisterRequest(
     return;
   }
 
-  const hasLegacySlackCoordinates = !platformValue && channelId && rootThreadTs;
+  const hasLegacySlackCoordinates = (!platformValue || platform === "slack") && channelId && rootThreadTs;
   const hasCanonicalCoordinates = platform && conversationId && rootMessageId;
   if (!kind || !script || (!hasLegacySlackCoordinates && !hasCanonicalCoordinates)) {
     respondJson(response, 400, {
