@@ -132,7 +132,6 @@ export const RFC0001_REQUIRED_LOCAL_TEST_FILES = [
   "test/slack-routes.test.ts",
   "test/rfc-0001-docs.test.ts",
   "test/rfc-0001-test-plan.test.ts",
-  "test/rfc-pr-template.test.ts",
 ];
 
 export const RFC0001_REQUIRED_LOCAL_FIXTURE_FILES = [
@@ -396,11 +395,6 @@ export const RFC0001_REQUIRED_LOCAL_EVIDENCE_PATTERNS: ReadonlyArray<{
     ],
   },
   {
-    id: "docs.pr_template_traceability",
-    file: ".github/pull_request_template.md",
-    snippets: ["## RFC Trace", "## TDD Slice", "## Observability", "- Real smoke evidence:", "- Feishu setup evidence:", "<!-- 请补充 CC 之外的验证 -->"],
-  },
-  {
     id: "docs.progressive_gates",
     file: "test/rfc-0001-docs.test.ts",
     snippets: ["keeps completion evidence progressive after real-tenant signoff", "keeps the README aligned with the Slack + Feishu user-facing surface"],
@@ -466,7 +460,6 @@ async function collectLocalChecks(cwd: string): Promise<Rfc0001AuditCheck[]> {
   checks.push(await fileCheck(cwd, "local.permission_request_packet", "Feishu permission request packet exists", "docs/feishu-permission-request.md", "Restore docs/feishu-permission-request.md so operators have the approval-request packet needed for im:message.group_msg."));
   checks.push(await setupEvidenceTemplateCheck(cwd));
   checks.push(await fileCheck(cwd, "local.smoke_checker", "Real Feishu smoke checker exists", "test/manual/run-real-feishu-smoke.ts", "Restore the smoke checker before claiming RFC 0001 can be verified."));
-  checks.push(await fileCheck(cwd, "local.pr_template", "RFC-aware PR template exists", ".github/pull_request_template.md", "Restore the PR template so every slice keeps RFC trace, TDD, observability, and real-smoke prompts."));
   checks.push(
     await filesCheck(
       cwd,
@@ -482,7 +475,7 @@ async function collectLocalChecks(cwd: string): Promise<Rfc0001AuditCheck[]> {
       "local.test_slices",
       "RFC 0001 local test slices exist",
       RFC0001_REQUIRED_LOCAL_TEST_FILES,
-      "Restore the config, Slack compatibility/e2e, Feishu parser/API/bridge/adapter/fixture/runtime, admin, co-author, generic chat/job/integration, redaction, ops, smoke, RFC doc, and PR template tests before claiming local RFC readiness.",
+      "Restore the config, Slack compatibility/e2e, Feishu parser/API/bridge/adapter/fixture/runtime, admin, co-author, generic chat/job/integration, redaction, ops, smoke, and RFC doc tests before claiming local RFC readiness.",
     ),
   );
   checks.push(await filesCheck(cwd, "local.feishu_fixtures", "RFC 0001 Feishu replay fixtures exist", RFC0001_REQUIRED_LOCAL_FIXTURE_FILES, "Restore every required Feishu replay fixture from the RFC fixture ledger before claiming local RFC readiness."));

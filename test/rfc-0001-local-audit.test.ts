@@ -227,38 +227,6 @@ describe("RFC 0001 local audit", () => {
     );
   });
 
-  it("fails local readiness when the RFC PR template traceability prompt drifts", async () => {
-    const repo = await createFixtureRepo({
-      omitFiles: [".github/pull_request_template.md", "test/rfc-pr-template.test.ts"],
-    });
-    const report = await collectRfc0001LocalAudit({
-      cwd: repo,
-      env: {},
-      evidenceDir: path.join(repo, "evidence", "feishu-smoke"),
-    });
-
-    expect(report.localOk).toBe(false);
-    expect(report.localChecks).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          id: "local.pr_template",
-          status: "missing",
-          evidence: ["missing=.github/pull_request_template.md"],
-        }),
-        expect.objectContaining({
-          id: "local.test_slices",
-          status: "missing",
-          evidence: expect.arrayContaining(["missing=test/rfc-pr-template.test.ts"]),
-        }),
-        expect.objectContaining({
-          id: "local.behavior_evidence",
-          status: "missing",
-          evidence: expect.arrayContaining(["docs.pr_template_traceability:.github/pull_request_template.md:missing_file"]),
-        }),
-      ]),
-    );
-  });
-
   it("fails local readiness when implementation or test slices drift", async () => {
     const repo = await createFixtureRepo({
       omitFiles: ["src/services/feishu/feishu-event-parser.ts", "test/dual-platform-runtime.test.ts"],
@@ -657,9 +625,6 @@ async function createFixtureRepo(
     await writeFile(path.join(root, "docs", "feishu-setup-evidence.example.json"), options.setupEvidenceTemplateContent ?? fixtureSetupEvidenceTemplateContent());
   }
   await writeFile(path.join(root, "test", "manual", "run-real-feishu-smoke.ts"), "export {};\n");
-  if (!options.omitFiles?.includes(".github/pull_request_template.md")) {
-    await writeFile(path.join(root, ".github", "pull_request_template.md"), fixtureContentForFile(".github/pull_request_template.md", options.omitEvidenceProbe));
-  }
   for (const file of [...RFC0001_REQUIRED_LOCAL_IMPLEMENTATION_FILES, ...RFC0001_REQUIRED_LOCAL_TEST_FILES, ...RFC0001_REQUIRED_LOCAL_FIXTURE_FILES]) {
     if (!options.omitFiles?.includes(file)) {
       await writeFile(path.join(root, file), fixtureContentForFile(file, options.omitEvidenceProbe));

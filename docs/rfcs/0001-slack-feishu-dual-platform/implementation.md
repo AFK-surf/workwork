@@ -36,7 +36,6 @@ This file contains the execution contract for [RFC 0001](../0001-slack-feishu-du
 - [x] State simultaneous Slack + Feishu support, not migration.
 - [x] Split RFC into progressive-disclosure entry point plus deep dives.
 - [x] Add RFC markdown/link regression tests for the progressive-disclosure docs.
-- [x] Add PR template prompts for RFC trace, TDD slice, observability, and real-smoke evidence.
 - [x] Accept open-question gates before production rollout.
 
 ### Phase 1: Platform-neutral foundation, Slack unchanged
