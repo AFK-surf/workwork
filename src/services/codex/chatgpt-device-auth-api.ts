@@ -50,12 +50,12 @@ export async function requestChatGptDeviceCode(fetchImpl: FetchLike = fetch): Pr
   const response = await fetchImpl(`${CHATGPT_DEVICE_AUTH_API_ROOT}/deviceauth/usercode`, {
     method: "POST",
     headers: {
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      client_id: CODEX_CHATGPT_CLIENT_ID
+      client_id: CODEX_CHATGPT_CLIENT_ID,
     }),
-    signal: AbortSignal.timeout(20_000)
+    signal: AbortSignal.timeout(20_000),
   });
 
   if (!response.ok) {
@@ -77,34 +77,29 @@ export async function requestChatGptDeviceCode(fetchImpl: FetchLike = fetch): Pr
     verificationUrl: `${CHATGPT_AUTH_ISSUER_URL}/codex/device`,
     intervalSeconds,
     expiresInSeconds: DEVICE_CODE_EXPIRES_IN_SECONDS,
-    expiresAt: new Date(Date.now() + DEVICE_CODE_EXPIRES_IN_SECONDS * 1000).toISOString()
+    expiresAt: new Date(Date.now() + DEVICE_CODE_EXPIRES_IN_SECONDS * 1000).toISOString(),
   };
 }
 
-export async function completeChatGptDeviceCodeLogin(options: {
-  readonly deviceAuthId: string;
-  readonly userCode: string;
-  readonly retryAfterSeconds?: number | undefined;
-  readonly fetchImpl?: FetchLike | undefined;
-}): Promise<ChatGptDeviceCodePollResult> {
+export async function completeChatGptDeviceCodeLogin(options: { readonly deviceAuthId: string; readonly userCode: string; readonly retryAfterSeconds?: number | undefined; readonly fetchImpl?: FetchLike | undefined }): Promise<ChatGptDeviceCodePollResult> {
   const fetchImpl = options.fetchImpl ?? fetch;
   const retryAfterSeconds = normalizeIntervalSeconds(options.retryAfterSeconds);
   const response = await fetchImpl(`${CHATGPT_DEVICE_AUTH_API_ROOT}/deviceauth/token`, {
     method: "POST",
     headers: {
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
     },
     body: JSON.stringify({
       device_auth_id: options.deviceAuthId,
-      user_code: options.userCode
+      user_code: options.userCode,
     }),
-    signal: AbortSignal.timeout(20_000)
+    signal: AbortSignal.timeout(20_000),
   });
 
   if (response.status === 403 || response.status === 404) {
     return {
       status: "pending",
-      retryAfterSeconds
+      retryAfterSeconds,
     };
   }
 
@@ -123,7 +118,7 @@ export async function completeChatGptDeviceCodeLogin(options: {
   const tokens = await exchangeAuthorizationCodeForTokens({
     authorizationCode,
     codeVerifier,
-    fetchImpl
+    fetchImpl,
   });
   const accountId = readChatGptAccountId(tokens.id_token);
   if (!accountId) {
@@ -132,25 +127,25 @@ export async function completeChatGptDeviceCodeLogin(options: {
 
   return {
     status: "complete",
-    authJsonContent: `${JSON.stringify({
-      OPENAI_API_KEY: null,
-      auth_mode: "chatgpt",
-      tokens: {
-        id_token: tokens.id_token,
-        access_token: tokens.access_token,
-        refresh_token: tokens.refresh_token,
-        account_id: accountId
+    authJsonContent: `${JSON.stringify(
+      {
+        OPENAI_API_KEY: null,
+        auth_mode: "chatgpt",
+        tokens: {
+          id_token: tokens.id_token,
+          access_token: tokens.access_token,
+          refresh_token: tokens.refresh_token,
+          account_id: accountId,
+        },
+        last_refresh: new Date().toISOString(),
       },
-      last_refresh: new Date().toISOString()
-    }, null, 2)}\n`
+      null,
+      2,
+    )}\n`,
   };
 }
 
-async function exchangeAuthorizationCodeForTokens(options: {
-  readonly authorizationCode: string;
-  readonly codeVerifier: string;
-  readonly fetchImpl: FetchLike;
-}): Promise<{
+async function exchangeAuthorizationCodeForTokens(options: { readonly authorizationCode: string; readonly codeVerifier: string; readonly fetchImpl: FetchLike }): Promise<{
   readonly id_token: string;
   readonly access_token: string;
   readonly refresh_token: string;
@@ -158,16 +153,16 @@ async function exchangeAuthorizationCodeForTokens(options: {
   const response = await options.fetchImpl(`${CHATGPT_AUTH_ISSUER_URL}/oauth/token`, {
     method: "POST",
     headers: {
-      "Content-Type": "application/x-www-form-urlencoded"
+      "Content-Type": "application/x-www-form-urlencoded",
     },
     body: new URLSearchParams({
       grant_type: "authorization_code",
       code: options.authorizationCode,
       redirect_uri: `${CHATGPT_AUTH_ISSUER_URL}/deviceauth/callback`,
       client_id: CODEX_CHATGPT_CLIENT_ID,
-      code_verifier: options.codeVerifier
+      code_verifier: options.codeVerifier,
     }).toString(),
-    signal: AbortSignal.timeout(20_000)
+    signal: AbortSignal.timeout(20_000),
   });
 
   if (!response.ok) {
@@ -186,17 +181,12 @@ async function exchangeAuthorizationCodeForTokens(options: {
   return {
     id_token: idToken,
     access_token: accessToken,
-    refresh_token: refreshToken
+    refresh_token: refreshToken,
   };
 }
 
 function normalizeIntervalSeconds(value: unknown): number {
-  const parsed =
-    typeof value === "number"
-      ? value
-      : typeof value === "string"
-        ? Number.parseFloat(value)
-        : Number.NaN;
+  const parsed = typeof value === "number" ? value : typeof value === "string" ? Number.parseFloat(value) : Number.NaN;
   return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_POLL_INTERVAL_SECONDS;
 }
 

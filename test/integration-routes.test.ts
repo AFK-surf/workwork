@@ -25,19 +25,19 @@ describe("integration routes", () => {
             return [
               {
                 name: "search_issues",
-                description: "Search Linear issues"
-              }
+                description: "Search Linear issues",
+              },
             ];
           },
           callTool: async () => {
             throw new Error("unexpected_call");
-          }
+          },
         } as never,
         jobManager: {} as never,
         config: {
-          serviceName: "test-broker"
-        } as never
-      })
+          serviceName: "test-broker",
+        } as never,
+      }),
     );
 
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -52,7 +52,7 @@ describe("integration routes", () => {
 
             resolve();
           });
-        })
+        }),
     );
 
     const address = server.address();
@@ -69,9 +69,9 @@ describe("integration routes", () => {
       tools: [
         {
           name: "search_issues",
-          description: "Search Linear issues"
-        }
-      ]
+          description: "Search Linear issues",
+        },
+      ],
     });
     expect(listCalls).toEqual(["linear"]);
   });
@@ -84,23 +84,19 @@ describe("integration routes", () => {
         bridge: {} as never,
         isolatedMcp: {
           listTools: async () => [],
-          callTool: async (input: {
-            server: string;
-            name: string;
-            arguments?: Record<string, unknown> | undefined;
-          }) => {
+          callTool: async (input: { server: string; name: string; arguments?: Record<string, unknown> | undefined }) => {
             toolCalls.push(input);
             return {
               content: [{ type: "text", text: "ok:notion" }],
-              isError: false
+              isError: false,
             };
-          }
+          },
         } as never,
         jobManager: {} as never,
         config: {
-          serviceName: "test-broker"
-        } as never
-      })
+          serviceName: "test-broker",
+        } as never,
+      }),
     );
 
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -115,7 +111,7 @@ describe("integration routes", () => {
 
             resolve();
           });
-        })
+        }),
     );
 
     const address = server.address();
@@ -126,15 +122,15 @@ describe("integration routes", () => {
     const response = await fetch(`http://127.0.0.1:${address.port}/integrations/mcp-call`, {
       method: "POST",
       headers: {
-        "content-type": "application/json"
+        "content-type": "application/json",
       },
       body: JSON.stringify({
         server: "notion",
         name: "search",
         arguments: {
-          query: "workspace docs"
-        }
-      })
+          query: "workspace docs",
+        },
+      }),
     });
 
     expect(response.status).toBe(200);
@@ -144,17 +140,17 @@ describe("integration routes", () => {
       name: "search",
       result: {
         content: [{ type: "text", text: "ok:notion" }],
-        isError: false
-      }
+        isError: false,
+      },
     });
     expect(toolCalls).toEqual([
       {
         server: "notion",
         name: "search",
         arguments: {
-          query: "workspace docs"
-        }
-      }
+          query: "workspace docs",
+        },
+      },
     ]);
   });
 
@@ -166,23 +162,19 @@ describe("integration routes", () => {
         bridge: {} as never,
         isolatedMcp: {
           listTools: async () => [],
-          callTool: async (input: {
-            server: string;
-            name: string;
-            arguments?: Record<string, unknown> | undefined;
-          }) => {
+          callTool: async (input: { server: string; name: string; arguments?: Record<string, unknown> | undefined }) => {
             toolCalls.push(input);
             return {
               content: [{ type: "text", text: "ok:linear" }],
-              isError: false
+              isError: false,
             };
-          }
+          },
         } as never,
         jobManager: {} as never,
         config: {
-          serviceName: "test-broker"
-        } as never
-      })
+          serviceName: "test-broker",
+        } as never,
+      }),
     );
 
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -197,7 +189,7 @@ describe("integration routes", () => {
 
             resolve();
           });
-        })
+        }),
     );
 
     const address = server.address();
@@ -208,31 +200,31 @@ describe("integration routes", () => {
     const response = await fetch(`http://127.0.0.1:${address.port}/integrations/mcp-call`, {
       method: "POST",
       headers: {
-        "content-type": "application/json"
+        "content-type": "application/json",
       },
       body: JSON.stringify({
         server: "linear",
         name: "search",
         arguments: JSON.stringify({
-          query: "RFC 0001"
-        })
-      })
+          query: "RFC 0001",
+        }),
+      }),
     });
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
       ok: true,
       server: "linear",
-      name: "search"
+      name: "search",
     });
     expect(toolCalls).toEqual([
       {
         server: "linear",
         name: "search",
         arguments: {
-          query: "RFC 0001"
-        }
-      }
+          query: "RFC 0001",
+        },
+      },
     ]);
   });
 
@@ -248,15 +240,15 @@ describe("integration routes", () => {
             toolCalls.push(input);
             return {
               content: [{ type: "text", text: "unexpected" }],
-              isError: false
+              isError: false,
             };
-          }
+          },
         } as never,
         jobManager: {} as never,
         config: {
-          serviceName: "test-broker"
-        } as never
-      })
+          serviceName: "test-broker",
+        } as never,
+      }),
     );
 
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -271,7 +263,7 @@ describe("integration routes", () => {
 
             resolve();
           });
-        })
+        }),
     );
 
     const address = server.address();
@@ -282,20 +274,20 @@ describe("integration routes", () => {
     const response = await fetch(`http://127.0.0.1:${address.port}/integrations/mcp-call`, {
       method: "POST",
       headers: {
-        "content-type": "application/json"
+        "content-type": "application/json",
       },
       body: JSON.stringify({
         server: "notion",
         name: "search",
-        arguments: "{not json"
-      })
+        arguments: "{not json",
+      }),
     });
 
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({
       ok: false,
       error: "invalid_json_field",
-      field: "arguments"
+      field: "arguments",
     });
     expect(toolCalls).toEqual([]);
   });

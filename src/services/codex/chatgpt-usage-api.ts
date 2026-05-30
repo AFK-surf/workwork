@@ -85,16 +85,11 @@ export async function readChatGptUsageSnapshot(authJsonPath: string): Promise<Ch
   const payload = (await response.json()) as UsagePayload;
   const primarySnapshot = normalizeRateLimitSnapshot("codex", "Codex", payload.rate_limit, payload.plan_type ?? null);
   const byLimitId: Record<string, AppServerRateLimitSnapshot> = {
-    codex: primarySnapshot
+    codex: primarySnapshot,
   };
 
   if (payload.code_review_rate_limit) {
-    byLimitId.code_review = normalizeRateLimitSnapshot(
-      "code_review",
-      "Code Review",
-      payload.code_review_rate_limit,
-      payload.plan_type ?? null
-    );
+    byLimitId.code_review = normalizeRateLimitSnapshot("code_review", "Code Review", payload.code_review_rate_limit, payload.plan_type ?? null);
   }
 
   for (const additionalLimit of payload.additional_rate_limits ?? []) {
@@ -103,24 +98,19 @@ export async function readChatGptUsageSnapshot(authJsonPath: string): Promise<Ch
     }
 
     const limitId = additionalLimit.metered_feature ?? additionalLimit.limit_name ?? "additional_limit";
-    byLimitId[limitId] = normalizeRateLimitSnapshot(
-      limitId,
-      additionalLimit.limit_name ?? limitId,
-      additionalLimit.rate_limit,
-      payload.plan_type ?? null
-    );
+    byLimitId[limitId] = normalizeRateLimitSnapshot(limitId, additionalLimit.limit_name ?? limitId, additionalLimit.rate_limit, payload.plan_type ?? null);
   }
 
   return {
     account: {
       email: payload.email ?? null,
       type: "chatgpt",
-      planType: payload.plan_type ?? null
+      planType: payload.plan_type ?? null,
     },
     rateLimits: {
       rateLimits: primarySnapshot,
-      rateLimitsByLimitId: byLimitId
-    }
+      rateLimitsByLimitId: byLimitId,
+    },
   };
 }
 
@@ -140,9 +130,9 @@ async function fetchUsage(auth: StoredAuthJson, fetchImpl: FetchLike = fetch): P
     headers: {
       Authorization: `Bearer ${accessToken}`,
       "ChatGPT-Account-Id": accountId,
-      "User-Agent": "codex-cli"
+      "User-Agent": "codex-cli",
     },
-    signal: AbortSignal.timeout(20_000)
+    signal: AbortSignal.timeout(20_000),
   });
 }
 
@@ -159,11 +149,7 @@ async function refreshAuthIfNeeded(authJsonPath: string, auth: StoredAuthJson): 
   return await refreshAuthJson(authJsonPath, auth);
 }
 
-async function refreshAuthJson(
-  authJsonPath: string,
-  authBeforeRefresh: StoredAuthJson,
-  fetchImpl: FetchLike = fetch
-): Promise<StoredAuthJson> {
+async function refreshAuthJson(authJsonPath: string, authBeforeRefresh: StoredAuthJson, fetchImpl: FetchLike = fetch): Promise<StoredAuthJson> {
   const writePath = await resolveWritableAuthPath(authJsonPath);
   const inflight = refreshInflight.get(writePath);
   if (inflight) {
@@ -172,11 +158,7 @@ async function refreshAuthJson(
 
   const refreshPromise = (async () => {
     const latest = await readStoredAuthJson(writePath);
-    if (
-      latest.tokens?.access_token &&
-      latest.tokens.access_token !== authBeforeRefresh.tokens?.access_token &&
-      !isAccessTokenNearExpiry(latest.tokens.access_token)
-    ) {
+    if (latest.tokens?.access_token && latest.tokens.access_token !== authBeforeRefresh.tokens?.access_token && !isAccessTokenNearExpiry(latest.tokens.access_token)) {
       return latest;
     }
 
@@ -192,9 +174,9 @@ async function refreshAuthJson(
         ...latest.tokens,
         ...(refreshResponse.id_token ? { id_token: refreshResponse.id_token } : {}),
         ...(refreshResponse.access_token ? { access_token: refreshResponse.access_token } : {}),
-        ...(refreshResponse.refresh_token ? { refresh_token: refreshResponse.refresh_token } : {})
+        ...(refreshResponse.refresh_token ? { refresh_token: refreshResponse.refresh_token } : {}),
       },
-      last_refresh: new Date().toISOString()
+      last_refresh: new Date().toISOString(),
     };
     await writeStoredAuthJson(writePath, nextAuth);
     return nextAuth;
@@ -212,14 +194,14 @@ async function requestTokenRefresh(refreshToken: string, fetchImpl: FetchLike): 
   const response = await fetchImpl(process.env[TOKEN_REFRESH_URL_OVERRIDE_ENV] ?? TOKEN_REFRESH_URL, {
     method: "POST",
     headers: {
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
     },
     body: JSON.stringify({
       client_id: CODEX_CHATGPT_CLIENT_ID,
       grant_type: "refresh_token",
-      refresh_token: refreshToken
+      refresh_token: refreshToken,
     }),
-    signal: AbortSignal.timeout(20_000)
+    signal: AbortSignal.timeout(20_000),
   });
 
   if (!response.ok) {
@@ -270,30 +252,22 @@ async function readStoredAuthJson(authJsonPath: string): Promise<StoredAuthJson>
 
 async function writeStoredAuthJson(authJsonPath: string, auth: StoredAuthJson): Promise<void> {
   const stat = await fs.stat(authJsonPath).catch(() => null);
-  const tempPath = path.join(
-    path.dirname(authJsonPath),
-    `.${path.basename(authJsonPath)}.${process.pid}.${Date.now()}.tmp`
-  );
+  const tempPath = path.join(path.dirname(authJsonPath), `.${path.basename(authJsonPath)}.${process.pid}.${Date.now()}.tmp`);
   await fs.writeFile(tempPath, `${JSON.stringify(auth, null, 2)}\n`, {
-    mode: stat ? stat.mode & 0o777 : 0o600
+    mode: stat ? stat.mode & 0o777 : 0o600,
   });
 
   await fs.rename(tempPath, authJsonPath);
 }
 
-function normalizeRateLimitSnapshot(
-  limitId: string,
-  limitName: string,
-  rateLimit: UsageLimitPayload | null | undefined,
-  planType: string | null
-): AppServerRateLimitSnapshot {
+function normalizeRateLimitSnapshot(limitId: string, limitName: string, rateLimit: UsageLimitPayload | null | undefined, planType: string | null): AppServerRateLimitSnapshot {
   return {
     limitId,
     limitName,
     primary: normalizeWindow(rateLimit?.primary_window),
     secondary: normalizeWindow(rateLimit?.secondary_window),
     credits: null,
-    planType
+    planType,
   };
 }
 
@@ -304,8 +278,7 @@ function normalizeWindow(window: UsageWindowPayload | null | undefined) {
 
   return {
     usedPercent: Number(window.used_percent ?? 0),
-    windowDurationMins:
-      typeof window.limit_window_seconds === "number" ? Math.round(window.limit_window_seconds / 60) : null,
-    resetsAt: typeof window.reset_at === "number" ? window.reset_at : null
+    windowDurationMins: typeof window.limit_window_seconds === "number" ? Math.round(window.limit_window_seconds / 60) : null,
+    resetsAt: typeof window.reset_at === "number" ? window.reset_at : null,
   };
 }

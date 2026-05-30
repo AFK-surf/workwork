@@ -2,26 +2,16 @@ import { Readable } from "node:stream";
 
 import { describe, expect, it } from "vitest";
 
-import {
-  FeishuApi,
-  createFeishuTextContent,
-  feishuSdkDomainFromApiBaseUrl
-} from "../src/services/feishu/feishu-api.js";
+import { FeishuApi, createFeishuTextContent, feishuSdkDomainFromApiBaseUrl } from "../src/services/feishu/feishu-api.js";
 
 describe("FeishuApi", () => {
   it("normalizes Open Platform API base URLs to SDK domains", () => {
     expect(feishuSdkDomainFromApiBaseUrl("https://open.feishu.cn/open-apis")).toBe("https://open.feishu.cn");
     expect(feishuSdkDomainFromApiBaseUrl("https://open.feishu.cn/open-apis/")).toBe("https://open.feishu.cn");
     expect(feishuSdkDomainFromApiBaseUrl("https://open.feishu.cn")).toBe("https://open.feishu.cn");
-    expect(() =>
-      feishuSdkDomainFromApiBaseUrl("https://open.feishu.cn/open-apis/im/v1")
-    ).toThrowError("Invalid FEISHU_API_BASE_URL");
-    expect(() =>
-      feishuSdkDomainFromApiBaseUrl("https://open.larksuite.com/open-apis")
-    ).toThrowError("Invalid FEISHU_API_BASE_URL: expected https://open.feishu.cn");
-    expect(() =>
-      feishuSdkDomainFromApiBaseUrl("https://open.feishu.cn/open-apis?tenant_access_token=secret")
-    ).toThrowError("Invalid FEISHU_API_BASE_URL: query and hash are not supported");
+    expect(() => feishuSdkDomainFromApiBaseUrl("https://open.feishu.cn/open-apis/im/v1")).toThrowError("Invalid FEISHU_API_BASE_URL");
+    expect(() => feishuSdkDomainFromApiBaseUrl("https://open.larksuite.com/open-apis")).toThrowError("Invalid FEISHU_API_BASE_URL: expected https://open.feishu.cn");
+    expect(() => feishuSdkDomainFromApiBaseUrl("https://open.feishu.cn/open-apis?tenant_access_token=secret")).toThrowError("Invalid FEISHU_API_BASE_URL: query and hash are not supported");
   });
 
   it("sends group text messages with chat_id recipients", async () => {
@@ -29,13 +19,13 @@ describe("FeishuApi", () => {
     const api = new FeishuApi({
       appId: "cli-test",
       appSecret: "secret-test",
-      client: createFakeClient(calls)
+      client: createFakeClient(calls),
     });
 
     const sent = await api.sendMessage({
       chatId: "oc_group",
       msgType: "text",
-      content: createFeishuTextContent("hello")
+      content: createFeishuTextContent("hello"),
     });
 
     expect(sent.message_id).toBe("om_created");
@@ -43,14 +33,14 @@ describe("FeishuApi", () => {
       operation: "create",
       payload: {
         params: {
-          receive_id_type: "chat_id"
+          receive_id_type: "chat_id",
         },
         data: {
           receive_id: "oc_group",
           msg_type: "text",
-          content: JSON.stringify({ text: "hello" })
-        }
-      }
+          content: JSON.stringify({ text: "hello" }),
+        },
+      },
     });
   });
 
@@ -59,7 +49,7 @@ describe("FeishuApi", () => {
     const api = new FeishuApi({
       appId: "cli-test",
       appSecret: "secret-test",
-      client: createFakeClient(calls)
+      client: createFakeClient(calls),
     });
 
     await api.replyMessage({
@@ -68,28 +58,28 @@ describe("FeishuApi", () => {
       content: {
         zh_cn: {
           title: "Status",
-          content: [[{ tag: "text", text: "done" }]]
-        }
-      }
+          content: [[{ tag: "text", text: "done" }]],
+        },
+      },
     });
 
     expect(calls[0]).toEqual({
       operation: "reply",
       payload: {
         path: {
-          message_id: "om_root"
+          message_id: "om_root",
         },
         data: {
           msg_type: "post",
           content: JSON.stringify({
             zh_cn: {
               title: "Status",
-              content: [[{ tag: "text", text: "done" }]]
-            }
+              content: [[{ tag: "text", text: "done" }]],
+            },
           }),
-          reply_in_thread: true
-        }
-      }
+          reply_in_thread: true,
+        },
+      },
     });
   });
 
@@ -98,7 +88,7 @@ describe("FeishuApi", () => {
     const api = new FeishuApi({
       appId: "cli-test",
       appSecret: "secret-test",
-      client: createFakeClient(calls)
+      client: createFakeClient(calls),
     });
 
     await api.listMessages({
@@ -106,7 +96,7 @@ describe("FeishuApi", () => {
       containerId: "oc_group",
       pageSize: 20,
       sortType: "ByCreateTimeAsc",
-      cardMsgContentType: "user_card_content"
+      cardMsgContentType: "user_card_content",
     });
 
     expect(calls[0]).toEqual({
@@ -117,9 +107,9 @@ describe("FeishuApi", () => {
           container_id: "oc_group",
           page_size: 20,
           sort_type: "ByCreateTimeAsc",
-          card_msg_content_type: "user_card_content"
-        }
-      }
+          card_msg_content_type: "user_card_content",
+        },
+      },
     });
   });
 
@@ -128,13 +118,13 @@ describe("FeishuApi", () => {
     const api = new FeishuApi({
       appId: "cli-test",
       appSecret: "secret-test",
-      client: createFakeClient(calls)
+      client: createFakeClient(calls),
     });
 
     const dataUrl = await api.downloadMessageResourceAsDataUrl({
       messageId: "om_image",
       fileKey: "img_key",
-      type: "image"
+      type: "image",
     });
 
     expect(dataUrl).toBe("data:image/png;base64,aGVsbG8=");
@@ -143,12 +133,12 @@ describe("FeishuApi", () => {
       payload: {
         path: {
           message_id: "om_image",
-          file_key: "img_key"
+          file_key: "img_key",
         },
         params: {
-          type: "image"
-        }
-      }
+          type: "image",
+        },
+      },
     });
   });
 
@@ -164,19 +154,21 @@ describe("FeishuApi", () => {
           },
           headers: {
             "content-type": "image/png",
-            "content-length": String(10 * 1024 * 1024 + 1)
-          }
-        }
-      })
+            "content-length": String(10 * 1024 * 1024 + 1),
+          },
+        },
+      }),
     });
 
-    await expect(api.downloadMessageResourceAsDataUrl({
-      messageId: "om_image",
-      fileKey: "img_key",
-      type: "image",
-      maxBytes: 10 * 1024 * 1024,
-      allowedContentTypes: ["image/"]
-    })).rejects.toThrow("Feishu resource download exceeds 10 MB limit");
+    await expect(
+      api.downloadMessageResourceAsDataUrl({
+        messageId: "om_image",
+        fileKey: "img_key",
+        type: "image",
+        maxBytes: 10 * 1024 * 1024,
+        allowedContentTypes: ["image/"],
+      }),
+    ).rejects.toThrow("Feishu resource download exceeds 10 MB limit");
     expect(calls).toHaveLength(1);
   });
 
@@ -191,19 +183,21 @@ describe("FeishuApi", () => {
             throw new Error("download body should not be read");
           },
           headers: {
-            "content-type": "text/plain"
-          }
-        }
-      })
+            "content-type": "text/plain",
+          },
+        },
+      }),
     });
 
-    await expect(api.downloadMessageResourceAsDataUrl({
-      messageId: "om_image",
-      fileKey: "img_key",
-      type: "image",
-      maxBytes: 10 * 1024 * 1024,
-      allowedContentTypes: ["image/"]
-    })).rejects.toThrow("Feishu resource download content type text/plain is not allowed");
+    await expect(
+      api.downloadMessageResourceAsDataUrl({
+        messageId: "om_image",
+        fileKey: "img_key",
+        type: "image",
+        maxBytes: 10 * 1024 * 1024,
+        allowedContentTypes: ["image/"],
+      }),
+    ).rejects.toThrow("Feishu resource download content type text/plain is not allowed");
     expect(calls).toHaveLength(1);
   });
 
@@ -214,24 +208,23 @@ describe("FeishuApi", () => {
       appSecret: "secret-test",
       client: createFakeClient(calls, {
         resource: {
-          getReadableStream: () => Readable.from([
-            Buffer.from("hello"),
-            Buffer.from("world")
-          ]),
+          getReadableStream: () => Readable.from([Buffer.from("hello"), Buffer.from("world")]),
           headers: {
-            "content-type": "image/png"
-          }
-        }
-      })
+            "content-type": "image/png",
+          },
+        },
+      }),
     });
 
-    await expect(api.downloadMessageResourceAsDataUrl({
-      messageId: "om_image",
-      fileKey: "img_key",
-      type: "image",
-      maxBytes: 9,
-      allowedContentTypes: ["image/"]
-    })).rejects.toThrow("Feishu resource download exceeds 9 bytes limit");
+    await expect(
+      api.downloadMessageResourceAsDataUrl({
+        messageId: "om_image",
+        fileKey: "img_key",
+        type: "image",
+        maxBytes: 9,
+        allowedContentTypes: ["image/"],
+      }),
+    ).rejects.toThrow("Feishu resource download exceeds 9 bytes limit");
     expect(calls).toHaveLength(1);
   });
 
@@ -240,20 +233,24 @@ describe("FeishuApi", () => {
     const api = new FeishuApi({
       appId: "cli-test",
       appSecret: "secret-test",
-      client: createFakeClient(calls)
+      client: createFakeClient(calls),
     });
 
-    await expect(api.uploadMessageImage({
-      bytes: Buffer.from("png")
-    })).resolves.toEqual({
-      image_key: "img_uploaded"
+    await expect(
+      api.uploadMessageImage({
+        bytes: Buffer.from("png"),
+      }),
+    ).resolves.toEqual({
+      image_key: "img_uploaded",
     });
-    await expect(api.uploadMessageFile({
-      bytes: Buffer.from("pdf"),
-      filename: "report.pdf",
-      fileType: "pdf"
-    })).resolves.toEqual({
-      file_key: "file_uploaded"
+    await expect(
+      api.uploadMessageFile({
+        bytes: Buffer.from("pdf"),
+        filename: "report.pdf",
+        fileType: "pdf",
+      }),
+    ).resolves.toEqual({
+      file_key: "file_uploaded",
     });
 
     expect(calls).toEqual([
@@ -262,9 +259,9 @@ describe("FeishuApi", () => {
         payload: {
           data: {
             image_type: "message",
-            image: Buffer.from("png")
-          }
-        }
+            image: Buffer.from("png"),
+          },
+        },
       },
       {
         operation: "file.create",
@@ -272,10 +269,10 @@ describe("FeishuApi", () => {
           data: {
             file_type: "pdf",
             file_name: "report.pdf",
-            file: Buffer.from("pdf")
-          }
-        }
-      }
+            file: Buffer.from("pdf"),
+          },
+        },
+      },
     ]);
   });
 });
@@ -283,11 +280,13 @@ describe("FeishuApi", () => {
 function createFakeClient(
   calls: unknown[],
   options?: {
-    readonly resource?: {
-      readonly getReadableStream?: (() => Readable) | undefined;
-      readonly headers?: Record<string, unknown> | undefined;
-    } | undefined;
-  }
+    readonly resource?:
+      | {
+          readonly getReadableStream?: (() => Readable) | undefined;
+          readonly headers?: Record<string, unknown> | undefined;
+        }
+      | undefined;
+  },
 ) {
   return {
     im: {
@@ -298,8 +297,8 @@ function createFakeClient(
             return {
               code: 0,
               data: {
-                message_id: "om_created"
-              }
+                message_id: "om_created",
+              },
             };
           },
           reply: async (payload: unknown) => {
@@ -307,8 +306,8 @@ function createFakeClient(
             return {
               code: 0,
               data: {
-                message_id: "om_reply"
-              }
+                message_id: "om_reply",
+              },
             };
           },
           list: async (payload: unknown) => {
@@ -317,18 +316,18 @@ function createFakeClient(
               code: 0,
               data: {
                 has_more: false,
-                items: []
-              }
+                items: [],
+              },
             };
-          }
+          },
         },
         image: {
           create: async (payload: unknown) => {
             calls.push({ operation: "image.create", payload });
             return {
-              image_key: "img_uploaded"
+              image_key: "img_uploaded",
             };
-          }
+          },
         },
         file: {
           create: async (payload: unknown) => {
@@ -336,10 +335,10 @@ function createFakeClient(
             return {
               code: 0,
               data: {
-                file_key: "file_uploaded"
-              }
+                file_key: "file_uploaded",
+              },
             };
-          }
+          },
         },
         messageResource: {
           get: async (payload: unknown) => {
@@ -347,12 +346,12 @@ function createFakeClient(
             return {
               getReadableStream: options?.resource?.getReadableStream ?? (() => Readable.from([Buffer.from("hello")])),
               headers: options?.resource?.headers ?? {
-                "content-type": "image/png; charset=utf-8"
-              }
+                "content-type": "image/png; charset=utf-8",
+              },
             };
-          }
-        }
-      }
-    }
+          },
+        },
+      },
+    },
   };
 }

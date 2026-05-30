@@ -15,9 +15,11 @@ export interface FeishuMessageData {
   readonly create_time?: string | undefined;
   readonly update_time?: string | undefined;
   readonly chat_id?: string | undefined;
-  readonly body?: {
-    readonly content?: string | undefined;
-  } | undefined;
+  readonly body?:
+    | {
+        readonly content?: string | undefined;
+      }
+    | undefined;
   readonly raw?: JsonLike | undefined;
 }
 
@@ -70,58 +72,44 @@ interface FeishuSdkClient {
 export class FeishuApi {
   readonly #client: FeishuSdkClient;
 
-  constructor(options: {
-    readonly appId: string;
-    readonly appSecret: string;
-    readonly apiBaseUrl?: string | undefined;
-    readonly client?: FeishuSdkClient | undefined;
-  }) {
+  constructor(options: { readonly appId: string; readonly appSecret: string; readonly apiBaseUrl?: string | undefined; readonly client?: FeishuSdkClient | undefined }) {
     const domain = options.apiBaseUrl ? feishuSdkDomainFromApiBaseUrl(options.apiBaseUrl) : Lark.Domain.Feishu;
-    this.#client = options.client ?? new Lark.Client({
-      appId: options.appId,
-      appSecret: options.appSecret,
-      domain
-    }) as unknown as FeishuSdkClient;
+    this.#client =
+      options.client ??
+      (new Lark.Client({
+        appId: options.appId,
+        appSecret: options.appSecret,
+        domain,
+      }) as unknown as FeishuSdkClient);
   }
 
-  async sendMessage(options: {
-    readonly chatId: string;
-    readonly msgType: "text" | "post" | "interactive" | "image" | "file";
-    readonly content: JsonLike;
-    readonly uuid?: string | undefined;
-  }): Promise<FeishuMessageData> {
+  async sendMessage(options: { readonly chatId: string; readonly msgType: "text" | "post" | "interactive" | "image" | "file"; readonly content: JsonLike; readonly uuid?: string | undefined }): Promise<FeishuMessageData> {
     const response = await this.#client.im.v1.message.create({
       params: {
-        receive_id_type: "chat_id"
+        receive_id_type: "chat_id",
       },
       data: withoutUndefined({
         receive_id: options.chatId,
         msg_type: options.msgType,
         content: JSON.stringify(options.content),
-        uuid: options.uuid
-      })
+        uuid: options.uuid,
+      }),
     });
 
     return assertFeishuData(response, "im.v1.message.create");
   }
 
-  async replyMessage(options: {
-    readonly messageId: string;
-    readonly msgType: "text" | "post" | "interactive" | "image" | "file";
-    readonly content: JsonLike;
-    readonly replyInThread?: boolean | undefined;
-    readonly uuid?: string | undefined;
-  }): Promise<FeishuMessageData> {
+  async replyMessage(options: { readonly messageId: string; readonly msgType: "text" | "post" | "interactive" | "image" | "file"; readonly content: JsonLike; readonly replyInThread?: boolean | undefined; readonly uuid?: string | undefined }): Promise<FeishuMessageData> {
     const response = await this.#client.im.v1.message.reply({
       path: {
-        message_id: options.messageId
+        message_id: options.messageId,
       },
       data: withoutUndefined({
         msg_type: options.msgType,
         content: JSON.stringify(options.content),
         reply_in_thread: options.replyInThread ?? true,
-        uuid: options.uuid
-      })
+        uuid: options.uuid,
+      }),
     });
 
     return assertFeishuData(response, "im.v1.message.reply");
@@ -142,59 +130,46 @@ export class FeishuApi {
         page_size: options.pageSize,
         page_token: options.pageToken,
         sort_type: options.sortType,
-        card_msg_content_type: options.cardMsgContentType
-      })
+        card_msg_content_type: options.cardMsgContentType,
+      }),
     });
 
     return assertFeishuData(response, "im.v1.message.list");
   }
 
-  async uploadMessageImage(options: {
-    readonly bytes: Buffer;
-  }): Promise<FeishuUploadedImageData> {
+  async uploadMessageImage(options: { readonly bytes: Buffer }): Promise<FeishuUploadedImageData> {
     const response = await this.#client.im.v1.image.create({
       data: {
         image_type: "message",
-        image: options.bytes
-      }
+        image: options.bytes,
+      },
     });
 
     return assertFeishuUploadData(response, "im.v1.image.create", "image_key");
   }
 
-  async uploadMessageFile(options: {
-    readonly bytes: Buffer;
-    readonly filename: string;
-    readonly fileType: "opus" | "mp4" | "pdf" | "doc" | "xls" | "ppt" | "stream";
-    readonly durationMs?: number | undefined;
-  }): Promise<FeishuUploadedFileData> {
+  async uploadMessageFile(options: { readonly bytes: Buffer; readonly filename: string; readonly fileType: "opus" | "mp4" | "pdf" | "doc" | "xls" | "ppt" | "stream"; readonly durationMs?: number | undefined }): Promise<FeishuUploadedFileData> {
     const response = await this.#client.im.v1.file.create({
       data: withoutUndefined({
         file_type: options.fileType,
         file_name: options.filename,
         duration: options.durationMs,
-        file: options.bytes
-      })
+        file: options.bytes,
+      }),
     });
 
     return assertFeishuUploadData(response, "im.v1.file.create", "file_key");
   }
 
-  async downloadMessageResourceAsDataUrl(options: {
-    readonly messageId: string;
-    readonly fileKey: string;
-    readonly type: "image" | "file" | "audio" | "video";
-    readonly maxBytes?: number | undefined;
-    readonly allowedContentTypes?: readonly string[] | undefined;
-  }): Promise<string> {
+  async downloadMessageResourceAsDataUrl(options: { readonly messageId: string; readonly fileKey: string; readonly type: "image" | "file" | "audio" | "video"; readonly maxBytes?: number | undefined; readonly allowedContentTypes?: readonly string[] | undefined }): Promise<string> {
     const response = await this.#client.im.v1.messageResource.get({
       path: {
         message_id: options.messageId,
-        file_key: options.fileKey
+        file_key: options.fileKey,
       },
       params: {
-        type: options.type
-      }
+        type: options.type,
+      },
     });
     const contentType = normalizeHeader(readHeader(response.headers, "content-type")) ?? "application/octet-stream";
     assertAllowedResourceContentType(contentType, options.allowedContentTypes);
@@ -207,7 +182,7 @@ export class FeishuApi {
 
 export function createFeishuTextContent(text: string): JsonLike {
   return {
-    text
+    text,
   };
 }
 
@@ -226,10 +201,7 @@ export function feishuSdkDomainFromApiBaseUrl(apiBaseUrl: string): string {
   return url.origin;
 }
 
-function assertFeishuData<T>(
-  response: FeishuApiResponse<T>,
-  operation: string
-): T {
+function assertFeishuData<T>(response: FeishuApiResponse<T>, operation: string): T {
   if (response.code && response.code !== 0) {
     throw new Error(`Feishu API error for ${operation}: ${response.msg ?? response.code}`);
   }
@@ -241,14 +213,8 @@ function assertFeishuData<T>(
   return response.data;
 }
 
-function assertFeishuUploadData<T extends object, K extends string>(
-  response: FeishuApiResponse<T> | T | null,
-  operation: string,
-  key: K
-): T {
-  const data = isFeishuApiEnvelope(response)
-    ? assertFeishuData(response, operation)
-    : response;
+function assertFeishuUploadData<T extends object, K extends string>(response: FeishuApiResponse<T> | T | null, operation: string, key: K): T {
+  const data = isFeishuApiEnvelope(response) ? assertFeishuData(response, operation) : response;
 
   if (!data) {
     throw new Error(`Feishu API response for ${operation} did not include ${key}`);
@@ -263,17 +229,10 @@ function assertFeishuUploadData<T extends object, K extends string>(
 }
 
 function isFeishuApiEnvelope<T>(value: FeishuApiResponse<T> | T | null): value is FeishuApiResponse<T> {
-  return Boolean(
-    value &&
-    typeof value === "object" &&
-    ("code" in value || "msg" in value || "data" in value)
-  );
+  return Boolean(value && typeof value === "object" && ("code" in value || "msg" in value || "data" in value));
 }
 
-function assertAllowedResourceContentType(
-  contentType: string,
-  allowedContentTypes: readonly string[] | undefined
-): void {
+function assertAllowedResourceContentType(contentType: string, allowedContentTypes: readonly string[] | undefined): void {
   if (!allowedContentTypes?.length) {
     return;
   }
@@ -281,9 +240,7 @@ function assertAllowedResourceContentType(
   const normalized = contentType.toLowerCase();
   const allowed = allowedContentTypes.some((entry) => {
     const expected = entry.toLowerCase();
-    return expected.endsWith("/")
-      ? normalized.startsWith(expected)
-      : normalized === expected;
+    return expected.endsWith("/") ? normalized.startsWith(expected) : normalized === expected;
   });
 
   if (!allowed) {
@@ -301,10 +258,7 @@ function parseContentLength(value: unknown): number | undefined {
   return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : undefined;
 }
 
-function assertResourceDownloadWithinLimit(
-  byteLength: number | undefined,
-  maxBytes: number | undefined
-): void {
+function assertResourceDownloadWithinLimit(byteLength: number | undefined, maxBytes: number | undefined): void {
   if (maxBytes === undefined || byteLength === undefined || byteLength <= maxBytes) {
     return;
   }
@@ -321,9 +275,7 @@ function formatByteLimit(maxBytes: number): string {
 }
 
 function withoutUndefined<T extends Record<string, unknown>>(value: T): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(value).filter(([, entry]) => entry !== undefined)
-  );
+  return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined));
 }
 
 async function readStreamToBuffer(stream: Readable, maxBytes: number | undefined): Promise<Buffer> {

@@ -13,7 +13,7 @@ export async function handleIntegrationRequest(
   response: http.ServerResponse,
   options: {
     readonly isolatedMcp: IsolatedMcpService;
-  }
+  },
 ): Promise<boolean> {
   if (method === "GET" && url.pathname === "/integrations/mcp-tools") {
     await handleMcpToolsRequest(url, response, options);
@@ -33,14 +33,14 @@ async function handleMcpToolsRequest(
   response: http.ServerResponse,
   options: {
     readonly isolatedMcp: IsolatedMcpService;
-  }
+  },
 ): Promise<void> {
   const server = url.searchParams.get("server")?.trim();
   if (!server) {
     respondJson(response, 400, {
       ok: false,
       error: "missing_required_query",
-      required: ["server"]
+      required: ["server"],
     });
     return;
   }
@@ -50,12 +50,12 @@ async function handleMcpToolsRequest(
     respondJson(response, 200, {
       ok: true,
       server,
-      tools
+      tools,
     });
   } catch (error) {
     respondJson(response, 502, {
       ok: false,
-      error: error instanceof Error ? error.message : String(error)
+      error: error instanceof Error ? error.message : String(error),
     });
   }
 }
@@ -65,7 +65,7 @@ async function handleMcpCallRequest(
   response: http.ServerResponse,
   options: {
     readonly isolatedMcp: IsolatedMcpService;
-  }
+  },
 ): Promise<void> {
   let body: Record<string, unknown>;
 
@@ -74,7 +74,7 @@ async function handleMcpCallRequest(
   } catch (error) {
     respondJson(response, 400, {
       ok: false,
-      error: error instanceof Error ? error.message : String(error)
+      error: error instanceof Error ? error.message : String(error),
     });
     return;
   }
@@ -89,15 +89,15 @@ async function handleMcpCallRequest(
     body: redactHttpRequestBody({
       server,
       name,
-      arguments: rawArgs
-    })
+      arguments: rawArgs,
+    }),
   });
 
   if (!server || !name) {
     respondJson(response, 400, {
       ok: false,
       error: "missing_required_body",
-      required: ["server", "name"]
+      required: ["server", "name"],
     });
     return;
   }
@@ -107,7 +107,7 @@ async function handleMcpCallRequest(
     respondJson(response, 400, {
       ok: false,
       error: "invalid_json_field",
-      field: argsResult.field
+      field: argsResult.field,
     });
     return;
   }
@@ -116,7 +116,7 @@ async function handleMcpCallRequest(
   if (argsValue != null && (typeof argsValue !== "object" || Array.isArray(argsValue))) {
     respondJson(response, 400, {
       ok: false,
-      error: "invalid_arguments"
+      error: "invalid_arguments",
     });
     return;
   }
@@ -125,18 +125,18 @@ async function handleMcpCallRequest(
     const result = await options.isolatedMcp.callTool({
       server,
       name,
-      arguments: (argsValue as Record<string, unknown> | undefined) ?? {}
+      arguments: (argsValue as Record<string, unknown> | undefined) ?? {},
     });
     respondJson(response, 200, {
       ok: true,
       server,
       name,
-      result
+      result,
     });
   } catch (error) {
     respondJson(response, 502, {
       ok: false,
-      error: error instanceof Error ? error.message : String(error)
+      error: error instanceof Error ? error.message : String(error),
     });
   }
 }

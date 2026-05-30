@@ -24,7 +24,7 @@ describe("admin realtime event store", () => {
       rootThreadTs: "111.222",
       workspacePath: "/tmp/workspace",
       createdAt: "2026-05-09T00:00:00.000Z",
-      updatedAt: "2026-05-09T00:00:00.000Z"
+      updatedAt: "2026-05-09T00:00:00.000Z",
     });
     await store.upsertAgentTraceEvent({
       id: "trace-1",
@@ -35,21 +35,18 @@ describe("admin realtime event store", () => {
       sequence: 1,
       title: "工具调用",
       summary: "exec_command",
-      detail: "{\"cmd\":\"pnpm test\"}",
+      detail: '{"cmd":"pnpm test"}',
       status: "running",
       role: "assistant",
       toolName: "exec_command",
       callId: "call-1",
       turnId: "turn-1",
       createdAt: "2026-05-09T00:00:01.000Z",
-      updatedAt: "2026-05-09T00:00:01.000Z"
+      updatedAt: "2026-05-09T00:00:01.000Z",
     });
 
     const events = store.listAdminEvents({ afterSequence: 0, limit: 10 });
-    expect(events.map((event) => event.kind)).toEqual([
-      "session.upsert",
-      "trace.append"
-    ]);
+    expect(events.map((event) => event.kind)).toEqual(["session.upsert", "trace.append"]);
     expect(events[0]).toMatchObject({
       sequence: 1,
       scope: "session",
@@ -57,8 +54,8 @@ describe("admin realtime event store", () => {
       entityId: "C123:111.222",
       payload: expect.objectContaining({
         key: "C123:111.222",
-        channelName: "ops"
-      })
+        channelName: "ops",
+      }),
     });
     expect(events[1]).toMatchObject({
       sequence: 2,
@@ -67,8 +64,8 @@ describe("admin realtime event store", () => {
       entityId: "trace-1",
       payload: expect.objectContaining({
         type: "agent_tool_call",
-        summary: "exec_command"
-      })
+        summary: "exec_command",
+      }),
     });
     expect(store.getLatestAdminEventSequence()).toBe(2);
     expect(store.listAdminEvents({ afterSequence: 1, limit: 10 }).map((event) => event.sequence)).toEqual([2]);

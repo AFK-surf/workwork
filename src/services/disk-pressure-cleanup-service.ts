@@ -32,23 +32,15 @@ interface BackgroundJobTerminator {
     options?: {
       readonly skipTokenCheck?: boolean | undefined;
       readonly skipEvent?: boolean | undefined;
-    }
+    },
   ): Promise<unknown>;
 }
 
 type StatFsProvider = (targetPath: string) => Promise<DiskUsage>;
 
 const PROTECTED_JOB_STATUSES = new Set(["registered", "running"]);
-const DARWIN_SESSION_CACHE_RELATIVE_PATHS = [
-  "frontend/macos/.build/DerivedData",
-  "frontend/macos/default.profraw",
-  "frontend/macos/xcodebuild.log",
-  "default.profraw"
-] as const;
-const CROSS_PLATFORM_SESSION_CACHE_RELATIVE_PATHS = [
-  "web/node_modules",
-  "workers/node_modules"
-] as const;
+const DARWIN_SESSION_CACHE_RELATIVE_PATHS = ["frontend/macos/.build/DerivedData", "frontend/macos/default.profraw", "frontend/macos/xcodebuild.log", "default.profraw"] as const;
+const CROSS_PLATFORM_SESSION_CACHE_RELATIVE_PATHS = ["web/node_modules", "workers/node_modules"] as const;
 
 export class DiskPressureCleanupService {
   readonly #config: AppConfig;
@@ -60,14 +52,7 @@ export class DiskPressureCleanupService {
   #timer: NodeJS.Timeout | undefined;
   #running = false;
 
-  constructor(options: {
-    readonly config: AppConfig;
-    readonly sessions: SessionManager;
-    readonly jobTerminator?: BackgroundJobTerminator | undefined;
-    readonly now?: (() => Date) | undefined;
-    readonly statFs?: StatFsProvider | undefined;
-    readonly isDarwin?: boolean | undefined;
-  }) {
+  constructor(options: { readonly config: AppConfig; readonly sessions: SessionManager; readonly jobTerminator?: BackgroundJobTerminator | undefined; readonly now?: (() => Date) | undefined; readonly statFs?: StatFsProvider | undefined; readonly isDarwin?: boolean | undefined }) {
     this.#config = options.config;
     this.#sessions = options.sessions;
     this.#jobTerminator = options.jobTerminator;
@@ -105,11 +90,7 @@ export class DiskPressureCleanupService {
 
     this.#running = true;
     try {
-      await Promise.all([
-        ensureDir(this.#config.logDir),
-        ensureDir(this.#config.sessionsRoot),
-        ensureDir(this.#config.jobsRoot)
-      ]);
+      await Promise.all([ensureDir(this.#config.logDir), ensureDir(this.#config.sessionsRoot), ensureDir(this.#config.jobsRoot)]);
 
       const before = await this.#readUsage();
       const cacheResult = await this.#cleanExpiredSessionCaches();
@@ -122,21 +103,15 @@ export class DiskPressureCleanupService {
           dryRun: this.#config.diskCleanupDryRun,
           freeBytes: before.freeBytes,
           minFreeBytes: this.#config.diskCleanupMinFreeBytes,
-          targetFreeBytes: this.#config.diskCleanupTargetFreeBytes
+          targetFreeBytes: this.#config.diskCleanupTargetFreeBytes,
         });
 
         deletedLogCount = await this.#deleteOldLogs(this.#config.diskCleanupOldLogMs);
-        deletedSessionCount =
-          (await this.#readUsage()).freeBytes < this.#config.diskCleanupTargetFreeBytes
-            ? await this.#deleteInactiveSessions()
-            : 0;
+        deletedSessionCount = (await this.#readUsage()).freeBytes < this.#config.diskCleanupTargetFreeBytes ? await this.#deleteInactiveSessions() : 0;
       }
 
       const after = await this.#readUsage();
-      const skipped =
-        before.freeBytes >= this.#config.diskCleanupMinFreeBytes && cacheResult.candidateCount === 0
-          ? "enough_free_space"
-          : undefined;
+      const skipped = before.freeBytes >= this.#config.diskCleanupMinFreeBytes && cacheResult.candidateCount === 0 ? "enough_free_space" : undefined;
       logger.info("Disk pressure cleanup finished", {
         reason,
         skipped,
@@ -147,7 +122,7 @@ export class DiskPressureCleanupService {
         deletedCacheEntryCount: cacheResult.deletedCount,
         cacheReclaimedBytes: cacheResult.reclaimedBytes,
         deletedLogCount,
-        deletedSessionCount
+        deletedSessionCount,
       });
 
       return {
@@ -160,12 +135,12 @@ export class DiskPressureCleanupService {
         deletedCacheEntryCount: cacheResult.deletedCount,
         cacheReclaimedBytes: cacheResult.reclaimedBytes,
         deletedLogCount,
-        deletedSessionCount
+        deletedSessionCount,
       };
     } catch (error) {
       logger.error("Disk pressure cleanup failed", {
         reason,
-        error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
       });
       return emptyResult({ dryRun: this.#config.diskCleanupDryRun });
     } finally {
@@ -178,15 +153,13 @@ export class DiskPressureCleanupService {
     const files = await listFiles(this.#config.logDir);
     let deletedCount = 0;
 
-    for (const file of files
-      .filter((entry) => nowMs - entry.mtimeMs >= maxAgeMs)
-      .sort((left, right) => left.mtimeMs - right.mtimeMs)) {
+    for (const file of files.filter((entry) => nowMs - entry.mtimeMs >= maxAgeMs).sort((left, right) => left.mtimeMs - right.mtimeMs)) {
       try {
         const bytes = await getPathSizeBytes(file.path);
         logger.info("Disk cleanup old log candidate", {
           path: file.path,
           bytes,
-          dryRun: this.#config.diskCleanupDryRun
+          dryRun: this.#config.diskCleanupDryRun,
         });
         if (!this.#config.diskCleanupDryRun) {
           await fs.rm(file.path, { force: true });
@@ -195,13 +168,13 @@ export class DiskPressureCleanupService {
           logger.info("Disk cleanup old log deleted", {
             path: file.path,
             bytes,
-            dryRun: false
+            dryRun: false,
           });
         }
       } catch (error) {
         logger.warn("Failed to delete log during disk cleanup", {
           path: file.path,
-          error: error instanceof Error ? error.message : String(error)
+          error: error instanceof Error ? error.message : String(error),
         });
       }
     }
@@ -211,37 +184,39 @@ export class DiskPressureCleanupService {
 
   async #deleteInactiveSessions(): Promise<number> {
     const nowMs = this.#now().getTime();
-    const candidates = await Promise.all(this.#sessions.listSessions().map(async (session) => {
-      const inbound = this.#sessions.listInboundMessages({
-        channelId: session.channelId,
-        rootThreadTs: session.rootThreadTs
-      });
-      const jobs = this.#sessions.listBackgroundJobs({
-        channelId: session.channelId,
-        rootThreadTs: session.rootThreadTs
-      });
-      const lastActivityMs = getLastUserVisibleActivityMs(session, inbound);
-      if (!lastActivityMs || nowMs - lastActivityMs < this.#config.diskCleanupInactiveSessionMs) {
-        return null;
-      }
-      if (!canDeleteSession(session, inbound, jobs, {
-        inactiveMs: nowMs - lastActivityMs,
-        hardProtectionMs: this.#config.diskCleanupJobProtectionMs
-      })) {
-        return null;
-      }
+    const candidates = await Promise.all(
+      this.#sessions.listSessions().map(async (session) => {
+        const inbound = this.#sessions.listInboundMessages({
+          channelId: session.channelId,
+          rootThreadTs: session.rootThreadTs,
+        });
+        const jobs = this.#sessions.listBackgroundJobs({
+          channelId: session.channelId,
+          rootThreadTs: session.rootThreadTs,
+        });
+        const lastActivityMs = getLastUserVisibleActivityMs(session, inbound);
+        if (!lastActivityMs || nowMs - lastActivityMs < this.#config.diskCleanupInactiveSessionMs) {
+          return null;
+        }
+        if (
+          !canDeleteSession(session, inbound, jobs, {
+            inactiveMs: nowMs - lastActivityMs,
+            hardProtectionMs: this.#config.diskCleanupJobProtectionMs,
+          })
+        ) {
+          return null;
+        }
 
-      return {
-        session,
-        jobs,
-        lastActivityMs
-      };
-    }));
+        return {
+          session,
+          jobs,
+          lastActivityMs,
+        };
+      }),
+    );
 
     let deletedCount = 0;
-    for (const candidate of candidates
-      .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
-      .sort((left, right) => left.lastActivityMs - right.lastActivityMs)) {
+    for (const candidate of candidates.filter((entry): entry is NonNullable<typeof entry> => entry !== null).sort((left, right) => left.lastActivityMs - right.lastActivityMs)) {
       try {
         const sessionRoot = path.dirname(candidate.session.workspacePath);
         const bytes = await getPathSizeBytes(sessionRoot);
@@ -251,16 +226,14 @@ export class DiskPressureCleanupService {
           rootThreadTs: candidate.session.rootThreadTs,
           path: sessionRoot,
           bytes,
-          dryRun: this.#config.diskCleanupDryRun
+          dryRun: this.#config.diskCleanupDryRun,
         });
         if (!this.#config.diskCleanupDryRun) {
           await this.#cancelJobs(candidate.jobs);
           await Promise.all([
             fs.rm(getSessionLogDirectory(this.#config.logDir, candidate.session.key), { recursive: true, force: true }),
             ...candidate.jobs.map((job) => fs.rm(path.join(this.#config.jobsRoot, job.id), { recursive: true, force: true })),
-            ...candidate.jobs.map((job) =>
-              fs.rm(getJobLogDirectory(this.#config.logDir, job.id), { recursive: true, force: true })
-            )
+            ...candidate.jobs.map((job) => fs.rm(getJobLogDirectory(this.#config.logDir, job.id), { recursive: true, force: true })),
           ]);
           await this.#sessions.deleteSessionByKey(candidate.session.key);
           deletedCount += 1;
@@ -270,13 +243,13 @@ export class DiskPressureCleanupService {
             rootThreadTs: candidate.session.rootThreadTs,
             path: sessionRoot,
             bytes,
-            dryRun: false
+            dryRun: false,
           });
         }
       } catch (error) {
         logger.warn("Failed to delete inactive session during disk cleanup", {
           sessionKey: candidate.session.key,
-          error: error instanceof Error ? error.message : String(error)
+          error: error instanceof Error ? error.message : String(error),
         });
       }
 
@@ -292,29 +265,29 @@ export class DiskPressureCleanupService {
     if (!this.#jobTerminator) {
       return;
     }
-    await Promise.all(jobs
-      .filter((job) => PROTECTED_JOB_STATUSES.has(job.status))
-      .map((job) =>
-        this.#jobTerminator!.cancelJob(job.id, undefined, {
-          skipTokenCheck: true,
-          skipEvent: true
-        }).catch((error) => {
-          logger.warn("Failed to cancel background job during disk cleanup", {
-            jobId: job.id,
-            error: error instanceof Error ? error.message : String(error)
-          });
-        })
-      ));
+    await Promise.all(
+      jobs
+        .filter((job) => PROTECTED_JOB_STATUSES.has(job.status))
+        .map((job) =>
+          this.#jobTerminator!
+            .cancelJob(job.id, undefined, {
+              skipTokenCheck: true,
+              skipEvent: true,
+            })
+            .catch((error) => {
+              logger.warn("Failed to cancel background job during disk cleanup", {
+                jobId: job.id,
+                error: error instanceof Error ? error.message : String(error),
+              });
+            }),
+        ),
+    );
   }
 
   async #readUsage(): Promise<DiskUsage> {
-    const usages = await Promise.all(uniqueResolvedPaths([
-      this.#config.logDir,
-      this.#config.sessionsRoot,
-      this.#config.jobsRoot
-    ]).map((targetPath) => this.#statFs(targetPath)));
+    const usages = await Promise.all(uniqueResolvedPaths([this.#config.logDir, this.#config.sessionsRoot, this.#config.jobsRoot]).map((targetPath) => this.#statFs(targetPath)));
 
-    return usages.reduce((lowest, usage) => usage.freeBytes < lowest.freeBytes ? usage : lowest);
+    return usages.reduce((lowest, usage) => (usage.freeBytes < lowest.freeBytes ? usage : lowest));
   }
 
   async #cleanExpiredSessionCaches(): Promise<{
@@ -327,32 +300,32 @@ export class DiskPressureCleanupService {
     let deletedCount = 0;
     let reclaimedBytes = 0;
 
-    const candidates = await Promise.all(this.#sessions.listSessions().map(async (session) => {
-      const inbound = this.#sessions.listInboundMessages({
-        channelId: session.channelId,
-        rootThreadTs: session.rootThreadTs
-      });
-      const jobs = this.#sessions.listBackgroundJobs({
-        channelId: session.channelId,
-        rootThreadTs: session.rootThreadTs
-      });
-      const lastActivityMs = getLastUserVisibleActivityMs(session, inbound);
-      if (!lastActivityMs || nowMs - lastActivityMs < this.#config.diskCleanupSessionCacheTtlMs) {
-        return null;
-      }
-      if (!canCleanSessionCaches(session, inbound, jobs)) {
-        return null;
-      }
+    const candidates = await Promise.all(
+      this.#sessions.listSessions().map(async (session) => {
+        const inbound = this.#sessions.listInboundMessages({
+          channelId: session.channelId,
+          rootThreadTs: session.rootThreadTs,
+        });
+        const jobs = this.#sessions.listBackgroundJobs({
+          channelId: session.channelId,
+          rootThreadTs: session.rootThreadTs,
+        });
+        const lastActivityMs = getLastUserVisibleActivityMs(session, inbound);
+        if (!lastActivityMs || nowMs - lastActivityMs < this.#config.diskCleanupSessionCacheTtlMs) {
+          return null;
+        }
+        if (!canCleanSessionCaches(session, inbound, jobs)) {
+          return null;
+        }
 
-      return {
-        session,
-        lastActivityMs
-      };
-    }));
+        return {
+          session,
+          lastActivityMs,
+        };
+      }),
+    );
 
-    for (const candidate of candidates
-      .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
-      .sort((left, right) => left.lastActivityMs - right.lastActivityMs)) {
+    for (const candidate of candidates.filter((entry): entry is NonNullable<typeof entry> => entry !== null).sort((left, right) => left.lastActivityMs - right.lastActivityMs)) {
       for (const relativePath of getSessionCacheRelativePaths(this.#isDarwin)) {
         const targetPath = path.join(candidate.session.workspacePath, relativePath);
         if (!isSubpathOf(candidate.session.workspacePath, targetPath)) {
@@ -372,7 +345,7 @@ export class DiskPressureCleanupService {
             path: targetPath,
             relativePath,
             bytes,
-            dryRun: this.#config.diskCleanupDryRun
+            dryRun: this.#config.diskCleanupDryRun,
           });
 
           if (this.#config.diskCleanupDryRun) {
@@ -389,13 +362,13 @@ export class DiskPressureCleanupService {
             path: targetPath,
             relativePath,
             bytes,
-            dryRun: false
+            dryRun: false,
           });
         } catch (error) {
           logger.warn("Failed to delete session cache during disk cleanup", {
             sessionKey: candidate.session.key,
             path: targetPath,
-            error: error instanceof Error ? error.message : String(error)
+            error: error instanceof Error ? error.message : String(error),
           });
         }
       }
@@ -404,17 +377,12 @@ export class DiskPressureCleanupService {
     return {
       candidateCount,
       deletedCount,
-      reclaimedBytes
+      reclaimedBytes,
     };
   }
 }
 
-function emptyResult(options: {
-  readonly skipped?: string | undefined;
-  readonly dryRun: boolean;
-  readonly before?: DiskUsage | undefined;
-  readonly after?: DiskUsage | undefined;
-}): DiskPressureCleanupResult {
+function emptyResult(options: { readonly skipped?: string | undefined; readonly dryRun: boolean; readonly before?: DiskUsage | undefined; readonly after?: DiskUsage | undefined }): DiskPressureCleanupResult {
   return {
     ok: true,
     skipped: options.skipped,
@@ -425,7 +393,7 @@ function emptyResult(options: {
     deletedCacheEntryCount: 0,
     cacheReclaimedBytes: 0,
     deletedLogCount: 0,
-    deletedSessionCount: 0
+    deletedSessionCount: 0,
   };
 }
 
@@ -433,23 +401,12 @@ async function readDiskUsage(targetPath: string): Promise<DiskUsage> {
   const stat = await fs.statfs(targetPath);
   return {
     freeBytes: stat.bavail * stat.bsize,
-    totalBytes: stat.blocks * stat.bsize
+    totalBytes: stat.blocks * stat.bsize,
   };
 }
 
-function getLastUserVisibleActivityMs(
-  session: SlackSessionRecord,
-  inbound: readonly PersistedInboundMessage[]
-): number | undefined {
-  const values = [
-    session.createdAt,
-    session.activeTurnStartedAt,
-    session.lastSlackReplyAt,
-    session.lastTurnSignalAt,
-    ...inbound.flatMap((message) => [message.createdAt, message.updatedAt])
-  ]
-    .map((value) => (value ? Date.parse(value) : Number.NaN))
-    .filter((value) => Number.isFinite(value));
+function getLastUserVisibleActivityMs(session: SlackSessionRecord, inbound: readonly PersistedInboundMessage[]): number | undefined {
+  const values = [session.createdAt, session.activeTurnStartedAt, session.lastSlackReplyAt, session.lastTurnSignalAt, ...inbound.flatMap((message) => [message.createdAt, message.updatedAt])].map((value) => (value ? Date.parse(value) : Number.NaN)).filter((value) => Number.isFinite(value));
 
   return values.length > 0 ? Math.max(...values) : undefined;
 }
@@ -461,7 +418,7 @@ function canDeleteSession(
   options: {
     readonly inactiveMs: number;
     readonly hardProtectionMs: number;
-  }
+  },
 ): boolean {
   if (options.inactiveMs >= options.hardProtectionMs) {
     return true;
@@ -475,11 +432,7 @@ function canDeleteSession(
   return !jobs.some((job) => PROTECTED_JOB_STATUSES.has(job.status));
 }
 
-function canCleanSessionCaches(
-  session: SlackSessionRecord,
-  inbound: readonly PersistedInboundMessage[],
-  jobs: readonly PersistedBackgroundJob[]
-): boolean {
+function canCleanSessionCaches(session: SlackSessionRecord, inbound: readonly PersistedInboundMessage[], jobs: readonly PersistedBackgroundJob[]): boolean {
   if (session.activeTurnId) {
     return false;
   }
@@ -490,9 +443,7 @@ function canCleanSessionCaches(
 }
 
 function getSessionCacheRelativePaths(isDarwin: boolean): readonly string[] {
-  return isDarwin
-    ? [...DARWIN_SESSION_CACHE_RELATIVE_PATHS, ...CROSS_PLATFORM_SESSION_CACHE_RELATIVE_PATHS]
-    : CROSS_PLATFORM_SESSION_CACHE_RELATIVE_PATHS;
+  return isDarwin ? [...DARWIN_SESSION_CACHE_RELATIVE_PATHS, ...CROSS_PLATFORM_SESSION_CACHE_RELATIVE_PATHS] : CROSS_PLATFORM_SESSION_CACHE_RELATIVE_PATHS;
 }
 
 async function getPathSizeBytes(targetPath: string): Promise<number> {
@@ -518,10 +469,12 @@ async function getPathSizeBytes(targetPath: string): Promise<number> {
   return total;
 }
 
-async function listFiles(directoryPath: string): Promise<Array<{
-  readonly path: string;
-  readonly mtimeMs: number;
-}>> {
+async function listFiles(directoryPath: string): Promise<
+  Array<{
+    readonly path: string;
+    readonly mtimeMs: number;
+  }>
+> {
   const entries = await fs.readdir(directoryPath, { withFileTypes: true }).catch((error) => {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
       return [];
@@ -532,12 +485,12 @@ async function listFiles(directoryPath: string): Promise<Array<{
   for (const entry of entries) {
     const entryPath = path.join(directoryPath, entry.name);
     if (entry.isDirectory()) {
-      files.push(...await listFiles(entryPath));
+      files.push(...(await listFiles(entryPath)));
     } else if (entry.isFile()) {
       const stat = await fs.stat(entryPath);
       files.push({
         path: entryPath,
-        mtimeMs: stat.mtimeMs
+        mtimeMs: stat.mtimeMs,
       });
     }
   }

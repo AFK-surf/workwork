@@ -6,18 +6,7 @@ export interface SlackAuthIdentity {
   readonly appId?: string | undefined;
 }
 
-const IGNORED_SUBTYPES = new Set([
-  "message_changed",
-  "message_deleted",
-  "channel_join",
-  "channel_leave",
-  "channel_topic",
-  "channel_purpose",
-  "channel_name",
-  "channel_archive",
-  "channel_unarchive",
-  "thread_broadcast"
-]);
+const IGNORED_SUBTYPES = new Set(["message_changed", "message_deleted", "channel_join", "channel_leave", "channel_topic", "channel_purpose", "channel_name", "channel_archive", "channel_unarchive", "thread_broadcast"]);
 
 export class SlackSelfMessageFilter {
   #identity: SlackAuthIdentity | undefined;
@@ -66,17 +55,11 @@ export class SlackSelfMessageFilter {
       return true;
     }
 
-    return isSelfAuthoredPayload(raw, this.#identity) || (
-      this.#identity?.userId != null &&
-      message.userId === this.#identity.userId
-    );
+    return isSelfAuthoredPayload(raw, this.#identity) || (this.#identity?.userId != null && message.userId === this.#identity.userId);
   }
 }
 
-function isSelfAuthoredPayload(
-  payload: Record<string, any> | JsonLike | undefined,
-  identity: SlackAuthIdentity | undefined
-): boolean {
+function isSelfAuthoredPayload(payload: Record<string, any> | JsonLike | undefined, identity: SlackAuthIdentity | undefined): boolean {
   const record = toRecord(payload);
   if (!identity || !record) {
     return false;

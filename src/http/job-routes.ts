@@ -4,22 +4,10 @@ import { URL } from "node:url";
 import type { JobManager } from "../services/job-manager.js";
 import { logger } from "../logger.js";
 import type { JsonLike } from "../types.js";
-import {
-  parseJsonLikeRequestField,
-  readBoolean,
-  readJsonBody,
-  readString,
-  respondJson
-} from "./common.js";
+import { parseJsonLikeRequestField, readBoolean, readJsonBody, readString, respondJson } from "./common.js";
 import { redactHttpRequestBody } from "./request-log-redaction.js";
 
-const JOB_COORDINATE_REQUIRED_FIELDS = [
-  "platform",
-  "conversationId (alias: conversation_id)",
-  "rootMessageId (alias: root_message_id)",
-  "kind",
-  "script"
-];
+const JOB_COORDINATE_REQUIRED_FIELDS = ["platform", "conversationId (alias: conversation_id)", "rootMessageId (alias: root_message_id)", "kind", "script"];
 const JOB_LEGACY_COORDINATE_ALIASES = ["channel_id", "thread_ts"] as const;
 
 export async function handleJobRequest(
@@ -29,7 +17,7 @@ export async function handleJobRequest(
   response: http.ServerResponse,
   options: {
     readonly jobManager: JobManager;
-  }
+  },
 ): Promise<boolean> {
   if (method === "POST" && url.pathname === "/jobs/register") {
     await handleJobRegisterRequest(request, response, options);
@@ -56,7 +44,7 @@ async function handleJobRegisterRequest(
   response: http.ServerResponse,
   options: {
     readonly jobManager: JobManager;
-  }
+  },
 ): Promise<void> {
   let body: Record<string, unknown>;
 
@@ -65,18 +53,22 @@ async function handleJobRegisterRequest(
   } catch (error) {
     respondJson(response, 400, {
       ok: false,
-      error: error instanceof Error ? error.message : String(error)
+      error: error instanceof Error ? error.message : String(error),
     });
     return;
   }
-  logger.raw("http-requests", {
-    method: "POST",
-    path: "/jobs/register",
-    body: redactHttpRequestBody(body)
-  }, {
-    channelId: readString(body.channel_id),
-    rootThreadTs: readString(body.thread_ts)
-  });
+  logger.raw(
+    "http-requests",
+    {
+      method: "POST",
+      path: "/jobs/register",
+      body: redactHttpRequestBody(body),
+    },
+    {
+      channelId: readString(body.channel_id),
+      rootThreadTs: readString(body.thread_ts),
+    },
+  );
 
   const platform = readPlatform(body.platform);
   const platformValue = body.platform;
@@ -91,7 +83,7 @@ async function handleJobRegisterRequest(
     respondJson(response, 400, {
       ok: false,
       error: "invalid_platform",
-      allowed: ["slack", "feishu"]
+      allowed: ["slack", "feishu"],
     });
     return;
   }
@@ -103,7 +95,7 @@ async function handleJobRegisterRequest(
       ok: false,
       error: "missing_required_body",
       required: JOB_COORDINATE_REQUIRED_FIELDS,
-      legacyAliases: JOB_LEGACY_COORDINATE_ALIASES
+      legacyAliases: JOB_LEGACY_COORDINATE_ALIASES,
     });
     return;
   }
@@ -119,7 +111,7 @@ async function handleJobRegisterRequest(
       script,
       cwd: readString(body.cwd) || undefined,
       shell: readString(body.shell) || undefined,
-      restartOnBoot: readBoolean(body.restart_on_boot, true)
+      restartOnBoot: readBoolean(body.restart_on_boot, true),
     });
     respondJson(response, 200, {
       ok: true,
@@ -137,13 +129,13 @@ async function handleJobRegisterRequest(
         rootMessageId: job.rootMessageId,
         channelId: job.channelId,
         rootThreadTs: job.rootThreadTs,
-        createdAt: job.createdAt
-      }
+        createdAt: job.createdAt,
+      },
     });
   } catch (error) {
     respondJson(response, 500, {
       ok: false,
-      error: error instanceof Error ? error.message : String(error)
+      error: error instanceof Error ? error.message : String(error),
     });
   }
 }
@@ -156,7 +148,7 @@ async function handleJobAdminCancelRequest(
   },
   action: {
     readonly jobId: string;
-  }
+  },
 ): Promise<void> {
   let body: Record<string, unknown>;
 
@@ -165,41 +157,45 @@ async function handleJobAdminCancelRequest(
   } catch (error) {
     respondJson(response, 400, {
       ok: false,
-      error: error instanceof Error ? error.message : String(error)
+      error: error instanceof Error ? error.message : String(error),
     });
     return;
   }
-  logger.raw("http-requests", {
-    method: "POST",
-    path: `/jobs/${action.jobId}/admin-cancel`,
-    body: redactHttpRequestBody(body)
-  }, {
-    jobId: action.jobId
-  });
+  logger.raw(
+    "http-requests",
+    {
+      method: "POST",
+      path: `/jobs/${action.jobId}/admin-cancel`,
+      body: redactHttpRequestBody(body),
+    },
+    {
+      jobId: action.jobId,
+    },
+  );
 
   const sessionKey = readString(body.session_key);
   if (!sessionKey) {
     respondJson(response, 400, {
       ok: false,
       error: "missing_required_body",
-      required: ["session_key"]
+      required: ["session_key"],
     });
     return;
   }
 
   try {
     const job = await options.jobManager.cancelJobFromAdmin(action.jobId, {
-      sessionKey
+      sessionKey,
     });
     respondJson(response, 200, {
       ok: true,
-      job
+      job,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     respondJson(response, message === "job_session_mismatch" ? 400 : 500, {
       ok: false,
-      error: message
+      error: message,
     });
   }
 }
@@ -213,7 +209,7 @@ async function handleJobActionRequest(
   action: {
     readonly jobId: string;
     readonly action: "heartbeat" | "event" | "complete" | "fail" | "cancel";
-  }
+  },
 ): Promise<void> {
   let body: Record<string, unknown>;
 
@@ -222,17 +218,21 @@ async function handleJobActionRequest(
   } catch (error) {
     respondJson(response, 400, {
       ok: false,
-      error: error instanceof Error ? error.message : String(error)
+      error: error instanceof Error ? error.message : String(error),
     });
     return;
   }
-  logger.raw("http-requests", {
-    method: "POST",
-    path: `/jobs/${action.jobId}/${action.action}`,
-    body: redactHttpRequestBody(body)
-  }, {
-    jobId: action.jobId
-  });
+  logger.raw(
+    "http-requests",
+    {
+      method: "POST",
+      path: `/jobs/${action.jobId}/${action.action}`,
+      body: redactHttpRequestBody(body),
+    },
+    {
+      jobId: action.jobId,
+    },
+  );
 
   const token = readString(body.token);
 
@@ -259,15 +259,15 @@ async function handleJobActionRequest(
             respondJson(response, 400, {
               ok: false,
               error: "invalid_json_field",
-              field: parsed.field
+              field: parsed.field,
             });
             return;
           }
           job = await options.jobManager.emitJobEvent(action.jobId, token, {
-          eventKind: readString(body.event_kind)!,
-          summary: readString(body.summary)!,
-          detailsText: readString(body.details_text) || undefined,
-          detailsJson: parsed.value
+            eventKind: readString(body.event_kind)!,
+            summary: readString(body.summary)!,
+            detailsText: readString(body.details_text) || undefined,
+            detailsJson: parsed.value,
           });
         }
         break;
@@ -281,14 +281,14 @@ async function handleJobActionRequest(
             respondJson(response, 400, {
               ok: false,
               error: "invalid_json_field",
-              field: parsed.field
+              field: parsed.field,
             });
             return;
           }
           job = await options.jobManager.completeJob(action.jobId, token, {
-          summary: readString(body.summary) || undefined,
-          detailsText: readString(body.details_text) || undefined,
-          detailsJson: parsed.value
+            summary: readString(body.summary) || undefined,
+            detailsText: readString(body.details_text) || undefined,
+            detailsJson: parsed.value,
           });
         }
         break;
@@ -302,15 +302,15 @@ async function handleJobActionRequest(
             respondJson(response, 400, {
               ok: false,
               error: "invalid_json_field",
-              field: parsed.field
+              field: parsed.field,
             });
             return;
           }
           job = await options.jobManager.failJob(action.jobId, token, {
-          summary: readString(body.summary) || undefined,
-          error: readString(body.error) || undefined,
-          detailsText: readString(body.details_text) || undefined,
-          detailsJson: parsed.value
+            summary: readString(body.summary) || undefined,
+            error: readString(body.error) || undefined,
+            detailsText: readString(body.details_text) || undefined,
+            detailsJson: parsed.value,
           });
         }
         break;
@@ -324,13 +324,13 @@ async function handleJobActionRequest(
 
     respondJson(response, 200, {
       ok: true,
-      job
+      job,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     respondJson(response, message.startsWith("missing_") || message === "invalid_job_token" ? 400 : 500, {
       ok: false,
-      error: message
+      error: message,
     });
   }
 }
@@ -343,16 +343,9 @@ function isInvalidPlatformValue(value: unknown): boolean {
   return value != null && value !== "" && !readPlatform(value);
 }
 
-function parseJobDetailsJson(body: Record<string, unknown>):
-  | { readonly ok: true; readonly value: JsonLike | undefined }
-  | { readonly ok: false; readonly field: string } {
-  const result = parseJsonLikeRequestField(
-    body.details_json ?? body.detailsJson,
-    "detailsJson (alias: details_json)"
-  );
-  return result.ok
-    ? { ok: true, value: result.value }
-    : { ok: false, field: result.field };
+function parseJobDetailsJson(body: Record<string, unknown>): { readonly ok: true; readonly value: JsonLike | undefined } | { readonly ok: false; readonly field: string } {
+  const result = parseJsonLikeRequestField(body.details_json ?? body.detailsJson, "detailsJson (alias: details_json)");
+  return result.ok ? { ok: true, value: result.value } : { ok: false, field: result.field };
 }
 
 function matchJobAdminCancel(pathname: string): {
@@ -364,7 +357,7 @@ function matchJobAdminCancel(pathname: string): {
   }
 
   return {
-    jobId: decodeURIComponent(match[1])
+    jobId: decodeURIComponent(match[1]),
   };
 }
 
@@ -384,6 +377,6 @@ function matchJobAction(pathname: string): {
 
   return {
     jobId,
-    action: action as "heartbeat" | "event" | "complete" | "fail" | "cancel"
+    action: action as "heartbeat" | "event" | "complete" | "fail" | "cancel",
   };
 }

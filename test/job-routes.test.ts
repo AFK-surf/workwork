@@ -36,14 +36,14 @@ describe("job routes", () => {
               restartOnBoot: true,
               status: "running",
               createdAt: "2026-05-29T00:00:00.000Z",
-              updatedAt: "2026-05-29T00:00:00.000Z"
+              updatedAt: "2026-05-29T00:00:00.000Z",
             };
-          }
+          },
         } as never,
         config: {
-          serviceName: "test-broker"
-        } as never
-      })
+          serviceName: "test-broker",
+        } as never,
+      }),
     );
     const baseUrl = await listen(server);
     cleanups.push(() => close(server));
@@ -51,7 +51,7 @@ describe("job routes", () => {
     const response = await fetch(`${baseUrl}/jobs/register`, {
       method: "POST",
       headers: {
-        "content-type": "application/json"
+        "content-type": "application/json",
       },
       body: JSON.stringify({
         platform: "feishu",
@@ -59,9 +59,9 @@ describe("job routes", () => {
         rootMessageId: "om_root",
         kind: "watch_ci",
         cwd: ".",
-        script: "node \"$BROKER_JOB_HELPER\" event --kind state_changed --summary done",
-        restart_on_boot: false
-      })
+        script: 'node "$BROKER_JOB_HELPER" event --kind state_changed --summary done',
+        restart_on_boot: false,
+      }),
     });
 
     expect(response.status).toBe(200);
@@ -74,8 +74,8 @@ describe("job routes", () => {
         conversationId: "oc_group",
         rootMessageId: "om_root",
         channelId: "oc_group",
-        rootThreadTs: "om_root"
-      }
+        rootThreadTs: "om_root",
+      },
     });
     expect(calls).toEqual([
       {
@@ -85,11 +85,11 @@ describe("job routes", () => {
         channelId: undefined,
         rootThreadTs: undefined,
         kind: "watch_ci",
-        script: "node \"$BROKER_JOB_HELPER\" event --kind state_changed --summary done",
+        script: 'node "$BROKER_JOB_HELPER" event --kind state_changed --summary done',
         cwd: ".",
         shell: undefined,
-        restartOnBoot: false
-      }
+        restartOnBoot: false,
+      },
     ]);
   });
 
@@ -116,14 +116,14 @@ describe("job routes", () => {
               restartOnBoot: true,
               status: "running",
               createdAt: "2026-05-29T00:00:00.000Z",
-              updatedAt: "2026-05-29T00:00:00.000Z"
+              updatedAt: "2026-05-29T00:00:00.000Z",
             };
-          }
+          },
         } as never,
         config: {
-          serviceName: "test-broker"
-        } as never
-      })
+          serviceName: "test-broker",
+        } as never,
+      }),
     );
     const baseUrl = await listen(server);
     cleanups.push(() => close(server));
@@ -131,14 +131,14 @@ describe("job routes", () => {
     const response = await fetch(`${baseUrl}/jobs/register`, {
       method: "POST",
       headers: {
-        "content-type": "application/json"
+        "content-type": "application/json",
       },
       body: JSON.stringify({
         channel_id: "C123",
         thread_ts: "111.222",
         kind: "watch_ci",
-        script: "sleep 30"
-      })
+        script: "sleep 30",
+      }),
     });
 
     expect(response.status).toBe(200);
@@ -153,8 +153,8 @@ describe("job routes", () => {
         script: "sleep 30",
         cwd: undefined,
         shell: undefined,
-        restartOnBoot: true
-      }
+        restartOnBoot: true,
+      },
     ]);
   });
 
@@ -163,9 +163,9 @@ describe("job routes", () => {
       createHttpHandler({
         jobManager: {} as never,
         config: {
-          serviceName: "test-broker"
-        } as never
-      })
+          serviceName: "test-broker",
+        } as never,
+      }),
     );
     const baseUrl = await listen(server);
     cleanups.push(() => close(server));
@@ -173,26 +173,20 @@ describe("job routes", () => {
     const response = await fetch(`${baseUrl}/jobs/register`, {
       method: "POST",
       headers: {
-        "content-type": "application/json"
+        "content-type": "application/json",
       },
       body: JSON.stringify({
         kind: "watch_ci",
-        script: "sleep 30"
-      })
+        script: "sleep 30",
+      }),
     });
 
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({
       ok: false,
       error: "missing_required_body",
-      required: [
-        "platform",
-        "conversationId (alias: conversation_id)",
-        "rootMessageId (alias: root_message_id)",
-        "kind",
-        "script"
-      ],
-      legacyAliases: ["channel_id", "thread_ts"]
+      required: ["platform", "conversationId (alias: conversation_id)", "rootMessageId (alias: root_message_id)", "kind", "script"],
+      legacyAliases: ["channel_id", "thread_ts"],
     });
   });
 
@@ -204,12 +198,12 @@ describe("job routes", () => {
           registerJob: async (payload: unknown) => {
             calls.push(payload);
             return {};
-          }
+          },
         } as never,
         config: {
-          serviceName: "test-broker"
-        } as never
-      })
+          serviceName: "test-broker",
+        } as never,
+      }),
     );
     const baseUrl = await listen(server);
     cleanups.push(() => close(server));
@@ -217,40 +211,40 @@ describe("job routes", () => {
     const response = await fetch(`${baseUrl}/jobs/register`, {
       method: "POST",
       headers: {
-        "content-type": "application/json"
+        "content-type": "application/json",
       },
       body: JSON.stringify({
         platform: "teams",
         kind: "watch_ci",
-        script: "sleep 30"
-      })
+        script: "sleep 30",
+      }),
     });
 
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({
       ok: false,
       error: "invalid_platform",
-      allowed: ["slack", "feishu"]
+      allowed: ["slack", "feishu"],
     });
 
     const nonStringPlatform = await fetch(`${baseUrl}/jobs/register`, {
       method: "POST",
       headers: {
-        "content-type": "application/json"
+        "content-type": "application/json",
       },
       body: JSON.stringify({
         platform: 123,
         conversationId: "C123",
         rootMessageId: "111.222",
         kind: "watch_ci",
-        script: "sleep 30"
-      })
+        script: "sleep 30",
+      }),
     });
     expect(nonStringPlatform.status).toBe(400);
     await expect(nonStringPlatform.json()).resolves.toEqual({
       ok: false,
       error: "invalid_platform",
-      allowed: ["slack", "feishu"]
+      allowed: ["slack", "feishu"],
     });
     expect(calls).toEqual([]);
   });
@@ -263,12 +257,12 @@ describe("job routes", () => {
           registerJob: async (payload: unknown) => {
             calls.push(payload);
             return {};
-          }
+          },
         } as never,
         config: {
-          serviceName: "test-broker"
-        } as never
-      })
+          serviceName: "test-broker",
+        } as never,
+      }),
     );
     const baseUrl = await listen(server);
     cleanups.push(() => close(server));
@@ -276,29 +270,23 @@ describe("job routes", () => {
     const response = await fetch(`${baseUrl}/jobs/register`, {
       method: "POST",
       headers: {
-        "content-type": "application/json"
+        "content-type": "application/json",
       },
       body: JSON.stringify({
         platform: "feishu",
         channel_id: "C123",
         thread_ts: "111.222",
         kind: "watch_ci",
-        script: "sleep 30"
-      })
+        script: "sleep 30",
+      }),
     });
 
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({
       ok: false,
       error: "missing_required_body",
-      required: [
-        "platform",
-        "conversationId (alias: conversation_id)",
-        "rootMessageId (alias: root_message_id)",
-        "kind",
-        "script"
-      ],
-      legacyAliases: ["channel_id", "thread_ts"]
+      required: ["platform", "conversationId (alias: conversation_id)", "rootMessageId (alias: root_message_id)", "kind", "script"],
+      legacyAliases: ["channel_id", "thread_ts"],
     });
     expect(calls).toEqual([]);
   });
@@ -319,12 +307,12 @@ describe("job routes", () => {
           failJob: async (...args: unknown[]) => {
             calls.push(["fail", ...args]);
             return {};
-          }
+          },
         } as never,
         config: {
-          serviceName: "test-broker"
-        } as never
-      })
+          serviceName: "test-broker",
+        } as never,
+      }),
     );
     const baseUrl = await listen(server);
     cleanups.push(() => close(server));
@@ -336,16 +324,16 @@ describe("job routes", () => {
           token: "secret-token",
           event_kind: "state_changed",
           summary: "changed",
-          details_json: "{not json"
-        }
+          details_json: "{not json",
+        },
       ],
       [
         "complete",
         {
           token: "secret-token",
           summary: "done",
-          detailsJson: "{not json"
-        }
+          detailsJson: "{not json",
+        },
       ],
       [
         "fail",
@@ -353,25 +341,25 @@ describe("job routes", () => {
           token: "secret-token",
           summary: "failed",
           error: "failed",
-          details_json: "{not json"
-        }
-      ]
+          details_json: "{not json",
+        },
+      ],
     ];
 
     for (const [action, body] of actionBodies) {
       const response = await fetch(`${baseUrl}/jobs/job-1/${action}`, {
         method: "POST",
         headers: {
-          "content-type": "application/json"
+          "content-type": "application/json",
         },
-        body: JSON.stringify(body)
+        body: JSON.stringify(body),
       });
 
       expect(response.status).toBe(400);
       await expect(response.json()).resolves.toEqual({
         ok: false,
         error: "invalid_json_field",
-        field: "detailsJson (alias: details_json)"
+        field: "detailsJson (alias: details_json)",
       });
     }
 
@@ -387,14 +375,14 @@ describe("job routes", () => {
             calls.push(args);
             return {
               id: "job-1",
-              status: "completed"
+              status: "completed",
             };
-          }
+          },
         } as never,
         config: {
-          serviceName: "test-broker"
-        } as never
-      })
+          serviceName: "test-broker",
+        } as never,
+      }),
     );
     const baseUrl = await listen(server);
     cleanups.push(() => close(server));
@@ -402,15 +390,15 @@ describe("job routes", () => {
     const response = await fetch(`${baseUrl}/jobs/job-1/complete`, {
       method: "POST",
       headers: {
-        "content-type": "application/json"
+        "content-type": "application/json",
       },
       body: JSON.stringify({
         token: "secret-token",
         summary: "done",
         detailsJson: JSON.stringify({
-          conclusion: "success"
-        })
-      })
+          conclusion: "success",
+        }),
+      }),
     });
 
     expect(response.status).toBe(200);
@@ -418,8 +406,8 @@ describe("job routes", () => {
       ok: true,
       job: {
         id: "job-1",
-        status: "completed"
-      }
+        status: "completed",
+      },
     });
     expect(calls).toEqual([
       [
@@ -429,10 +417,10 @@ describe("job routes", () => {
           summary: "done",
           detailsText: undefined,
           detailsJson: {
-            conclusion: "success"
-          }
-        }
-      ]
+            conclusion: "success",
+          },
+        },
+      ],
     ]);
   });
 });

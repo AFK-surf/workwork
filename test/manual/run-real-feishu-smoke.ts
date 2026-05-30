@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/* oxlint-disable max-lines */
 
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -11,98 +12,25 @@ export const REQUIRED_FEISHU_LOG_FIELDS: Record<string, readonly string[]> = {
   "chat.platform.starting": ["platform", "source", "groupMessageMode", "startupRequired"],
   "chat.platform.ready": ["platform", "source", "groupMessageMode", "durationMs"],
   "chat.platform.degraded": ["platform", "source", "groupMessageMode", "degradedReason"],
-  "chat.message.ignored": [
-    "platform",
-    "conversationId",
-    "conversationKind",
-    "messageId",
-    "eventId",
-    "senderKind",
-    "ignoredReason",
-    "route"
-  ],
-  "chat.message.accepted": [
-    "platform",
-    "conversationId",
-    "conversationKind",
-    "rootMessageId",
-    "messageId",
-    "eventId",
-    "senderKind",
-    "msgType",
-    "route"
-  ],
+  "chat.message.ignored": ["platform", "conversationId", "conversationKind", "messageId", "eventId", "senderKind", "ignoredReason", "route"],
+  "chat.message.accepted": ["platform", "conversationId", "conversationKind", "rootMessageId", "messageId", "eventId", "senderKind", "msgType", "route"],
   "chat.message.deduped": ["platform", "conversationId", "messageId", "eventId", "route"],
   "chat.session.created": ["platform", "sessionKey", "conversationId", "rootMessageId", "messageId", "groupMessageMode"],
   "chat.session.resumed": ["platform", "sessionKey", "conversationId", "rootMessageId", "messageId"],
-  "chat.history.recovered": [
-    "platform",
-    "sessionKey",
-    "conversationId",
-    "rootMessageId",
-    "messageCursor",
-    "recoveredCount",
-    "durationMs"
-  ],
+  "chat.history.recovered": ["platform", "sessionKey", "conversationId", "rootMessageId", "messageCursor", "recoveredCount", "durationMs"],
   "chat.turn.started": ["platform", "sessionKey", "turnId", "codexThreadId", "messageId", "batchId"],
   "chat.turn.steered": ["platform", "sessionKey", "turnId", "messageId", "batchId"],
   "chat.turn.stopped": ["platform", "sessionKey", "conversationId", "rootMessageId", "messageId", "turnId", "hadActiveTurn"],
   "chat.turn.completed": ["platform", "sessionKey", "turnId", "codexThreadId", "durationMs", "batchId"],
   "chat.outbound.posted": ["platform", "sessionKey", "conversationId", "rootMessageId", "format", "durationMs"],
-  "chat.outbound.failed": [
-    "platform",
-    "sessionKey",
-    "conversationId",
-    "rootMessageId",
-    "format",
-    "errorClass",
-    "statusCode",
-    "attempt"
-  ],
+  "chat.outbound.failed": ["platform", "sessionKey", "conversationId", "rootMessageId", "format", "errorClass", "statusCode", "attempt"],
   "chat.handler.failed": ["platform", "handler", "errorClass"],
-  "chat.card.callback.received": [
-    "platform",
-    "sessionKey",
-    "conversationId",
-    "rootMessageId",
-    "eventId",
-    "messageId",
-    "payloadRef",
-    "ackDurationMs"
-  ],
-  "chat.attachment.download_failed": [
-    "platform",
-    "sessionKey",
-    "conversationId",
-    "rootMessageId",
-    "messageId",
-    "attachmentId",
-    "kind",
-    "errorClass"
-  ],
-  "chat.coauthor.confirmed": [
-    "platform",
-    "sessionKey",
-    "conversationId",
-    "rootMessageId",
-    "candidateRevision",
-    "confirmedCount"
-  ]
+  "chat.card.callback.received": ["platform", "sessionKey", "conversationId", "rootMessageId", "eventId", "messageId", "payloadRef", "ackDurationMs"],
+  "chat.attachment.download_failed": ["platform", "sessionKey", "conversationId", "rootMessageId", "messageId", "attachmentId", "kind", "errorClass"],
+  "chat.coauthor.confirmed": ["platform", "sessionKey", "conversationId", "rootMessageId", "candidateRevision", "confirmedCount"],
 };
 
-const FORBIDDEN_INFO_WARN_META_KEYS = new Set([
-  "appsecret",
-  "authorization",
-  "content",
-  "displayname",
-  "email",
-  "headers",
-  "rawcard",
-  "rawmessage",
-  "rawpayload",
-  "token",
-  "text"
-]);
+const FORBIDDEN_INFO_WARN_META_KEYS = new Set(["appsecret", "authorization", "content", "displayname", "email", "headers", "rawcard", "rawmessage", "rawpayload", "token", "text"]);
 
 const FORBIDDEN_SETUP_EVIDENCE_KEYS = new Set([
   "accesskey",
@@ -146,26 +74,18 @@ const FORBIDDEN_SETUP_EVIDENCE_KEYS = new Set([
   "unionid",
   "useremail",
   "userid",
-  "verificationtoken"
+  "verificationtoken",
 ]);
 
-const FEISHU_SMOKE_SAFE_LOG_META_FIELDS = new Set([
-  ...Object.values(REQUIRED_FEISHU_LOG_FIELDS).flat(),
-  "fileId",
-  "jobId",
-  "payloadRef",
-  "permission"
-]);
+const FEISHU_SMOKE_SAFE_LOG_META_FIELDS = new Set([...Object.values(REQUIRED_FEISHU_LOG_FIELDS).flat(), "fileId", "jobId", "payloadRef", "permission"]);
 
 const SAFE_FEISHU_SMOKE_LOG_TOKEN = /^[a-z][a-z0-9_.:-]*$/u;
 const SAFE_FEISHU_SMOKE_SESSION_TOKEN = /^[a-zA-Z0-9_.:-]+$/u;
 const SAFE_FEISHU_SMOKE_LOG_TIMESTAMP = /^[0-9TZ:.+-]+$/u;
 
-const SECRET_LIKE_SETUP_EVIDENCE_VALUE =
-  /\b(?:xox[abprs]-|xapp-|Bearer\s+\S+|(?:ou|on|oc|om|cli)_[A-Za-z0-9_-]{6,}|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})\b|-----BEGIN [A-Z ]*PRIVATE KEY-----/iu;
+const SECRET_LIKE_SETUP_EVIDENCE_VALUE = /\b(?:xox[abprs]-|xapp-|Bearer\s+\S+|(?:ou|on|oc|om|cli)_[A-Za-z0-9_-]{6,}|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})\b|-----BEGIN [A-Z ]*PRIVATE KEY-----/iu;
 
-const PLACEHOLDER_LIKE_SETUP_EVIDENCE_VALUE =
-  /\b(?:example|placeholder|replace\b|todo\b|tbd\b|fill\b|copy this file)\b|approval ticket, reviewer, or console screenshot reference|^approval ticket$|bot\/app information page(?: showing)?/iu;
+const PLACEHOLDER_LIKE_SETUP_EVIDENCE_VALUE = /\b(?:example|placeholder|replace\b|todo\b|tbd\b|fill\b|copy this file)\b|approval ticket, reviewer, or console screenshot reference|^approval ticket$|bot\/app information page(?: showing)?/iu;
 
 const SETUP_PERMISSION_POSTURE_REQUIREMENTS = [
   {
@@ -174,7 +94,7 @@ const SETUP_PERMISSION_POSTURE_REQUIREMENTS = [
     apiField: "apiName",
     allowedApiNames: ["im:message:send_as_bot", "im:message"],
     allowedStatuses: ["approved", "configured"],
-    evidenceField: "evidence"
+    evidenceField: "evidence",
   },
   {
     key: "cardCallback",
@@ -182,7 +102,7 @@ const SETUP_PERMISSION_POSTURE_REQUIREMENTS = [
     apiField: "eventName",
     allowedApiNames: ["card.action.trigger"],
     allowedStatuses: ["enabled", "configured", "approved"],
-    evidenceField: "evidence"
+    evidenceField: "evidence",
   },
   {
     key: "resourceTransfer",
@@ -190,30 +110,19 @@ const SETUP_PERMISSION_POSTURE_REQUIREMENTS = [
     apiField: "scopeName",
     allowedApiNames: undefined,
     allowedStatuses: ["approved", "configured"],
-    evidenceField: "evidence"
-  }
+    evidenceField: "evidence",
+  },
 ] as const;
 
-const SECRET_LIKE_INFO_WARN_META_VALUE =
-  /\b(?:xox[abprs]-[A-Za-z0-9_-]+|xapp-[A-Za-z0-9_-]+|Bearer\s+\S+|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})\b|-----BEGIN [A-Z ]*PRIVATE KEY-----/iu;
+const SECRET_LIKE_INFO_WARN_META_VALUE = /\b(?:xox[abprs]-[A-Za-z0-9_-]+|xapp-[A-Za-z0-9_-]+|Bearer\s+\S+|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})\b|-----BEGIN [A-Z ]*PRIVATE KEY-----/iu;
 
-const SECRET_LIKE_SMOKE_REPORT_EVIDENCE_VALUE =
-  /\b(?:xox[abprs]-[A-Za-z0-9_-]+|xapp-[A-Za-z0-9_-]+|Bearer\s+\S+|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})\b|-----BEGIN [A-Z ]*PRIVATE KEY-----/giu;
+const SECRET_LIKE_SMOKE_REPORT_EVIDENCE_VALUE = /\b(?:xox[abprs]-[A-Za-z0-9_-]+|xapp-[A-Za-z0-9_-]+|Bearer\s+\S+|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})\b|-----BEGIN [A-Z ]*PRIVATE KEY-----/giu;
 
-const SENTINEL_LIKE_SMOKE_REPORT_EVIDENCE_VALUE =
-  /\b[A-Z0-9_]*(?:SECRET|BODY|PAYLOAD)[A-Z0-9_]*\b/gu;
+const SENTINEL_LIKE_SMOKE_REPORT_EVIDENCE_VALUE = /\b[A-Z0-9_]*(?:SECRET|BODY|PAYLOAD)[A-Z0-9_]*\b/gu;
 
-const SAFE_SMOKE_REPORT_EVIDENCE_LITERALS = [
-  "FEISHU_APP_SECRET"
-] as const;
+const SAFE_SMOKE_REPORT_EVIDENCE_LITERALS = ["FEISHU_APP_SECRET"] as const;
 
-const FEISHU_PLATFORM_DEGRADED_REASONS = new Set([
-  "all_message_delivery_unverified",
-  "connection_closed",
-  "connection_failed",
-  "group_message_all_unavailable",
-  "startup_failed"
-]);
+const FEISHU_PLATFORM_DEGRADED_REASONS = new Set(["all_message_delivery_unverified", "connection_closed", "connection_failed", "group_message_all_unavailable", "startup_failed"]);
 const FEISHU_HANDLER_NAMES = new Set(["message", "interactive"]);
 const SMOKE_PLATFORM_HEALTH_STATES = new Set(["disabled", "starting", "ready", "degraded", "failed"]);
 const SMOKE_PLATFORM_CONNECTION_MODES = new Set(["socket_mode", "long_connection", "http"]);
@@ -261,16 +170,14 @@ interface FeishuSmokeStatusOptions {
 export class AdminStatusFetchError extends Error {
   constructor(
     readonly status: number,
-    readonly payloadReceived: boolean
+    readonly payloadReceived: boolean,
   ) {
     super(`admin status failed (${status})`);
     this.name = "AdminStatusFetchError";
   }
 }
 
-export function evaluateFeishuSmokePreflight(
-  env: Record<string, string | undefined> = process.env
-): FeishuSmokeReport {
+export function evaluateFeishuSmokePreflight(env: Record<string, string | undefined> = process.env): FeishuSmokeReport {
   const envDomain = normalizeKnownEnvValue(env.FEISHU_DOMAIN, ["feishu", "lark"]);
   const apiBaseUrl = env.FEISHU_API_BASE_URL?.trim() || "https://open.feishu.cn/open-apis";
   const apiBaseDomain = normalizeFeishuApiBaseUrl(apiBaseUrl);
@@ -279,26 +186,16 @@ export function evaluateFeishuSmokePreflight(
   const feishuStartupRequired = readEnvBoolean(env.FEISHU_STARTUP_REQUIRED, true);
   const logRawFeishuEvents = readEnvBoolean(env.LOG_RAW_FEISHU_EVENTS, false);
   const allMessageDeliveryVerified = readEnvBoolean(env.FEISHU_ALL_MESSAGE_DELIVERY_VERIFIED, false);
-  const feishuBotIdentityPresent = Boolean(
-    env.FEISHU_BOT_OPEN_ID || env.FEISHU_BOT_USER_ID || env.FEISHU_BOT_UNION_ID
-  );
+  const feishuBotIdentityPresent = Boolean(env.FEISHU_BOT_OPEN_ID || env.FEISHU_BOT_USER_ID || env.FEISHU_BOT_UNION_ID);
   const checks: FeishuSmokeCheck[] = [];
-  const addBooleanCheck = (options: {
-    readonly id: string;
-    readonly label: string;
-    readonly required: boolean;
-    readonly passed: boolean;
-    readonly evidence?: readonly string[] | undefined;
-    readonly nextAction?: string | undefined;
-    readonly warning?: boolean | undefined;
-  }): void => {
+  const addBooleanCheck = (options: { readonly id: string; readonly label: string; readonly required: boolean; readonly passed: boolean; readonly evidence?: readonly string[] | undefined; readonly nextAction?: string | undefined; readonly warning?: boolean | undefined }): void => {
     checks.push({
       id: options.id,
       label: options.label,
       required: options.required,
       status: options.passed ? "pass" : options.warning ? "warn" : "fail",
       evidence: options.evidence ?? [],
-      nextAction: options.passed ? undefined : options.nextAction
+      nextAction: options.passed ? undefined : options.nextAction,
     });
   };
 
@@ -307,11 +204,8 @@ export function evaluateFeishuSmokePreflight(
     label: "Slack credentials are present for same-process regression smoke",
     required: true,
     passed: Boolean(env.SLACK_APP_TOKEN && env.SLACK_BOT_TOKEN),
-    evidence: [
-      `SLACK_APP_TOKEN=${env.SLACK_APP_TOKEN ? "set" : "missing"}`,
-      `SLACK_BOT_TOKEN=${env.SLACK_BOT_TOKEN ? "set" : "missing"}`
-    ],
-    nextAction: "Export SLACK_APP_TOKEN and SLACK_BOT_TOKEN before running dual-platform smoke."
+    evidence: [`SLACK_APP_TOKEN=${env.SLACK_APP_TOKEN ? "set" : "missing"}`, `SLACK_BOT_TOKEN=${env.SLACK_BOT_TOKEN ? "set" : "missing"}`],
+    nextAction: "Export SLACK_APP_TOKEN and SLACK_BOT_TOKEN before running dual-platform smoke.",
   });
   addBooleanCheck({
     id: "preflight.feishu_enabled",
@@ -319,30 +213,23 @@ export function evaluateFeishuSmokePreflight(
     required: true,
     passed: feishuEnabled === true,
     evidence: [`FEISHU_ENABLED=${formatEnvBooleanEvidence(env.FEISHU_ENABLED, false)}`],
-    nextAction: "Set FEISHU_ENABLED=true for the rollout runtime."
+    nextAction: "Set FEISHU_ENABLED=true for the rollout runtime.",
   });
   addBooleanCheck({
     id: "preflight.feishu_credentials_present",
     label: "Feishu app credentials are present",
     required: true,
     passed: Boolean(env.FEISHU_APP_ID && env.FEISHU_APP_SECRET),
-    evidence: [
-      `FEISHU_APP_ID=${env.FEISHU_APP_ID ? "set" : "missing"}`,
-      `FEISHU_APP_SECRET=${env.FEISHU_APP_SECRET ? "set" : "missing"}`
-    ],
-    nextAction: "Export FEISHU_APP_ID and FEISHU_APP_SECRET for the China Feishu self-built app."
+    evidence: [`FEISHU_APP_ID=${env.FEISHU_APP_ID ? "set" : "missing"}`, `FEISHU_APP_SECRET=${env.FEISHU_APP_SECRET ? "set" : "missing"}`],
+    nextAction: "Export FEISHU_APP_ID and FEISHU_APP_SECRET for the China Feishu self-built app.",
   });
   addBooleanCheck({
     id: "preflight.feishu_bot_identity_present",
     label: "Feishu bot identity is present for @bot mention detection",
     required: true,
     passed: feishuBotIdentityPresent,
-    evidence: [
-      `FEISHU_BOT_OPEN_ID=${env.FEISHU_BOT_OPEN_ID ? "set" : "missing"}`,
-      `FEISHU_BOT_USER_ID=${env.FEISHU_BOT_USER_ID ? "set" : "missing"}`,
-      `FEISHU_BOT_UNION_ID=${env.FEISHU_BOT_UNION_ID ? "set" : "missing"}`
-    ],
-    nextAction: "Export at least one Feishu bot identity so @bot events can start sessions."
+    evidence: [`FEISHU_BOT_OPEN_ID=${env.FEISHU_BOT_OPEN_ID ? "set" : "missing"}`, `FEISHU_BOT_USER_ID=${env.FEISHU_BOT_USER_ID ? "set" : "missing"}`, `FEISHU_BOT_UNION_ID=${env.FEISHU_BOT_UNION_ID ? "set" : "missing"}`],
+    nextAction: "Export at least one Feishu bot identity so @bot events can start sessions.",
   });
   addBooleanCheck({
     id: "scope.china_feishu",
@@ -350,18 +237,15 @@ export function evaluateFeishuSmokePreflight(
     required: true,
     passed: !envDomain || envDomain === "feishu",
     evidence: [`FEISHU_DOMAIN=${formatEnvEnumEvidence(env.FEISHU_DOMAIN, "feishu", ["feishu", "lark"])}`],
-    nextAction: "Set FEISHU_DOMAIN=feishu. Global Lark is outside RFC 0001."
+    nextAction: "Set FEISHU_DOMAIN=feishu. Global Lark is outside RFC 0001.",
   });
   addBooleanCheck({
     id: "preflight.feishu_api_base_china",
     label: "Feishu API base points at China Feishu Open Platform",
     required: true,
     passed: apiBaseDomain === "https://open.feishu.cn",
-    evidence: [
-      `FEISHU_API_BASE_URL=${formatFeishuApiBaseEvidence(apiBaseUrl)}`,
-      `normalized_domain=${apiBaseDomain ?? "invalid"}`
-    ],
-    nextAction: "Set FEISHU_API_BASE_URL=https://open.feishu.cn/open-apis for RFC 0001."
+    evidence: [`FEISHU_API_BASE_URL=${formatFeishuApiBaseEvidence(apiBaseUrl)}`, `normalized_domain=${apiBaseDomain ?? "invalid"}`],
+    nextAction: "Set FEISHU_API_BASE_URL=https://open.feishu.cn/open-apis for RFC 0001.",
   });
   addBooleanCheck({
     id: "preflight.group_message_mode_all",
@@ -369,7 +253,7 @@ export function evaluateFeishuSmokePreflight(
     required: true,
     passed: groupMessageMode === "all",
     evidence: [`FEISHU_GROUP_MESSAGE_MODE=${formatEnvEnumEvidence(env.FEISHU_GROUP_MESSAGE_MODE, "all", ["all", "at_only"])}`],
-    nextAction: "Set FEISHU_GROUP_MESSAGE_MODE=all. at_only is a degraded pilot mode, not production parity."
+    nextAction: "Set FEISHU_GROUP_MESSAGE_MODE=all. at_only is a degraded pilot mode, not production parity.",
   });
   addBooleanCheck({
     id: "preflight.startup_required",
@@ -377,7 +261,7 @@ export function evaluateFeishuSmokePreflight(
     required: true,
     passed: feishuStartupRequired === true,
     evidence: [`FEISHU_STARTUP_REQUIRED=${formatEnvBooleanEvidence(env.FEISHU_STARTUP_REQUIRED, true)}`],
-    nextAction: "Set FEISHU_STARTUP_REQUIRED=true before claiming production Feishu readiness."
+    nextAction: "Set FEISHU_STARTUP_REQUIRED=true before claiming production Feishu readiness.",
   });
   addBooleanCheck({
     id: "preflight.raw_feishu_events_disabled",
@@ -385,7 +269,7 @@ export function evaluateFeishuSmokePreflight(
     required: true,
     passed: logRawFeishuEvents === false,
     evidence: [`LOG_RAW_FEISHU_EVENTS=${formatEnvBooleanEvidence(env.LOG_RAW_FEISHU_EVENTS, false)}`],
-    nextAction: "Set LOG_RAW_FEISHU_EVENTS=false unless collecting a focused, redacted fixture."
+    nextAction: "Set LOG_RAW_FEISHU_EVENTS=false unless collecting a focused, redacted fixture.",
   });
   addBooleanCheck({
     id: "preflight.admin_token_present",
@@ -394,18 +278,16 @@ export function evaluateFeishuSmokePreflight(
     passed: Boolean(env.BROKER_ADMIN_TOKEN),
     evidence: [`BROKER_ADMIN_TOKEN=${env.BROKER_ADMIN_TOKEN ? "set" : "missing"}`],
     warning: true,
-    nextAction: "Set BROKER_ADMIN_TOKEN, or make sure the admin port is reachable only in a trusted environment."
+    nextAction: "Set BROKER_ADMIN_TOKEN, or make sure the admin port is reachable only in a trusted environment.",
   });
   addBooleanCheck({
     id: "preflight.all_message_delivery_flag",
     label: "All-message delivery verification flag matches saved smoke evidence",
     required: false,
     passed: allMessageDeliveryVerified !== true,
-    evidence: [
-      `FEISHU_ALL_MESSAGE_DELIVERY_VERIFIED=${formatEnvBooleanEvidence(env.FEISHU_ALL_MESSAGE_DELIVERY_VERIFIED, false)}`
-    ],
+    evidence: [`FEISHU_ALL_MESSAGE_DELIVERY_VERIFIED=${formatEnvBooleanEvidence(env.FEISHU_ALL_MESSAGE_DELIVERY_VERIFIED, false)}`],
     warning: true,
-    nextAction: "Keep this true only when a saved non-@ follow-up smoke evidence bundle proves it."
+    nextAction: "Keep this true only when a saved non-@ follow-up smoke evidence bundle proves it.",
   });
 
   const requiredFailures = checks.filter((check) => check.required && check.status !== "pass");
@@ -413,17 +295,11 @@ export function evaluateFeishuSmokePreflight(
     ok: requiredFailures.length === 0,
     checkedAt: new Date().toISOString(),
     checks,
-    nextActions: checks
-      .filter((check) => check.status !== "pass" && check.nextAction)
-      .map((check) => `${check.id}: ${check.nextAction}`)
+    nextActions: checks.filter((check) => check.status !== "pass" && check.nextAction).map((check) => `${check.id}: ${check.nextAction}`),
   };
 }
 
-export function evaluateFeishuSmokeStatus(
-  status: unknown,
-  env: Record<string, string | undefined> = process.env,
-  options?: FeishuSmokeStatusOptions
-): FeishuSmokeReport {
+export function evaluateFeishuSmokeStatus(status: unknown, env: Record<string, string | undefined> = process.env, options?: FeishuSmokeStatusOptions): FeishuSmokeReport {
   const root = asRecord(status);
   const unavailableReport = createFeishuSmokeUnavailableStatusReport(root);
   if (unavailableReport) {
@@ -437,26 +313,14 @@ export function evaluateFeishuSmokeStatus(
   const logs = asArray(state.recentBrokerLogs);
   const sessions = asArray(state.sessions);
   const feishuKnownSessions = feishuSessionMap(sessions);
-  const groupAtSessionKeys = findAcceptedMessageTransitionSessionKeys(
-    logs,
-    "bot_mention",
-    ["chat.session.created", "chat.session.resumed"],
-    feishuKnownSessions,
-    {
-      acceptedMsgType: "text"
-    }
-  );
-  const nonAtFollowupSessionKeys = findAcceptedMessageTransitionSessionKeys(
-    logs,
-    "group_message",
-    ["chat.turn.steered", "chat.session.resumed"],
-    feishuKnownSessions,
-    {
-      acceptedMsgType: "text",
-      excludeStoppedTurnMessages: true,
-      requireActiveTurnId: true
-    }
-  );
+  const groupAtSessionKeys = findAcceptedMessageTransitionSessionKeys(logs, "bot_mention", ["chat.session.created", "chat.session.resumed"], feishuKnownSessions, {
+    acceptedMsgType: "text",
+  });
+  const nonAtFollowupSessionKeys = findAcceptedMessageTransitionSessionKeys(logs, "group_message", ["chat.turn.steered", "chat.session.resumed"], feishuKnownSessions, {
+    acceptedMsgType: "text",
+    excludeStoppedTurnMessages: true,
+    requireActiveTurnId: true,
+  });
   const envDomain = normalizeKnownEnvValue(env.FEISHU_DOMAIN, ["feishu", "lark"]);
   const feishuEnabled = readBoolean(feishu.enabled);
   const groupMessageMode = readString(feishu.groupMessageMode);
@@ -464,36 +328,21 @@ export function evaluateFeishuSmokeStatus(
   const missingLogFields = findMissingFeishuLogFields(logs);
   const unsafeLogFields = findUnsafeFeishuInfoWarnLogFields(logs);
   const missingBehaviorCoverage = findMissingFeishuBehaviorCoverage(logs, sessions, feishuKnownSessions);
-  const missingOutboundRichCardFile = missingRequiredFeishuOutboundRichCardFile(
-    logs,
-    feishuKnownSessions,
-    groupAtSessionKeys
-  );
-  const allMessageDeliveryBackedByFollowupEvidence = hasOverlappingSessionKey(
-    groupAtSessionKeys,
-    nonAtFollowupSessionKeys
-  );
+  const missingOutboundRichCardFile = missingRequiredFeishuOutboundRichCardFile(logs, feishuKnownSessions, groupAtSessionKeys);
+  const allMessageDeliveryBackedByFollowupEvidence = hasOverlappingSessionKey(groupAtSessionKeys, nonAtFollowupSessionKeys);
 
   const checks: FeishuSmokeCheck[] = [];
   const addCheck = (check: FeishuSmokeCheck): void => {
     checks.push(check);
   };
-  const addBooleanCheck = (options: {
-    readonly id: string;
-    readonly label: string;
-    readonly required: boolean;
-    readonly passed: boolean;
-    readonly evidence?: readonly string[] | undefined;
-    readonly nextAction?: string | undefined;
-    readonly warning?: boolean | undefined;
-  }): void => {
+  const addBooleanCheck = (options: { readonly id: string; readonly label: string; readonly required: boolean; readonly passed: boolean; readonly evidence?: readonly string[] | undefined; readonly nextAction?: string | undefined; readonly warning?: boolean | undefined }): void => {
     addCheck({
       id: options.id,
       label: options.label,
       required: options.required,
       status: options.passed ? "pass" : options.warning ? "warn" : "fail",
       evidence: options.evidence ?? [],
-      nextAction: options.passed ? undefined : options.nextAction
+      nextAction: options.passed ? undefined : options.nextAction,
     });
   };
 
@@ -503,7 +352,7 @@ export function evaluateFeishuSmokeStatus(
     required: true,
     passed: !envDomain || envDomain === "feishu",
     evidence: [`FEISHU_DOMAIN=${formatEnvEnumEvidence(env.FEISHU_DOMAIN, "feishu", ["feishu", "lark"])}`],
-    nextAction: "Set FEISHU_DOMAIN=feishu. Global Lark is outside RFC 0001."
+    nextAction: "Set FEISHU_DOMAIN=feishu. Global Lark is outside RFC 0001.",
   });
   addBooleanCheck({
     id: "runtime.feishu_enabled",
@@ -511,7 +360,7 @@ export function evaluateFeishuSmokeStatus(
     required: true,
     passed: feishuEnabled === true,
     evidence: [`platforms.feishu.enabled=${String(feishu.enabled)}`],
-    nextAction: "Start the broker with FEISHU_ENABLED=true and valid Feishu app credentials."
+    nextAction: "Start the broker with FEISHU_ENABLED=true and valid Feishu app credentials.",
   });
   addBooleanCheck({
     id: "runtime.feishu_ready",
@@ -519,7 +368,7 @@ export function evaluateFeishuSmokeStatus(
     required: true,
     passed: readString(feishu.state) === "ready",
     evidence: [`platforms.feishu.state=${readString(feishu.state) ?? "unknown"}`],
-    nextAction: "Restore Feishu long-connection readiness before claiming production parity; saved ready logs alone are not enough."
+    nextAction: "Restore Feishu long-connection readiness before claiming production parity; saved ready logs alone are not enough.",
   });
   addBooleanCheck({
     id: "runtime.slack_ready",
@@ -527,19 +376,15 @@ export function evaluateFeishuSmokeStatus(
     required: true,
     passed: readString(slack.state) === "ready",
     evidence: [`platforms.slack.state=${readString(slack.state) ?? "unknown"}`],
-    nextAction: "Confirm the same broker process has valid Slack credentials and Socket Mode connectivity."
+    nextAction: "Confirm the same broker process has valid Slack credentials and Socket Mode connectivity.",
   });
   addBooleanCheck({
     id: "slack.socket_mode_ready",
     label: "Slack Socket Mode reached ready state",
     required: true,
     passed: hasSlackSocketModeReadyEvidence(slack, logs),
-    evidence: [
-      `platforms.slack.state=${readString(slack.state) ?? "unknown"}`,
-      ...connectionEvidence(slack),
-      ...platformReadyLogEvidence(logs, "slack", "socket_mode")
-    ],
-    nextAction: "Confirm Slack Socket Mode is connected, or save chat.platform.ready source=socket_mode / admin connection evidence."
+    evidence: [`platforms.slack.state=${readString(slack.state) ?? "unknown"}`, ...connectionEvidence(slack), ...platformReadyLogEvidence(logs, "slack", "socket_mode")],
+    nextAction: "Confirm Slack Socket Mode is connected, or save chat.platform.ready source=socket_mode / admin connection evidence.",
   });
   addBooleanCheck({
     id: "slack.message_roundtrip",
@@ -547,7 +392,7 @@ export function evaluateFeishuSmokeStatus(
     required: true,
     passed: hasSlackMessageRoundtrip(logs),
     evidence: slackMessageRoundtripEvidence(logs),
-    nextAction: "Send a Slack mention in the same rollout runtime and save ordered chat.message.accepted plus chat.outbound.posted Slack log lines with message IDs and the same session/thread coordinates."
+    nextAction: "Send a Slack mention in the same rollout runtime and save ordered chat.message.accepted plus chat.outbound.posted Slack log lines with message IDs and the same session/thread coordinates.",
   });
   addBooleanCheck({
     id: "admin.platform_health_contract",
@@ -555,35 +400,23 @@ export function evaluateFeishuSmokeStatus(
     required: true,
     passed: hasAdminPlatformHealthContract(slack, feishu),
     evidence: adminPlatformHealthEvidence(slack, feishu),
-    nextAction: "Save /admin/api/status output with Slack socket-mode health, Feishu long-connection health, and Feishu permission posture."
+    nextAction: "Save /admin/api/status output with Slack socket-mode health, Feishu long-connection health, and Feishu permission posture.",
   });
   addBooleanCheck({
     id: "feishu.long_connection_ready",
     label: "Feishu long connection reached ready state",
     required: true,
     passed: hasFeishuLongConnectionReadyEvidence(feishu, logs),
-    evidence: [
-      `platforms.feishu.state=${readString(feishu.state) ?? "unknown"}`,
-      ...connectionEvidence(feishu),
-      ...platformReadyLogEvidence(logs, "feishu", "long_connection")
-    ],
-    nextAction: "Check FEISHU_APP_ID, FEISHU_APP_SECRET, event subscription, and long connection setup."
+    evidence: [`platforms.feishu.state=${readString(feishu.state) ?? "unknown"}`, ...connectionEvidence(feishu), ...platformReadyLogEvidence(logs, "feishu", "long_connection")],
+    nextAction: "Check FEISHU_APP_ID, FEISHU_APP_SECRET, event subscription, and long connection setup.",
   });
   addBooleanCheck({
     id: "feishu.all_message_verified",
     label: "All-group-message delivery is verified for production parity",
     required: true,
-    passed:
-      groupMessageMode === "all" &&
-      allMessageDeliveryVerified === true &&
-      allMessageDeliveryBackedByFollowupEvidence,
-    evidence: feishuAllMessageVerificationEvidence(
-      feishu,
-      groupMessageMode,
-      allMessageDeliveryVerified,
-      allMessageDeliveryBackedByFollowupEvidence
-    ),
-    nextAction: "Run the non-@ follow-up smoke in all mode, save same-session group @ and non-@ transition evidence, then set FEISHU_ALL_MESSAGE_DELIVERY_VERIFIED=true."
+    passed: groupMessageMode === "all" && allMessageDeliveryVerified === true && allMessageDeliveryBackedByFollowupEvidence,
+    evidence: feishuAllMessageVerificationEvidence(feishu, groupMessageMode, allMessageDeliveryVerified, allMessageDeliveryBackedByFollowupEvidence),
+    nextAction: "Run the non-@ follow-up smoke in all mode, save same-session group @ and non-@ transition evidence, then set FEISHU_ALL_MESSAGE_DELIVERY_VERIFIED=true.",
   });
   addBooleanCheck({
     id: "feishu.group_at_created_session",
@@ -591,26 +424,20 @@ export function evaluateFeishuSmokeStatus(
     required: true,
     passed: groupAtSessionKeys.size > 0,
     evidence: [
-      ...acceptedMessageTransitionEvidence(logs, "bot_mention", [
-        "chat.session.created",
-        "chat.session.resumed"
-      ], feishuKnownSessions, {
-        acceptedMsgType: "text"
+      ...acceptedMessageTransitionEvidence(logs, "bot_mention", ["chat.session.created", "chat.session.resumed"], feishuKnownSessions, {
+        acceptedMsgType: "text",
       }),
-      ...sessionEvidence(sessions, "feishu")
+      ...sessionEvidence(sessions, "feishu"),
     ],
-    nextAction: "In an intended Feishu group, @mention the bot with a simple Codex request, then save matching transition logs and admin session state."
+    nextAction: "In an intended Feishu group, @mention the bot with a simple Codex request, then save matching transition logs and admin session state.",
   });
   addBooleanCheck({
     id: "feishu.private_ignored",
     label: "A Feishu private-chat event was ignored",
     required: true,
     passed: hasFeishuPrivateChatIgnoredWithoutSession(logs, sessions),
-    evidence: [
-      ...feishuPrivateChatIgnoredEvidence(logs, sessions),
-      ...sessionEvidence(sessions, "feishu")
-    ],
-    nextAction: "Send or replay a private-chat event and verify no session is created."
+    evidence: [...feishuPrivateChatIgnoredEvidence(logs, sessions), ...sessionEvidence(sessions, "feishu")],
+    nextAction: "Send or replay a private-chat event and verify no session is created.",
   });
   addBooleanCheck({
     id: "feishu.self_sender_ignored",
@@ -618,18 +445,15 @@ export function evaluateFeishuSmokeStatus(
     required: true,
     passed: hasFeishuSelfSenderIgnoredBeforeDispatch(logs),
     evidence: feishuSelfSenderIgnoredEvidence(logs),
-    nextAction: "Replay or capture a Feishu bot/app/self sender event and verify it emits ignored_self without same-message accepted/session/turn dispatch logs."
+    nextAction: "Replay or capture a Feishu bot/app/self sender event and verify it emits ignored_self without same-message accepted/session/turn dispatch logs.",
   });
   addBooleanCheck({
     id: "feishu.final_reply_posted",
     label: "Codex posted a text reply to Feishu",
     required: true,
     passed: hasFeishuTextReplyForKnownSession(logs, feishuKnownSessions, groupAtSessionKeys),
-    evidence: [
-      ...feishuTextReplyEvidence(logs, feishuKnownSessions, groupAtSessionKeys),
-      ...sessionEvidence(sessions, "feishu")
-    ],
-    nextAction: "Let a Feishu group turn finish and confirm a reply appears in the originating group/root message with matching admin session state."
+    evidence: [...feishuTextReplyEvidence(logs, feishuKnownSessions, groupAtSessionKeys), ...sessionEvidence(sessions, "feishu")],
+    nextAction: "Let a Feishu group turn finish and confirm a reply appears in the originating group/root message with matching admin session state.",
   });
   addBooleanCheck({
     id: "feishu.turn_completed",
@@ -637,39 +461,31 @@ export function evaluateFeishuSmokeStatus(
     required: true,
     passed: hasFeishuCompletedTurnForTextReply(logs, feishuKnownSessions, groupAtSessionKeys),
     evidence: feishuCompletedTurnForTextReplyEvidence(logs, feishuKnownSessions, groupAtSessionKeys),
-    nextAction: "Let a Feishu group turn finish and save the chat.turn.completed log with turn/session correlation."
+    nextAction: "Let a Feishu group turn finish and save the chat.turn.completed log with turn/session correlation.",
   });
   addBooleanCheck({
     id: "feishu.non_at_followup",
     label: "A non-@ group follow-up reached the active session in all mode",
     required: true,
-    passed:
-      groupMessageMode === "all" &&
-      allMessageDeliveryBackedByFollowupEvidence,
+    passed: groupMessageMode === "all" && allMessageDeliveryBackedByFollowupEvidence,
     evidence: [
-      ...acceptedMessageTransitionEvidence(logs, "group_message", [
-        "chat.turn.steered",
-        "chat.session.resumed"
-      ], feishuKnownSessions, {
+      ...acceptedMessageTransitionEvidence(logs, "group_message", ["chat.turn.steered", "chat.session.resumed"], feishuKnownSessions, {
         acceptedMsgType: "text",
         allowedSessionKeys: groupAtSessionKeys,
         excludeStoppedTurnMessages: true,
-        requireActiveTurnId: true
+        requireActiveTurnId: true,
       }),
-      ...sessionEvidence(sessions, "feishu")
+      ...sessionEvidence(sessions, "feishu"),
     ],
-    nextAction: "While a Feishu turn is active in all mode, send a follow-up without @mentioning the bot, then save matching transition logs and admin session state."
+    nextAction: "While a Feishu turn is active in all mode, send a follow-up without @mentioning the bot, then save matching transition logs and admin session state.",
   });
   addBooleanCheck({
     id: "feishu.stop",
     label: "`-stop` was exercised in a matching Feishu group session",
     required: true,
     passed: hasFeishuStoppedActiveTurn(logs, feishuKnownSessions, groupAtSessionKeys),
-    evidence: [
-      ...feishuStoppedActiveTurnEvidence(logs, feishuKnownSessions, groupAtSessionKeys),
-      ...sessionEvidence(sessions, "feishu")
-    ],
-    nextAction: "Start a long Feishu turn, send `-stop` in the same group/root, and save the resulting log line plus admin session state."
+    evidence: [...feishuStoppedActiveTurnEvidence(logs, feishuKnownSessions, groupAtSessionKeys), ...sessionEvidence(sessions, "feishu")],
+    nextAction: "Start a long Feishu turn, send `-stop` in the same group/root, and save the resulting log line plus admin session state.",
   });
   addBooleanCheck({
     id: "feishu.history_recovered",
@@ -677,7 +493,7 @@ export function evaluateFeishuSmokeStatus(
     required: true,
     passed: hasFeishuRecoveredHistory(logs, feishuKnownSessions),
     evidence: feishuRecoveredHistoryEvidence(logs, feishuKnownSessions),
-    nextAction: "Restart with an active or recently active Feishu session, then save chat.turn.steered or chat.turn.started with source=history_recovery plus chat.history.recovered recoveredCount > 0."
+    nextAction: "Restart with an active or recently active Feishu session, then save chat.turn.steered or chat.turn.started with source=history_recovery plus chat.history.recovered recoveredCount > 0.",
   });
   addBooleanCheck({
     id: "feishu.duplicate_deduped",
@@ -689,9 +505,9 @@ export function evaluateFeishuSmokeStatus(
         .filter((log) => isDeliveredFeishuAcceptedMessageEvidence(logs, log, feishuKnownSessions))
         .slice(-3)
         .map((log) => summarizeLog(log)),
-      ...feishuDedupedAcceptedMessageEvidence(logs, feishuKnownSessions)
+      ...feishuDedupedAcceptedMessageEvidence(logs, feishuKnownSessions),
     ],
-    nextAction: "Replay a Feishu event with the same message_id and save both the original accepted log and matching chat.message.deduped log."
+    nextAction: "Replay a Feishu event with the same message_id and save both the original accepted log and matching chat.message.deduped log.",
   });
   addBooleanCheck({
     id: "feishu.rich_card_resource",
@@ -699,7 +515,7 @@ export function evaluateFeishuSmokeStatus(
     required: true,
     passed: missingRequiredFeishuMessageTypes(logs, feishuKnownSessions, groupAtSessionKeys).length === 0,
     evidence: richCardResourceEvidence(logs, feishuKnownSessions, groupAtSessionKeys),
-    nextAction: "Send rich text, card, image, and file messages in the same group @ session, then confirm accepted logs include msgType/payload/resource metadata, match admin session state, and are not paired with ignored logs."
+    nextAction: "Send rich text, card, image, and file messages in the same group @ session, then confirm accepted logs include msgType/payload/resource metadata, match admin session state, and are not paired with ignored logs.",
   });
   addBooleanCheck({
     id: "feishu.outbound_rich_card_file",
@@ -707,18 +523,15 @@ export function evaluateFeishuSmokeStatus(
     required: true,
     passed: missingOutboundRichCardFile.length === 0,
     evidence: feishuOutboundRichCardFileEvidence(logs, feishuKnownSessions, groupAtSessionKeys),
-    nextAction: "Post a Feishu rich text reply, an interactive card, and a file/image upload from the same group @ session, then save matching outbound.posted logs."
+    nextAction: "Post a Feishu rich text reply, an interactive card, and a file/image upload from the same group @ session, then save matching outbound.posted logs.",
   });
   addBooleanCheck({
     id: "feishu.card_callback",
     label: "Feishu interactive card callback reached the broker",
     required: true,
     passed: hasFeishuCardCallbackForBrokerPostedGroupCard(logs, feishuKnownSessions, groupAtSessionKeys),
-    evidence: [
-      ...feishuCardCallbackEvidence(logs, feishuKnownSessions, groupAtSessionKeys),
-      ...sessionEvidence(sessions, "feishu")
-    ],
-    nextAction: "Click a broker-posted Feishu card action from the same group @ session and save matching outbound card plus callback logs."
+    evidence: [...feishuCardCallbackEvidence(logs, feishuKnownSessions, groupAtSessionKeys), ...sessionEvidence(sessions, "feishu")],
+    nextAction: "Click a broker-posted Feishu card action from the same group @ session and save matching outbound card plus callback logs.",
   });
   addBooleanCheck({
     id: "feishu.coauthor_card",
@@ -726,40 +539,31 @@ export function evaluateFeishuSmokeStatus(
     required: true,
     passed: hasFeishuCoauthorConfirmedFromCardCallback(logs, feishuKnownSessions, groupAtSessionKeys),
     evidence: feishuCoauthorCardEvidence(logs, feishuKnownSessions, groupAtSessionKeys),
-    nextAction: "Run a commit from a Feishu group @ session with candidates, confirm the broker-posted card, and save same-session outbound card, callback, and confirmation logs."
+    nextAction: "Run a commit from a Feishu group @ session with candidates, confirm the broker-posted card, and save same-session outbound card, callback, and confirmation logs.",
   });
   addBooleanCheck({
     id: "observability.required_log_fields",
     label: "Observed Feishu logs satisfy the RFC required field matrix",
     required: true,
     passed: missingLogFields.length === 0,
-    evidence: missingLogFields.length === 0
-      ? ["all observed Feishu RFC log events include their required fields"]
-      : missingLogFields.slice(0, 8),
-    nextAction: "Add the missing structured fields to the listed Feishu log event(s), then rerun the smoke checker."
+    evidence: missingLogFields.length === 0 ? ["all observed Feishu RFC log events include their required fields"] : missingLogFields.slice(0, 8),
+    nextAction: "Add the missing structured fields to the listed Feishu log event(s), then rerun the smoke checker.",
   });
   addBooleanCheck({
     id: "observability.behavior_coverage",
     label: "Feishu logs prove accepted, ignored, deduped, degraded, failed, and recovered behavior",
     required: true,
     passed: missingBehaviorCoverage.length === 0,
-    evidence: missingBehaviorCoverage.length === 0
-      ? feishuBehaviorCoverageEvidence(logs, sessions, feishuKnownSessions)
-      : [
-          `missing behavior evidence: ${missingBehaviorCoverage.join(", ")}`,
-          ...feishuBehaviorCoverageEvidence(logs, sessions, feishuKnownSessions)
-        ],
-    nextAction: "Attach a real or controlled evidence bundle that includes accepted, ignored, deduped, degraded, failed, and recovered Feishu log events."
+    evidence: missingBehaviorCoverage.length === 0 ? feishuBehaviorCoverageEvidence(logs, sessions, feishuKnownSessions) : [`missing behavior evidence: ${missingBehaviorCoverage.join(", ")}`, ...feishuBehaviorCoverageEvidence(logs, sessions, feishuKnownSessions)],
+    nextAction: "Attach a real or controlled evidence bundle that includes accepted, ignored, deduped, degraded, failed, and recovered Feishu log events.",
   });
   addBooleanCheck({
     id: "observability.no_info_warn_body_leaks",
     label: "Feishu info/warn logs do not expose raw body or secret fields",
     required: true,
     passed: unsafeLogFields.length === 0,
-    evidence: unsafeLogFields.length === 0
-      ? ["no forbidden raw body/secret field names found in Feishu info/warn log metadata"]
-      : unsafeLogFields.slice(0, 8),
-    nextAction: "Move raw payload/body data to sanitized fixtures or explicit raw debug streams before retrying."
+    evidence: unsafeLogFields.length === 0 ? ["no forbidden raw body/secret field names found in Feishu info/warn log metadata"] : unsafeLogFields.slice(0, 8),
+    nextAction: "Move raw payload/body data to sanitized fixtures or explicit raw debug streams before retrying.",
   });
   if (options?.requireSetupEvidence) {
     addCheck(evaluateFeishuSetupEvidence(options.setupEvidence));
@@ -770,9 +574,7 @@ export function evaluateFeishuSmokeStatus(
     ok: requiredFailures.length === 0,
     checkedAt: new Date().toISOString(),
     checks,
-    nextActions: checks
-      .filter((check) => check.status !== "pass" && check.nextAction)
-      .map((check) => `${check.id}: ${check.nextAction}`)
+    nextActions: checks.filter((check) => check.status !== "pass" && check.nextAction).map((check) => `${check.id}: ${check.nextAction}`),
   };
 }
 
@@ -782,17 +584,7 @@ export function evaluateFeishuSetupEvidence(setupEvidence: unknown): FeishuSmoke
   const permissions = asRecord(root.permissions);
   const groupPermission = asRecord(permissions.imMessageGroupMsg);
   const target = readString(root.target)?.trim().toLowerCase();
-  const requiredLabels = [
-    "appType",
-    "botCapability",
-    "eventDelivery",
-    "receiveMessageEvent",
-    "groupMessagePermission",
-    "sendMessagePermission",
-    "cardCallback",
-    "resourcePermission",
-    "botIdentitySource"
-  ];
+  const requiredLabels = ["appType", "botCapability", "eventDelivery", "receiveMessageEvent", "groupMessagePermission", "sendMessagePermission", "cardCallback", "resourcePermission", "botIdentitySource"];
   const missingLabels = requiredLabels.filter((key) => !readString(labels[key]));
   const groupPermissionApiName = readString(groupPermission.apiName)?.trim();
   const groupPermissionStatus = readString(groupPermission.status)?.trim().toLowerCase();
@@ -801,14 +593,8 @@ export function evaluateFeishuSetupEvidence(setupEvidence: unknown): FeishuSmoke
   const targetOk = target === "china_feishu" || target === "feishu";
   const unsafeSetupEvidencePaths = findUnsafeSetupEvidencePaths(root);
   const placeholderSetupEvidencePaths = findPlaceholderSetupEvidencePaths(root);
-  const passed = targetOk &&
-    missingLabels.length === 0 &&
-    groupPermissionApiName === "im:message.group_msg" &&
-    groupPermissionStatus === "approved" &&
-    Boolean(groupPermissionApprovalEvidence) &&
-    missingPermissionPosture.length === 0 &&
-    unsafeSetupEvidencePaths.length === 0 &&
-    placeholderSetupEvidencePaths.length === 0;
+  const passed =
+    targetOk && missingLabels.length === 0 && groupPermissionApiName === "im:message.group_msg" && groupPermissionStatus === "approved" && Boolean(groupPermissionApprovalEvidence) && missingPermissionPosture.length === 0 && unsafeSetupEvidencePaths.length === 0 && placeholderSetupEvidencePaths.length === 0;
 
   return {
     id: "setup.console_labels_recorded",
@@ -822,20 +608,16 @@ export function evaluateFeishuSetupEvidence(setupEvidence: unknown): FeishuSmoke
       `im:message.group_msg=${groupPermissionStatus ?? "missing"}`,
       `approvalEvidence=${groupPermissionApprovalEvidence ? "set" : "missing"}`,
       ...setupPermissionPostureEvidence(permissions),
-      unsafeSetupEvidencePaths.length === 0
-        ? "setup evidence contains no raw secrets, tokens, user emails, or raw bot IDs"
-        : `unsafe setup evidence: ${unsafeSetupEvidencePaths.slice(0, 8).join(", ")}`,
-      ...(placeholderSetupEvidencePaths.length > 0
-        ? [`placeholder setup evidence: ${placeholderSetupEvidencePaths.slice(0, 8).join(", ")}`]
-        : []),
+      unsafeSetupEvidencePaths.length === 0 ? "setup evidence contains no raw secrets, tokens, user emails, or raw bot IDs" : `unsafe setup evidence: ${unsafeSetupEvidencePaths.slice(0, 8).join(", ")}`,
+      ...(placeholderSetupEvidencePaths.length > 0 ? [`placeholder setup evidence: ${placeholderSetupEvidencePaths.slice(0, 8).join(", ")}`] : []),
       ...(missingPermissionPosture.length > 0 ? [`missing permission posture: ${missingPermissionPosture.join(", ")}`] : []),
-      ...(missingLabels.length > 0 ? [`missing labels: ${missingLabels.join(", ")}`] : [])
+      ...(missingLabels.length > 0 ? [`missing labels: ${missingLabels.join(", ")}`] : []),
     ],
     nextAction: passed
       ? undefined
       : unsafeSetupEvidencePaths.length > 0
         ? "Remove raw App Secret/access token/message body/user email/raw bot ID values from setup evidence; keep only set/missing posture, console labels, and redacted ticket references."
-        : "Fill setup evidence with exact real-tenant console labels, im:message.group_msg approval status, and send/card/resource permission posture; do not leave example or placeholder text."
+        : "Fill setup evidence with exact real-tenant console labels, im:message.group_msg approval status, and send/card/resource permission posture; do not leave example or placeholder text.",
   };
 }
 
@@ -871,11 +653,7 @@ function setupPermissionPostureEvidence(permissions: Record<string, unknown>): s
     const apiValue = readString(permission[requirement.apiField])?.trim();
     const status = readString(permission.status)?.trim().toLowerCase();
     const evidence = readString(permission[requirement.evidenceField])?.trim();
-    return [
-      `${requirement.label}.${requirement.apiField}=${apiValue ?? "missing"}`,
-      `${requirement.label}=${status ?? "missing"}`,
-      `${requirement.label}.${requirement.evidenceField}=${evidence ? "set" : "missing"}`
-    ];
+    return [`${requirement.label}.${requirement.apiField}=${apiValue ?? "missing"}`, `${requirement.label}=${status ?? "missing"}`, `${requirement.label}.${requirement.evidenceField}=${evidence ? "set" : "missing"}`];
   });
 }
 
@@ -885,75 +663,53 @@ export async function evaluateFeishuSmokeStatusFile(
   options?: {
     readonly setupEvidence?: unknown;
     readonly setupEvidenceFile?: string | undefined;
-  }
+  },
 ): Promise<FeishuSmokeReport> {
   const status = JSON.parse(await fs.readFile(statusFile, "utf8")) as unknown;
-  const setupEvidence = options?.setupEvidence ?? (
-    options?.setupEvidenceFile ? await readJsonFile(options.setupEvidenceFile) : undefined
-  );
+  const setupEvidence = options?.setupEvidence ?? (options?.setupEvidenceFile ? await readJsonFile(options.setupEvidenceFile) : undefined);
   return evaluateFeishuSmokeStatus(status, env, {
     requireSetupEvidence: true,
-    setupEvidence
+    setupEvidence,
   });
 }
 
-export function createFeishuSmokeUnavailableReport(options: {
-  readonly baseUrl: string;
-  readonly error: unknown;
-  readonly checkedAt?: string | undefined;
-}): FeishuSmokeReport {
+export function createFeishuSmokeUnavailableReport(options: { readonly baseUrl: string; readonly error: unknown; readonly checkedAt?: string | undefined }): FeishuSmokeReport {
   const check: FeishuSmokeCheck = {
     id: ADMIN_STATUS_AVAILABLE_CHECK_ID,
     label: ADMIN_STATUS_AVAILABLE_LABEL,
     required: true,
     status: "fail",
-    evidence: [
-      `base_url=${formatSafeBaseUrlEvidence(options.baseUrl)}`,
-      ...adminFetchFailureEvidence(options.error)
-    ],
-    nextAction: ADMIN_STATUS_AVAILABLE_NEXT_ACTION
+    evidence: [`base_url=${formatSafeBaseUrlEvidence(options.baseUrl)}`, ...adminFetchFailureEvidence(options.error)],
+    nextAction: ADMIN_STATUS_AVAILABLE_NEXT_ACTION,
   };
 
   return {
     ok: false,
     checkedAt: options.checkedAt ?? new Date().toISOString(),
     checks: [check],
-    nextActions: [`${check.id}: ${check.nextAction}`]
+    nextActions: [`${check.id}: ${check.nextAction}`],
   };
 }
 
-export async function writeFeishuSmokeEvidenceBundle(options: {
-  readonly outputDir: string;
-  readonly source: string;
-  readonly status: unknown;
-  readonly report: FeishuSmokeReport;
-  readonly setupEvidence?: unknown;
-}): Promise<{
+export async function writeFeishuSmokeEvidenceBundle(options: { readonly outputDir: string; readonly source: string; readonly status: unknown; readonly report: FeishuSmokeReport; readonly setupEvidence?: unknown }): Promise<{
   readonly statusFile: string;
   readonly setupEvidenceFile?: string | undefined;
   readonly reportFile: string;
   readonly summaryFile: string;
 }> {
   await fs.mkdir(options.outputDir, {
-    recursive: true
+    recursive: true,
   });
   const statusFile = path.join(options.outputDir, "admin-status.json");
   const reportFile = path.join(options.outputDir, "feishu-smoke-report.json");
   const summaryFile = path.join(options.outputDir, "feishu-smoke-summary.md");
-  const setupEvidenceFile = options.setupEvidence
-    ? path.join(options.outputDir, "feishu-setup-evidence.json")
-    : undefined;
+  const setupEvidenceFile = options.setupEvidence ? path.join(options.outputDir, "feishu-setup-evidence.json") : undefined;
   const report = sanitizeFeishuSmokeReport(options.report);
-  const statusEvidence = options.status === undefined
-    ? createFeishuSmokeUnavailableStatusEvidence(report)
-    : sanitizeFeishuSmokeStatusEvidence(options.status);
+  const statusEvidence = options.status === undefined ? createFeishuSmokeUnavailableStatusEvidence(report) : sanitizeFeishuSmokeStatusEvidence(options.status);
 
   await fs.writeFile(statusFile, `${JSON.stringify(statusEvidence, null, 2)}\n`);
   if (setupEvidenceFile) {
-    await fs.writeFile(
-      setupEvidenceFile,
-      `${JSON.stringify(sanitizeFeishuSmokeSetupEvidence(options.setupEvidence), null, 2)}\n`
-    );
+    await fs.writeFile(setupEvidenceFile, `${JSON.stringify(sanitizeFeishuSmokeSetupEvidence(options.setupEvidence), null, 2)}\n`);
   }
   await fs.writeFile(reportFile, `${JSON.stringify(report, null, 2)}\n`);
   await fs.writeFile(summaryFile, renderMarkdownSummary(options.source, report));
@@ -962,7 +718,7 @@ export async function writeFeishuSmokeEvidenceBundle(options: {
     statusFile,
     setupEvidenceFile,
     reportFile,
-    summaryFile
+    summaryFile,
   };
 }
 
@@ -975,7 +731,7 @@ function createFeishuSmokeUnavailableStatusEvidence(report: FeishuSmokeReport): 
       checkedAt: report.checkedAt,
       checkId: statusCheck?.id,
       evidence: statusCheck?.evidence,
-      nextAction: statusCheck?.nextAction
+      nextAction: statusCheck?.nextAction,
     }),
     platforms: sanitizeFeishuSmokePlatformsEvidence(undefined),
     state: withoutUndefinedRecord({
@@ -983,8 +739,8 @@ function createFeishuSmokeUnavailableStatusEvidence(report: FeishuSmokeReport): 
       sessionCount: 0,
       activeCount: 0,
       sessions: [],
-      recentBrokerLogs: []
-    })
+      recentBrokerLogs: [],
+    }),
   });
 }
 
@@ -998,35 +754,30 @@ function createFeishuSmokeUnavailableStatusReport(root: Record<string, unknown>)
     .map(readString)
     .filter((value): value is string => Boolean(value))
     .map(sanitizeFeishuSmokeReportEvidenceText);
-  const nextAction = readString(adminStatus.nextAction)
-    ? sanitizeFeishuSmokeReportEvidenceText(readString(adminStatus.nextAction)!)
-    : ADMIN_STATUS_AVAILABLE_NEXT_ACTION;
+  const nextAction = readString(adminStatus.nextAction) ? sanitizeFeishuSmokeReportEvidenceText(readString(adminStatus.nextAction)!) : ADMIN_STATUS_AVAILABLE_NEXT_ACTION;
   const check: FeishuSmokeCheck = {
     id: ADMIN_STATUS_AVAILABLE_CHECK_ID,
     label: ADMIN_STATUS_AVAILABLE_LABEL,
     required: true,
     status: "fail",
     evidence: evidence.length > 0 ? evidence : ["adminStatus.available=false"],
-    nextAction
+    nextAction,
   };
 
   return {
     ok: false,
     checkedAt: readSafeFeishuSmokeLogTimestamp(adminStatus.checkedAt) ?? new Date().toISOString(),
     checks: [check],
-    nextActions: [`${check.id}: ${nextAction}`]
+    nextActions: [`${check.id}: ${nextAction}`],
   };
 }
 
-export async function writeFeishuPreflightEvidenceBundle(options: {
-  readonly outputDir: string;
-  readonly report: FeishuSmokeReport;
-}): Promise<{
+export async function writeFeishuPreflightEvidenceBundle(options: { readonly outputDir: string; readonly report: FeishuSmokeReport }): Promise<{
   readonly reportFile: string;
   readonly summaryFile: string;
 }> {
   await fs.mkdir(options.outputDir, {
-    recursive: true
+    recursive: true,
   });
   const report = sanitizeFeishuSmokeReport(options.report);
   const reportFile = path.join(options.outputDir, "feishu-preflight-report.json");
@@ -1037,7 +788,7 @@ export async function writeFeishuPreflightEvidenceBundle(options: {
 
   return {
     reportFile,
-    summaryFile
+    summaryFile,
   };
 }
 
@@ -1051,7 +802,7 @@ async function main(): Promise<void> {
     if (options.outputDir) {
       const bundle = await writeFeishuPreflightEvidenceBundle({
         outputDir: options.outputDir,
-        report
+        report,
       });
       if (!options.json) {
         console.log(renderFeishuSmokeBundleNotice("preflight", bundle.summaryFile));
@@ -1062,7 +813,7 @@ async function main(): Promise<void> {
     } else {
       printHumanReport(sanitizeFeishuSmokeReport(report), {
         ...options,
-        baseUrl: "environment-preflight"
+        baseUrl: "environment-preflight",
       });
     }
     if (!report.ok) {
@@ -1073,12 +824,10 @@ async function main(): Promise<void> {
 
   if (options.statusFile) {
     const status = await readJsonFile(options.statusFile);
-    const setupEvidence = options.setupEvidenceFile
-      ? await readJsonFile(options.setupEvidenceFile)
-      : undefined;
+    const setupEvidence = options.setupEvidenceFile ? await readJsonFile(options.setupEvidenceFile) : undefined;
     const report = evaluateFeishuSmokeStatus(status, env, {
       requireSetupEvidence: true,
-      setupEvidence
+      setupEvidence,
     });
     if (options.outputDir) {
       const bundle = await writeFeishuSmokeEvidenceBundle({
@@ -1086,7 +835,7 @@ async function main(): Promise<void> {
         source: `status-file:${options.statusFile}`,
         status,
         report,
-        setupEvidence
+        setupEvidence,
       });
       if (!options.json) {
         console.log(renderFeishuSmokeBundleNotice("evidence", bundle.summaryFile));
@@ -1097,7 +846,7 @@ async function main(): Promise<void> {
     } else {
       printHumanReport(sanitizeFeishuSmokeReport(report), {
         ...options,
-        baseUrl: `status-file:${options.statusFile}`
+        baseUrl: `status-file:${options.statusFile}`,
       });
     }
     if (!report.ok) {
@@ -1114,12 +863,10 @@ async function main(): Promise<void> {
   do {
     try {
       status = await fetchAdminStatus(options);
-      const setupEvidence = options.setupEvidenceFile
-        ? await readJsonFile(options.setupEvidenceFile)
-        : undefined;
+      const setupEvidence = options.setupEvidenceFile ? await readJsonFile(options.setupEvidenceFile) : undefined;
       report = evaluateFeishuSmokeStatus(status, env, {
         requireSetupEvidence: true,
-        setupEvidence
+        setupEvidence,
       });
       if (report.ok || Date.now() >= deadline) {
         break;
@@ -1136,20 +883,18 @@ async function main(): Promise<void> {
   if (!report) {
     report = createFeishuSmokeUnavailableReport({
       baseUrl: options.baseUrl,
-      error: lastError
+      error: lastError,
     });
   }
 
   if (options.outputDir) {
-    const setupEvidence = options.setupEvidenceFile
-      ? await readJsonFile(options.setupEvidenceFile)
-      : undefined;
+    const setupEvidence = options.setupEvidenceFile ? await readJsonFile(options.setupEvidenceFile) : undefined;
     const bundle = await writeFeishuSmokeEvidenceBundle({
       outputDir: options.outputDir,
       source: options.baseUrl,
       status,
       report,
-      setupEvidence
+      setupEvidence,
     });
     if (!options.json) {
       console.log(renderFeishuSmokeBundleNotice("evidence", bundle.summaryFile));
@@ -1171,12 +916,12 @@ async function fetchAdminStatus(options: CliOptions): Promise<unknown> {
   const init: RequestInit = options.adminToken
     ? {
         headers: {
-          "x-admin-token": options.adminToken
-        }
+          "x-admin-token": options.adminToken,
+        },
       }
     : {};
   const response = await fetch(`${options.baseUrl.replace(/\/+$/u, "")}/admin/api/status?platform=feishu`, init);
-  const payload = await response.json().catch(() => null) as unknown;
+  const payload = (await response.json().catch(() => null)) as unknown;
   if (!response.ok) {
     throw new AdminStatusFetchError(response.status, payload !== null);
   }
@@ -1185,10 +930,7 @@ async function fetchAdminStatus(options: CliOptions): Promise<unknown> {
 
 function adminFetchFailureEvidence(error: unknown): string[] {
   if (error instanceof AdminStatusFetchError) {
-    return [
-      `http_status=${error.status}`,
-      `response_payload=${error.payloadReceived ? "present" : "empty"}`
-    ];
+    return [`http_status=${error.status}`, `response_payload=${error.payloadReceived ? "present" : "empty"}`];
   }
 
   if (error instanceof Error) {
@@ -1282,7 +1024,7 @@ function parseArgs(argv: readonly string[], env: Record<string, string | undefin
     preflight,
     waitMs,
     intervalMs,
-    json
+    json,
   };
 }
 
@@ -1296,14 +1038,11 @@ function splitCliOption(arg: string): { readonly name: string; readonly value?: 
   }
   return {
     name: arg.slice(0, equalsIndex),
-    value: arg.slice(equalsIndex + 1)
+    value: arg.slice(equalsIndex + 1),
   };
 }
 
-function rejectInlineCliValue(
-  option: { readonly value?: string | undefined } | undefined,
-  name: string
-): void {
+function rejectInlineCliValue(option: { readonly value?: string | undefined } | undefined, name: string): void {
   if (option?.value !== undefined) {
     throw new Error(`Unexpected value for ${name}`);
   }
@@ -1317,16 +1056,9 @@ function readNonNegativeInteger(value: string, name: string): number {
   return parsed;
 }
 
-export function renderFeishuSmokeHumanReport(
-  report: FeishuSmokeReport,
-  options: Pick<CliOptions, "baseUrl">
-): string {
+export function renderFeishuSmokeHumanReport(report: FeishuSmokeReport, options: Pick<CliOptions, "baseUrl">): string {
   const sanitizedReport = sanitizeFeishuSmokeReport(report);
-  const lines = [
-    `Feishu smoke evidence for ${sanitizeFeishuSmokeReportSource(options.baseUrl)}`,
-    `checked_at: ${sanitizedReport.checkedAt}`,
-    `status: ${sanitizedReport.ok ? "PASS" : "MISSING_EVIDENCE"}`
-  ];
+  const lines = [`Feishu smoke evidence for ${sanitizeFeishuSmokeReportSource(options.baseUrl)}`, `checked_at: ${sanitizedReport.checkedAt}`, `status: ${sanitizedReport.ok ? "PASS" : "MISSING_EVIDENCE"}`];
 
   for (const check of sanitizedReport.checks) {
     const prefix = check.status === "pass" ? "[PASS]" : check.status === "warn" ? "[WARN]" : "[FAIL]";
@@ -1352,13 +1084,7 @@ export function formatFeishuSmokeCliError(error: unknown): string {
 }
 
 function sanitizeFeishuSmokeCliErrorPaths(message: string): string {
-  return message
-    .replace(/(["'])(\/[^"']+)\1/gu, (_match, quote: string, filePath: string) =>
-      `${quote}${sanitizeFeishuSmokeOutputFileName(filePath)}${quote}`
-    )
-    .replace(/(^|[\s=])\/(?!\/)([^\s'"]+)/gu, (_match, prefix: string, pathTail: string) =>
-      `${prefix}${sanitizeFeishuSmokeOutputFileName(`/${pathTail}`)}`
-    );
+  return message.replace(/(["'])(\/[^"']+)\1/gu, (_match, quote: string, filePath: string) => `${quote}${sanitizeFeishuSmokeOutputFileName(filePath)}${quote}`).replace(/(^|[\s=])\/(?!\/)([^\s'"]+)/gu, (_match, prefix: string, pathTail: string) => `${prefix}${sanitizeFeishuSmokeOutputFileName(`/${pathTail}`)}`);
 }
 
 export function renderFeishuSmokeBundleNotice(kind: "evidence" | "preflight", summaryFile: string): string {
@@ -1371,39 +1097,38 @@ function sanitizeFeishuSmokeOutputFileName(filePath: string): string {
 }
 
 function printUsage(): void {
-  console.log([
-    "usage: pnpm manual:feishu-smoke -- --setup-evidence-file setup.json [--base-url http://127.0.0.1:3000] [--admin-token token] [--wait-ms 60000] [--output-dir evidence/feishu] [--json]",
-    "       pnpm manual:feishu-smoke -- --status-file admin-status.json --setup-evidence-file setup.json [--env-file .env] [--output-dir evidence/feishu] [--json]",
-    "       pnpm manual:feishu-smoke -- --preflight [--env-file .env] [--output-dir evidence/feishu] [--json]",
-    "",
-    "Checks /admin/api/status and recent broker logs for RFC 0001 real Feishu smoke evidence.",
-    "The script does not send Feishu messages itself; perform the smoke actions in Feishu, then run this checker.",
-    "Use --preflight before rollout to check required env vars, production mode, and raw logging posture.",
-    "Use --env-file to load explicit KEY=value settings from a local env file; through pnpm, pass a leading -- before smoke-checker args so Node does not consume --env-file.",
-    "Value flags require a following value that is not another --flag.",
-    "Value flags accept both --flag value and --flag=value forms.",
-    "Use --status-file to verify saved evidence from a rollout PR or incident bundle.",
-    "Final smoke and --status-file verification require --setup-evidence-file to prove real Feishu console labels and im:message.group_msg approval were recorded.",
-    "Use --output-dir to save admin-status.json, feishu-setup-evidence.json, feishu-smoke-report.json, and feishu-smoke-summary.md.",
-    "With --preflight, --output-dir saves feishu-preflight-report.json and feishu-preflight-summary.md."
-  ].join("\n"));
+  console.log(
+    [
+      "usage: pnpm manual:feishu-smoke -- --setup-evidence-file setup.json [--base-url http://127.0.0.1:3000] [--admin-token token] [--wait-ms 60000] [--output-dir evidence/feishu] [--json]",
+      "       pnpm manual:feishu-smoke -- --status-file admin-status.json --setup-evidence-file setup.json [--env-file .env] [--output-dir evidence/feishu] [--json]",
+      "       pnpm manual:feishu-smoke -- --preflight [--env-file .env] [--output-dir evidence/feishu] [--json]",
+      "",
+      "Checks /admin/api/status and recent broker logs for RFC 0001 real Feishu smoke evidence.",
+      "The script does not send Feishu messages itself; perform the smoke actions in Feishu, then run this checker.",
+      "Use --preflight before rollout to check required env vars, production mode, and raw logging posture.",
+      "Use --env-file to load explicit KEY=value settings from a local env file; through pnpm, pass a leading -- before smoke-checker args so Node does not consume --env-file.",
+      "Value flags require a following value that is not another --flag.",
+      "Value flags accept both --flag value and --flag=value forms.",
+      "Use --status-file to verify saved evidence from a rollout PR or incident bundle.",
+      "Final smoke and --status-file verification require --setup-evidence-file to prove real Feishu console labels and im:message.group_msg approval were recorded.",
+      "Use --output-dir to save admin-status.json, feishu-setup-evidence.json, feishu-smoke-report.json, and feishu-smoke-summary.md.",
+      "With --preflight, --output-dir saves feishu-preflight-report.json and feishu-preflight-summary.md.",
+    ].join("\n"),
+  );
 }
 
 async function readJsonFile(filePath: string): Promise<unknown> {
   return JSON.parse(await fs.readFile(filePath, "utf8")) as unknown;
 }
 
-export async function loadFeishuSmokeEnv(
-  baseEnv: Record<string, string | undefined>,
-  envFile?: string | undefined
-): Promise<Record<string, string | undefined>> {
+export async function loadFeishuSmokeEnv(baseEnv: Record<string, string | undefined>, envFile?: string | undefined): Promise<Record<string, string | undefined>> {
   if (!envFile) {
     return baseEnv;
   }
 
   const fileEnv = parseFeishuSmokeEnvFile(await fs.readFile(envFile, "utf8"));
   const merged: Record<string, string | undefined> = {
-    ...fileEnv
+    ...fileEnv,
   };
   for (const [key, value] of Object.entries(baseEnv)) {
     if (value !== undefined) {
@@ -1435,15 +1160,10 @@ export function parseFeishuSmokeEnvFile(content: string): Record<string, string>
 function parseFeishuSmokeEnvValue(rawValue: string): string {
   const value = rawValue.trim();
   const quote = value[0];
-  if ((quote === "\"" || quote === "'") && value.endsWith(quote)) {
+  if ((quote === '"' || quote === "'") && value.endsWith(quote)) {
     const inner = value.slice(1, -1);
-    if (quote === "\"") {
-      return inner
-        .replace(/\\n/gu, "\n")
-        .replace(/\\r/gu, "\r")
-        .replace(/\\t/gu, "\t")
-        .replace(/\\"/gu, "\"")
-        .replace(/\\\\/gu, "\\");
+    if (quote === '"') {
+      return inner.replace(/\\n/gu, "\n").replace(/\\r/gu, "\r").replace(/\\t/gu, "\t").replace(/\\"/gu, '"').replace(/\\\\/gu, "\\");
     }
     return inner.replace(/\\'/gu, "'");
   }
@@ -1452,26 +1172,10 @@ function parseFeishuSmokeEnvValue(rawValue: string): string {
 }
 
 function renderMarkdownSummary(source: string, report: FeishuSmokeReport): string {
-  const lines = [
-    "# Feishu Smoke Evidence",
-    "",
-    `- source: ${sanitizeFeishuSmokeReportSource(source)}`,
-    `- checked_at: ${report.checkedAt}`,
-    `- status: ${report.ok ? "PASS" : "MISSING_EVIDENCE"}`,
-    "",
-    "## Checks",
-    "",
-    "| Status | Required | Check | Evidence |",
-    "| --- | --- | --- | --- |"
-  ];
+  const lines = ["# Feishu Smoke Evidence", "", `- source: ${sanitizeFeishuSmokeReportSource(source)}`, `- checked_at: ${report.checkedAt}`, `- status: ${report.ok ? "PASS" : "MISSING_EVIDENCE"}`, "", "## Checks", "", "| Status | Required | Check | Evidence |", "| --- | --- | --- | --- |"];
 
   for (const check of report.checks) {
-    lines.push([
-      check.status,
-      check.required ? "yes" : "no",
-      `${check.id}: ${check.label}`,
-      check.evidence.length > 0 ? check.evidence.join("<br>") : check.nextAction ?? ""
-    ].map(escapeMarkdownTableCell).join(" | ").replace(/^/u, "| ").replace(/$/u, " |"));
+    lines.push([check.status, check.required ? "yes" : "no", `${check.id}: ${check.label}`, check.evidence.length > 0 ? check.evidence.join("<br>") : (check.nextAction ?? "")].map(escapeMarkdownTableCell).join(" | ").replace(/^/u, "| ").replace(/$/u, " |"));
   }
 
   if (report.nextActions.length > 0) {
@@ -1507,11 +1211,9 @@ function sanitizeFeishuSmokeReport(report: FeishuSmokeReport): FeishuSmokeReport
       required: check.required,
       status: check.status,
       evidence: check.evidence.map(sanitizeFeishuSmokeReportEvidenceText),
-      nextAction: check.nextAction
-        ? sanitizeFeishuSmokeReportEvidenceText(check.nextAction)
-        : undefined
+      nextAction: check.nextAction ? sanitizeFeishuSmokeReportEvidenceText(check.nextAction) : undefined,
     })),
-    nextActions: report.nextActions.map(sanitizeFeishuSmokeReportEvidenceText)
+    nextActions: report.nextActions.map(sanitizeFeishuSmokeReportEvidenceText),
   };
 }
 
@@ -1523,22 +1225,15 @@ function sanitizeFeishuSmokeReportEvidenceText(value: string): string {
     return text.replaceAll(literal, placeholder);
   }, value);
 
-  const sanitized = protectedValue
-    .replace(SECRET_LIKE_SMOKE_REPORT_EVIDENCE_VALUE, "[redacted unsafe evidence]")
-    .replace(SENTINEL_LIKE_SMOKE_REPORT_EVIDENCE_VALUE, "[redacted unsafe evidence]");
+  const sanitized = protectedValue.replace(SECRET_LIKE_SMOKE_REPORT_EVIDENCE_VALUE, "[redacted unsafe evidence]").replace(SENTINEL_LIKE_SMOKE_REPORT_EVIDENCE_VALUE, "[redacted unsafe evidence]");
 
-  return [...protectedLiterals.entries()].reduce(
-    (text, [placeholder, literal]) => text.replaceAll(placeholder, literal),
-    sanitized
-  );
+  return [...protectedLiterals.entries()].reduce((text, [placeholder, literal]) => text.replaceAll(placeholder, literal), sanitized);
 }
 
 function sanitizeFeishuSmokeStatusEvidence(status: unknown): Record<string, unknown> {
   const root = asRecord(status);
   const state = asRecord(root.state);
-  const sessions = asArray(state.sessions)
-    .filter(isFeishuSmokeSessionEvidence)
-    .map(sanitizeFeishuSmokeSessionEvidence);
+  const sessions = asArray(state.sessions).filter(isFeishuSmokeSessionEvidence).map(sanitizeFeishuSmokeSessionEvidence);
   return withoutUndefinedRecord({
     platforms: sanitizeFeishuSmokePlatformsEvidence(root.platforms),
     state: withoutUndefinedRecord({
@@ -1546,8 +1241,8 @@ function sanitizeFeishuSmokeStatusEvidence(status: unknown): Record<string, unkn
       sessionCount: sessions.length,
       activeCount: sessions.filter((session) => readString(session.activeTurnId)).length,
       sessions,
-      recentBrokerLogs: asArray(state.recentBrokerLogs).map(sanitizeFeishuSmokeBrokerLogEvidence)
-    })
+      recentBrokerLogs: asArray(state.recentBrokerLogs).map(sanitizeFeishuSmokeBrokerLogEvidence),
+    }),
   });
 }
 
@@ -1555,14 +1250,11 @@ function sanitizeFeishuSmokePlatformsEvidence(platforms: unknown): Record<string
   const record = asRecord(platforms);
   return withoutUndefinedRecord({
     slack: sanitizeFeishuSmokePlatformEvidence("slack", asRecord(record.slack)),
-    feishu: sanitizeFeishuSmokePlatformEvidence("feishu", asRecord(record.feishu))
+    feishu: sanitizeFeishuSmokePlatformEvidence("feishu", asRecord(record.feishu)),
   });
 }
 
-function sanitizeFeishuSmokePlatformEvidence(
-  platform: "slack" | "feishu",
-  status: Record<string, unknown>
-): Record<string, unknown> {
+function sanitizeFeishuSmokePlatformEvidence(platform: "slack" | "feishu", status: Record<string, unknown>): Record<string, unknown> {
   const connection = sanitizeFeishuSmokeConnectionEvidence(asRecord(status.connection));
   const permissions = asArray(status.permissions)
     .map(sanitizeFeishuSmokePermissionEvidence)
@@ -1577,7 +1269,7 @@ function sanitizeFeishuSmokePlatformEvidence(
     allMessageDeliveryVerified: readBoolean(status.allMessageDeliveryVerified),
     degradedReason: readSafeFeishuSmokeLogToken(status.degradedReason),
     connection: Object.keys(connection).length > 0 ? connection : undefined,
-    permissions: permissions.length > 0 ? permissions : undefined
+    permissions: permissions.length > 0 ? permissions : undefined,
   });
 }
 
@@ -1586,7 +1278,7 @@ function sanitizeFeishuSmokeConnectionEvidence(connection: Record<string, unknow
     mode: readKnownString(connection.mode, SMOKE_PLATFORM_CONNECTION_MODES),
     connected: readBoolean(connection.connected),
     lastConnectedAt: readSafeFeishuSmokeLogTimestamp(connection.lastConnectedAt),
-    lastDisconnectedAt: readSafeFeishuSmokeLogTimestamp(connection.lastDisconnectedAt)
+    lastDisconnectedAt: readSafeFeishuSmokeLogTimestamp(connection.lastDisconnectedAt),
   });
 }
 
@@ -1594,15 +1286,13 @@ function sanitizeFeishuSmokePermissionEvidence(permission: unknown): Record<stri
   const record = asRecord(permission);
   return withoutUndefinedRecord({
     name: readSafeFeishuSmokeLogToken(record.name),
-    status: readKnownString(record.status, SMOKE_PERMISSION_STATUSES)
+    status: readKnownString(record.status, SMOKE_PERMISSION_STATUSES),
   });
 }
 
 function sanitizeFeishuSmokeSetupEvidence(value: unknown): unknown {
   if (typeof value === "string") {
-    return SECRET_LIKE_SETUP_EVIDENCE_VALUE.test(value)
-      ? "[redacted unsafe setup evidence]"
-      : value;
+    return SECRET_LIKE_SETUP_EVIDENCE_VALUE.test(value) ? "[redacted unsafe setup evidence]" : value;
   }
 
   if (typeof value === "number" || typeof value === "boolean" || value === null) {
@@ -1610,9 +1300,7 @@ function sanitizeFeishuSmokeSetupEvidence(value: unknown): unknown {
   }
 
   if (Array.isArray(value)) {
-    return value
-      .map(sanitizeFeishuSmokeSetupEvidence)
-      .filter((entry) => entry !== undefined);
+    return value.map(sanitizeFeishuSmokeSetupEvidence).filter((entry) => entry !== undefined);
   }
 
   const record = asRecord(value);
@@ -1633,14 +1321,12 @@ function sanitizeFeishuSmokeBrokerLogEvidence(log: unknown): Record<string, unkn
     type: readSafeFeishuSmokeLogToken(record.type),
     level: readSafeFeishuSmokeLogToken(record.level),
     message: readSafeFeishuSmokeLogToken(record.message),
-    meta
+    meta,
   });
 }
 
 function sanitizeFeishuSmokeLogMetaEvidence(meta: Record<string, unknown>): Record<string, unknown> | undefined {
-  const safeEntries = Object.entries(meta).filter(([key, value]) =>
-    FEISHU_SMOKE_SAFE_LOG_META_FIELDS.has(key) && isSafeFeishuSmokeLogMetaValue(value)
-  );
+  const safeEntries = Object.entries(meta).filter(([key, value]) => FEISHU_SMOKE_SAFE_LOG_META_FIELDS.has(key) && isSafeFeishuSmokeLogMetaValue(value));
 
   return safeEntries.length > 0 ? Object.fromEntries(safeEntries) : undefined;
 }
@@ -1680,7 +1366,7 @@ function sanitizeFeishuSmokeSessionEvidence(session: unknown): Record<string, un
     platformThreadId: readSafeFeishuSmokeSessionToken(record.platformThreadId),
     activeTurnId: readSafeFeishuSmokeSessionToken(record.activeTurnId),
     lastObservedMessageTs: readSafeFeishuSmokeLogTimestamp(record.lastObservedMessageTs),
-    lastDeliveredMessageTs: readSafeFeishuSmokeLogTimestamp(record.lastDeliveredMessageTs)
+    lastDeliveredMessageTs: readSafeFeishuSmokeLogTimestamp(record.lastDeliveredMessageTs),
   });
 }
 
@@ -1698,9 +1384,7 @@ function readSafeFeishuSmokeSessionToken(value: unknown): string | undefined {
 }
 
 function withoutUndefinedRecord(record: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(record).filter(([, value]) => value !== undefined)
-  );
+  return Object.fromEntries(Object.entries(record).filter(([, value]) => value !== undefined));
 }
 
 function escapeMarkdownTableCell(value: string): string {
@@ -1711,42 +1395,20 @@ function hasFeishuSession(sessions: readonly unknown[]): boolean {
   return sessions.some((session) => readString(asRecord(session).platform) === "feishu");
 }
 
-function missingRequiredFeishuMessageTypes(
-  logs: readonly unknown[],
-  knownSessions: ReadonlyMap<string, FeishuKnownSession>,
-  allowedSessionKeys: ReadonlySet<string>
-): string[] {
+function missingRequiredFeishuMessageTypes(logs: readonly unknown[], knownSessions: ReadonlyMap<string, FeishuKnownSession>, allowedSessionKeys: ReadonlySet<string>): string[] {
   const observed = new Set(feishuDeliveredMessageTypes(logs, knownSessions, allowedSessionKeys));
   return ["rich_text", "card", "image", "file"].filter((type) => !observed.has(type));
 }
 
-function richCardResourceEvidence(
-  logs: readonly unknown[],
-  knownSessions: ReadonlyMap<string, FeishuKnownSession>,
-  allowedSessionKeys: ReadonlySet<string>
-): string[] {
+function richCardResourceEvidence(logs: readonly unknown[], knownSessions: ReadonlyMap<string, FeishuKnownSession>, allowedSessionKeys: ReadonlySet<string>): string[] {
   const missingTypes = missingRequiredFeishuMessageTypes(logs, knownSessions, allowedSessionKeys);
   const observed = messageTypeEvidence(logs, ["rich_text", "card", "image", "file"], knownSessions, allowedSessionKeys);
-  return [
-    `requiredSession=group_at groupAtSessionCount=${allowedSessionKeys.size}`,
-    ...(missingTypes.length > 0 ? [`missing msgType: ${missingTypes.join(", ")}`] : []),
-    ...observed
-  ];
+  return [`requiredSession=group_at groupAtSessionCount=${allowedSessionKeys.size}`, ...(missingTypes.length > 0 ? [`missing msgType: ${missingTypes.join(", ")}`] : []), ...observed];
 }
 
-function feishuAllMessageVerificationEvidence(
-  feishu: Record<string, unknown>,
-  groupMessageMode: string | undefined,
-  allMessageDeliveryVerified: boolean | undefined,
-  allMessageDeliveryBackedByFollowupEvidence: boolean
-): string[] {
+function feishuAllMessageVerificationEvidence(feishu: Record<string, unknown>, groupMessageMode: string | undefined, allMessageDeliveryVerified: boolean | undefined, allMessageDeliveryBackedByFollowupEvidence: boolean): string[] {
   const permissionStatus = readPermissionStatusMap(feishu).get("im:message.group_msg");
-  return [
-    `groupMessageMode=${groupMessageMode ?? "unknown"}`,
-    `allMessageDeliveryVerified=${String(allMessageDeliveryVerified)}`,
-    `sameSessionNonAtFollowup=${String(allMessageDeliveryBackedByFollowupEvidence)}`,
-    `permission.im:message.group_msg=${permissionStatus ?? "missing"}`
-  ];
+  return [`groupMessageMode=${groupMessageMode ?? "unknown"}`, `allMessageDeliveryVerified=${String(allMessageDeliveryVerified)}`, `sameSessionNonAtFollowup=${String(allMessageDeliveryBackedByFollowupEvidence)}`, `permission.im:message.group_msg=${permissionStatus ?? "missing"}`];
 }
 
 const FEISHU_OUTBOUND_RICH_CARD_FILE_REQUIREMENTS: readonly {
@@ -1755,70 +1417,46 @@ const FEISHU_OUTBOUND_RICH_CARD_FILE_REQUIREMENTS: readonly {
 }[] = [
   {
     label: "rich_text",
-    formats: ["markdown", "rich_text"]
+    formats: ["markdown", "rich_text"],
   },
   {
     label: "card",
-    formats: ["card"]
+    formats: ["card"],
   },
   {
     label: "file",
-    formats: ["file", "image"]
-  }
+    formats: ["file", "image"],
+  },
 ] as const;
 
-function missingRequiredFeishuOutboundRichCardFile(
-  logs: readonly unknown[],
-  knownSessions: ReadonlyMap<string, FeishuKnownSession>,
-  allowedSessionKeys: ReadonlySet<string>
-): string[] {
+function missingRequiredFeishuOutboundRichCardFile(logs: readonly unknown[], knownSessions: ReadonlyMap<string, FeishuKnownSession>, allowedSessionKeys: ReadonlySet<string>): string[] {
   const observed = new Set(feishuOutboundRichCardFileLabels(logs, knownSessions, allowedSessionKeys));
-  return FEISHU_OUTBOUND_RICH_CARD_FILE_REQUIREMENTS
-    .filter((requirement) => !observed.has(requirement.label))
-    .map((requirement) => requirement.label);
+  return FEISHU_OUTBOUND_RICH_CARD_FILE_REQUIREMENTS.filter((requirement) => !observed.has(requirement.label)).map((requirement) => requirement.label);
 }
 
-function feishuOutboundRichCardFileEvidence(
-  logs: readonly unknown[],
-  knownSessions: ReadonlyMap<string, FeishuKnownSession>,
-  allowedSessionKeys: ReadonlySet<string>
-): string[] {
+function feishuOutboundRichCardFileEvidence(logs: readonly unknown[], knownSessions: ReadonlyMap<string, FeishuKnownSession>, allowedSessionKeys: ReadonlySet<string>): string[] {
   const missing = missingRequiredFeishuOutboundRichCardFile(logs, knownSessions, allowedSessionKeys);
   const observed = logs
     .filter((log) => isFeishuOutboundRichCardFileEvidence(log, knownSessions, allowedSessionKeys))
     .slice(-6)
     .map((log) => summarizeLog(log));
 
-  return [
-    `requiredSession=group_at groupAtSessionCount=${allowedSessionKeys.size}`,
-    ...(missing.length > 0 ? [`missing outbound format: ${missing.join(", ")}`] : []),
-    ...observed
-  ];
+  return [`requiredSession=group_at groupAtSessionCount=${allowedSessionKeys.size}`, ...(missing.length > 0 ? [`missing outbound format: ${missing.join(", ")}`] : []), ...observed];
 }
 
-function feishuOutboundRichCardFileLabels(
-  logs: readonly unknown[],
-  knownSessions: ReadonlyMap<string, FeishuKnownSession>,
-  allowedSessionKeys: ReadonlySet<string>
-): string[] {
+function feishuOutboundRichCardFileLabels(logs: readonly unknown[], knownSessions: ReadonlyMap<string, FeishuKnownSession>, allowedSessionKeys: ReadonlySet<string>): string[] {
   return logs.flatMap((log) => {
     if (!isFeishuOutboundRichCardFileEvidence(log, knownSessions, allowedSessionKeys)) {
       return [];
     }
 
     const format = readString(asRecord(asRecord(log).meta).format);
-    const requirement = FEISHU_OUTBOUND_RICH_CARD_FILE_REQUIREMENTS.find((candidate) =>
-      candidate.formats.includes(format ?? "")
-    );
+    const requirement = FEISHU_OUTBOUND_RICH_CARD_FILE_REQUIREMENTS.find((candidate) => candidate.formats.includes(format ?? ""));
     return requirement ? [requirement.label] : [];
   });
 }
 
-function isFeishuOutboundRichCardFileEvidence(
-  log: unknown,
-  knownSessions: ReadonlyMap<string, FeishuKnownSession>,
-  allowedSessionKeys: ReadonlySet<string>
-): boolean {
+function isFeishuOutboundRichCardFileEvidence(log: unknown, knownSessions: ReadonlyMap<string, FeishuKnownSession>, allowedSessionKeys: ReadonlySet<string>): boolean {
   if (allowedSessionKeys.size === 0) {
     return false;
   }
@@ -1826,13 +1464,7 @@ function isFeishuOutboundRichCardFileEvidence(
   const record = asRecord(log);
   const meta = asRecord(record.meta);
   const format = readString(meta.format);
-  if (
-    readString(record.message) !== "chat.outbound.posted" ||
-    readString(meta.platform) !== "feishu" ||
-    !format ||
-    !FEISHU_OUTBOUND_RICH_CARD_FILE_REQUIREMENTS.some((requirement) => requirement.formats.includes(format)) ||
-    (requiresOutboundResourceIdentifier(meta) && !hasPresentField(meta, "fileId"))
-  ) {
+  if (readString(record.message) !== "chat.outbound.posted" || readString(meta.platform) !== "feishu" || !format || !FEISHU_OUTBOUND_RICH_CARD_FILE_REQUIREMENTS.some((requirement) => requirement.formats.includes(format)) || (requiresOutboundResourceIdentifier(meta) && !hasPresentField(meta, "fileId"))) {
     return false;
   }
 
@@ -1840,18 +1472,14 @@ function isFeishuOutboundRichCardFileEvidence(
   return Boolean(knownSession && allowedSessionKeys.has(knownSession.key));
 }
 
-function findMissingFeishuBehaviorCoverage(
-  logs: readonly unknown[],
-  sessions: readonly unknown[],
-  knownSessions: ReadonlyMap<string, FeishuKnownSession>
-): string[] {
+function findMissingFeishuBehaviorCoverage(logs: readonly unknown[], sessions: readonly unknown[], knownSessions: ReadonlyMap<string, FeishuKnownSession>): string[] {
   const coverage = {
     accepted: hasDeliveredFeishuAcceptedMessage(logs, knownSessions),
     ignored: hasFeishuPrivateChatIgnoredWithoutSession(logs, sessions),
     deduped: hasFeishuDedupedAcceptedMessage(logs, knownSessions),
     degraded: hasFeishuDegradedBehavior(logs),
     failed: hasFeishuFailedBehavior(logs, knownSessions),
-    recovered: hasFeishuRecoveredHistory(logs, knownSessions)
+    recovered: hasFeishuRecoveredHistory(logs, knownSessions),
   };
 
   return Object.entries(coverage)
@@ -1859,17 +1487,11 @@ function findMissingFeishuBehaviorCoverage(
     .map(([name]) => name);
 }
 
-function hasFeishuFailedBehavior(
-  logs: readonly unknown[],
-  knownSessions: ReadonlyMap<string, FeishuKnownSession>
-): boolean {
+function hasFeishuFailedBehavior(logs: readonly unknown[], knownSessions: ReadonlyMap<string, FeishuKnownSession>): boolean {
   return logs.some((log) => isFeishuFailedBehaviorEvidence(log, knownSessions));
 }
 
-function isFeishuFailedBehaviorEvidence(
-  log: unknown,
-  knownSessions: ReadonlyMap<string, FeishuKnownSession>
-): boolean {
+function isFeishuFailedBehaviorEvidence(log: unknown, knownSessions: ReadonlyMap<string, FeishuKnownSession>): boolean {
   const record = asRecord(log);
   const meta = asRecord(record.meta);
   const message = readString(record.message);
@@ -1878,24 +1500,15 @@ function isFeishuFailedBehaviorEvidence(
   }
 
   if (message === "chat.handler.failed") {
-    return FEISHU_HANDLER_NAMES.has(readString(meta.handler) ?? "") &&
-      hasPresentField(meta, "errorClass");
+    return FEISHU_HANDLER_NAMES.has(readString(meta.handler) ?? "") && hasPresentField(meta, "errorClass");
   }
 
   if (message === "chat.outbound.failed") {
-    return Boolean(findMatchingKnownSession(knownSessions, meta)) &&
-      hasPresentField(meta, "format") &&
-      hasPresentField(meta, "errorClass") &&
-      hasPresentField(meta, "statusCode") &&
-      hasPresentField(meta, "attempt");
+    return Boolean(findMatchingKnownSession(knownSessions, meta)) && hasPresentField(meta, "format") && hasPresentField(meta, "errorClass") && hasPresentField(meta, "statusCode") && hasPresentField(meta, "attempt");
   }
 
   if (message === "chat.attachment.download_failed") {
-    return Boolean(findMatchingKnownSession(knownSessions, meta)) &&
-      hasPresentField(meta, "messageId") &&
-      hasPresentField(meta, "attachmentId") &&
-      hasPresentField(meta, "kind") &&
-      hasPresentField(meta, "errorClass");
+    return Boolean(findMatchingKnownSession(knownSessions, meta)) && hasPresentField(meta, "messageId") && hasPresentField(meta, "attachmentId") && hasPresentField(meta, "kind") && hasPresentField(meta, "errorClass");
   }
 
   return false;
@@ -1914,11 +1527,7 @@ function feishuFailedBehaviorEvidenceLabel(log: unknown): string {
   return "outbound_failed";
 }
 
-function feishuBehaviorCoverageEvidence(
-  logs: readonly unknown[],
-  sessions: readonly unknown[],
-  knownSessions: ReadonlyMap<string, FeishuKnownSession>
-): string[] {
+function feishuBehaviorCoverageEvidence(logs: readonly unknown[], sessions: readonly unknown[], knownSessions: ReadonlyMap<string, FeishuKnownSession>): string[] {
   const acceptedEvidence = logs
     .filter((log) => isDeliveredFeishuAcceptedMessageEvidence(logs, log, knownSessions))
     .slice(-1)
@@ -1941,8 +1550,7 @@ function feishuBehaviorCoverageEvidence(
     .slice(-3)
     .map((evidence) => `recovered: ${evidence}`);
 
-  return [...acceptedEvidence, ...ignoredEvidence, ...degradedEvidence, ...dedupedEvidence, ...failedEvidence, ...recoveryEvidence]
-    .slice(0, 8);
+  return [...acceptedEvidence, ...ignoredEvidence, ...degradedEvidence, ...dedupedEvidence, ...failedEvidence, ...recoveryEvidence].slice(0, 8);
 }
 
 function hasFeishuDegradedBehavior(logs: readonly unknown[]): boolean {
@@ -1952,10 +1560,7 @@ function hasFeishuDegradedBehavior(logs: readonly unknown[]): boolean {
 function isFeishuDegradedBehaviorEvidence(log: unknown): boolean {
   const record = asRecord(log);
   const meta = asRecord(record.meta);
-  if (
-    readString(record.message) !== "chat.platform.degraded" ||
-    readString(meta.platform) !== "feishu"
-  ) {
+  if (readString(record.message) !== "chat.platform.degraded" || readString(meta.platform) !== "feishu") {
     return false;
   }
 
@@ -1967,69 +1572,37 @@ function isFeishuDegradedBehaviorEvidence(log: unknown): boolean {
   return !isPermissionRelatedDegradation(meta) || hasPresentField(meta, "permission");
 }
 
-function hasDeliveredFeishuAcceptedMessage(
-  logs: readonly unknown[],
-  knownSessions: ReadonlyMap<string, FeishuKnownSession>
-): boolean {
+function hasDeliveredFeishuAcceptedMessage(logs: readonly unknown[], knownSessions: ReadonlyMap<string, FeishuKnownSession>): boolean {
   return logs.some((log) => isDeliveredFeishuAcceptedMessageEvidence(logs, log, knownSessions));
 }
 
-function feishuDeliveredMessageTypes(
-  logs: readonly unknown[],
-  knownSessions: ReadonlyMap<string, FeishuKnownSession>,
-  allowedSessionKeys: ReadonlySet<string>
-): string[] {
+function feishuDeliveredMessageTypes(logs: readonly unknown[], knownSessions: ReadonlyMap<string, FeishuKnownSession>, allowedSessionKeys: ReadonlySet<string>): string[] {
   return logs
     .filter((log) => isDeliveredFeishuMessageTypeEvidence(logs, log, knownSessions, allowedSessionKeys))
     .map((log) => readString(asRecord(asRecord(log).meta).msgType))
     .filter((type): type is string => Boolean(type));
 }
 
-function messageTypeEvidence(
-  logs: readonly unknown[],
-  types: readonly string[],
-  knownSessions: ReadonlyMap<string, FeishuKnownSession>,
-  allowedSessionKeys: ReadonlySet<string>
-): string[] {
+function messageTypeEvidence(logs: readonly unknown[], types: readonly string[], knownSessions: ReadonlyMap<string, FeishuKnownSession>, allowedSessionKeys: ReadonlySet<string>): string[] {
   return logs
-    .filter((log) =>
-      types.includes(readString(asRecord(asRecord(log).meta).msgType) ?? "") &&
-      isDeliveredFeishuMessageTypeEvidence(logs, log, knownSessions, allowedSessionKeys)
-    )
+    .filter((log) => types.includes(readString(asRecord(asRecord(log).meta).msgType) ?? "") && isDeliveredFeishuMessageTypeEvidence(logs, log, knownSessions, allowedSessionKeys))
     .slice(-4)
     .map((log) => summarizeLog(log));
 }
 
-function isDeliveredFeishuMessageTypeEvidence(
-  logs: readonly unknown[],
-  log: unknown,
-  knownSessions: ReadonlyMap<string, FeishuKnownSession>,
-  allowedSessionKeys: ReadonlySet<string>
-): boolean {
+function isDeliveredFeishuMessageTypeEvidence(logs: readonly unknown[], log: unknown, knownSessions: ReadonlyMap<string, FeishuKnownSession>, allowedSessionKeys: ReadonlySet<string>): boolean {
   const record = asRecord(log);
   const meta = asRecord(record.meta);
-  return isDeliveredFeishuAcceptedMessageEvidence(logs, log, knownSessions) &&
-    acceptedMessageMatchesAllowedFeishuSession(logs, meta, knownSessions, allowedSessionKeys);
+  return isDeliveredFeishuAcceptedMessageEvidence(logs, log, knownSessions) && acceptedMessageMatchesAllowedFeishuSession(logs, meta, knownSessions, allowedSessionKeys);
 }
 
-function isDeliveredFeishuAcceptedMessageEvidence(
-  logs: readonly unknown[],
-  log: unknown,
-  knownSessions: ReadonlyMap<string, FeishuKnownSession>
-): boolean {
+function isDeliveredFeishuAcceptedMessageEvidence(logs: readonly unknown[], log: unknown, knownSessions: ReadonlyMap<string, FeishuKnownSession>): boolean {
   const record = asRecord(log);
   const meta = asRecord(record.meta);
-  return readString(record.message) === "chat.message.accepted" &&
-    readString(meta.platform) === "feishu" &&
-    acceptedMessageMatchesKnownFeishuSession(logs, meta, knownSessions) &&
-    !hasMatchingFeishuIgnoredMessage(logs, meta);
+  return readString(record.message) === "chat.message.accepted" && readString(meta.platform) === "feishu" && acceptedMessageMatchesKnownFeishuSession(logs, meta, knownSessions) && !hasMatchingFeishuIgnoredMessage(logs, meta);
 }
 
-function acceptedMessageMatchesKnownFeishuSession(
-  logs: readonly unknown[],
-  accepted: Record<string, unknown>,
-  knownSessions: ReadonlyMap<string, FeishuKnownSession>
-): boolean {
+function acceptedMessageMatchesKnownFeishuSession(logs: readonly unknown[], accepted: Record<string, unknown>, knownSessions: ReadonlyMap<string, FeishuKnownSession>): boolean {
   if (coordinatesMatchKnownFeishuSession(knownSessions, accepted)) {
     return true;
   }
@@ -2044,11 +1617,7 @@ function acceptedMessageMatchesKnownFeishuSession(
     const record = asRecord(log);
     const message = readString(record.message);
     const meta = asRecord(record.meta);
-    if (
-      readString(meta.platform) !== "feishu" ||
-      readString(meta.messageId) !== acceptedMessageId ||
-      (message !== "chat.session.resumed" && message !== "chat.turn.steered")
-    ) {
+    if (readString(meta.platform) !== "feishu" || readString(meta.messageId) !== acceptedMessageId || (message !== "chat.session.resumed" && message !== "chat.turn.steered")) {
       return false;
     }
 
@@ -2061,18 +1630,12 @@ function acceptedMessageMatchesKnownFeishuSession(
   });
 }
 
-function acceptedMessageMatchesAllowedFeishuSession(
-  logs: readonly unknown[],
-  accepted: Record<string, unknown>,
-  knownSessions: ReadonlyMap<string, FeishuKnownSession>,
-  allowedSessionKeys: ReadonlySet<string>
-): boolean {
+function acceptedMessageMatchesAllowedFeishuSession(logs: readonly unknown[], accepted: Record<string, unknown>, knownSessions: ReadonlyMap<string, FeishuKnownSession>, allowedSessionKeys: ReadonlySet<string>): boolean {
   if (allowedSessionKeys.size === 0) {
     return false;
   }
 
-  const directSession = findMatchingKnownSessionWithRequiredCoordinates(knownSessions, accepted) ??
-    findKnownSessionByRequiredCoordinates(knownSessions, accepted);
+  const directSession = findMatchingKnownSessionWithRequiredCoordinates(knownSessions, accepted) ?? findKnownSessionByRequiredCoordinates(knownSessions, accepted);
   if (directSession && allowedSessionKeys.has(directSession.key)) {
     return true;
   }
@@ -2087,37 +1650,23 @@ function acceptedMessageMatchesAllowedFeishuSession(
     const record = asRecord(log);
     const message = readString(record.message);
     const meta = asRecord(record.meta);
-    if (
-      readString(meta.platform) !== "feishu" ||
-      readString(meta.messageId) !== acceptedMessageId ||
-      (message !== "chat.session.resumed" && message !== "chat.turn.steered")
-    ) {
+    if (readString(meta.platform) !== "feishu" || readString(meta.messageId) !== acceptedMessageId || (message !== "chat.session.resumed" && message !== "chat.turn.steered")) {
       return false;
     }
 
     const knownSession = findMatchingKnownSession(knownSessions, meta);
-    return Boolean(
-      knownSession &&
-      allowedSessionKeys.has(knownSession.key) &&
-      acceptedMessageCanTransitionToKnownSession(acceptedRoute, accepted, knownSession)
-    );
+    return Boolean(knownSession && allowedSessionKeys.has(knownSession.key) && acceptedMessageCanTransitionToKnownSession(acceptedRoute, accepted, knownSession));
   });
 }
 
-function findKnownSessionByRequiredCoordinates(
-  knownSessions: ReadonlyMap<string, FeishuKnownSession>,
-  meta: Record<string, unknown>
-): FeishuKnownSession | undefined {
+function findKnownSessionByRequiredCoordinates(knownSessions: ReadonlyMap<string, FeishuKnownSession>, meta: Record<string, unknown>): FeishuKnownSession | undefined {
   const conversationId = readString(meta.conversationId);
   const rootMessageId = readString(meta.rootMessageId);
   if (!conversationId || !rootMessageId) {
     return undefined;
   }
 
-  return [...knownSessions.values()].find((session) =>
-    session.conversationId === conversationId &&
-    session.rootMessageId === rootMessageId
-  );
+  return [...knownSessions.values()].find((session) => session.conversationId === conversationId && session.rootMessageId === rootMessageId);
 }
 
 function hasMatchingFeishuIgnoredMessage(logs: readonly unknown[], accepted: Record<string, unknown>): boolean {
@@ -2130,10 +1679,7 @@ function hasMatchingFeishuIgnoredMessage(logs: readonly unknown[], accepted: Rec
   return logs.some((log) => {
     const record = asRecord(log);
     const meta = asRecord(record.meta);
-    return readString(record.message) === "chat.message.ignored" &&
-      readString(meta.platform) === "feishu" &&
-      readString(meta.conversationId) === acceptedConversationId &&
-      readString(meta.messageId) === acceptedMessageId;
+    return readString(record.message) === "chat.message.ignored" && readString(meta.platform) === "feishu" && readString(meta.conversationId) === acceptedConversationId && readString(meta.messageId) === acceptedMessageId;
   });
 }
 
@@ -2154,91 +1700,44 @@ function findMissingFeishuLogFields(logs: readonly unknown[]): string[] {
     }
 
     const missingFields = requiredFields.filter((field) => !hasPresentField(meta, field));
-    if (
-      message === "chat.outbound.posted" &&
-      !hasPresentField(meta, "messageId") &&
-      !hasPresentField(meta, "fileId")
-    ) {
+    if (message === "chat.outbound.posted" && !hasPresentField(meta, "messageId") && !hasPresentField(meta, "fileId")) {
       missingFields.push("messageId or fileId");
     }
-    if (
-      message === "chat.outbound.posted" &&
-      requiresOutboundResourceIdentifier(meta) &&
-      !hasPresentField(meta, "fileId")
-    ) {
+    if (message === "chat.outbound.posted" && requiresOutboundResourceIdentifier(meta) && !hasPresentField(meta, "fileId")) {
       missingFields.push("fileId when format=file|image");
     }
-    if (
-      message === "chat.platform.degraded" &&
-      isPermissionRelatedDegradation(meta) &&
-      !hasPresentField(meta, "permission")
-    ) {
+    if (message === "chat.platform.degraded" && isPermissionRelatedDegradation(meta) && !hasPresentField(meta, "permission")) {
       missingFields.push("permission");
     }
-    if (
-      message === "chat.history.recovered" &&
-      readString(record.level) === "warn" &&
-      !hasPresentField(meta, "degradedReason")
-    ) {
+    if (message === "chat.history.recovered" && readString(record.level) === "warn" && !hasPresentField(meta, "degradedReason")) {
       missingFields.push("degradedReason");
     }
-    if (
-      message === "chat.session.resumed" &&
-      isActiveFeishuSessionResumedLog(logs, meta) &&
-      !hasActiveTurnId(meta)
-    ) {
+    if (message === "chat.session.resumed" && isActiveFeishuSessionResumedLog(logs, meta) && !hasActiveTurnId(meta)) {
       missingFields.push("turnId when active");
     }
-    if (
-      message === "chat.turn.stopped" &&
-      readBoolean(meta.hadActiveTurn) === true &&
-      !hasActiveTurnId(meta)
-    ) {
+    if (message === "chat.turn.stopped" && readBoolean(meta.hadActiveTurn) === true && !hasActiveTurnId(meta)) {
       missingFields.push("active turnId");
     }
-    if (
-      message === "chat.handler.failed" &&
-      !FEISHU_HANDLER_NAMES.has(readString(meta.handler) ?? "")
-    ) {
+    if (message === "chat.handler.failed" && !FEISHU_HANDLER_NAMES.has(readString(meta.handler) ?? "")) {
       missingFields.push("handler=message|interactive");
     }
     if (message === "chat.card.callback.received" && hasPresentField(meta, "kind") && !hasKnownCoauthorActionKind(meta)) {
       missingFields.push("kind=coauthor_confirm_all|coauthor_skip");
     }
-    if (
-      message === "chat.card.callback.received" &&
-      hasKnownCoauthorActionKind(meta) &&
-      !hasPositiveNumber(meta, "candidateRevision")
-    ) {
+    if (message === "chat.card.callback.received" && hasKnownCoauthorActionKind(meta) && !hasPositiveNumber(meta, "candidateRevision")) {
       missingFields.push("candidateRevision when co-author action");
     }
-    if (
-      message === "chat.card.callback.received" &&
-      hasPresentField(meta, "candidateRevision") &&
-      !hasKnownCoauthorActionKind(meta)
-    ) {
+    if (message === "chat.card.callback.received" && hasPresentField(meta, "candidateRevision") && !hasKnownCoauthorActionKind(meta)) {
       missingFields.push("kind when co-author action");
     }
-    if (
-      message === "chat.message.accepted" &&
-      requiresRetainedPayloadRef(meta) &&
-      !hasPresentField(meta, "payloadRef")
-    ) {
+    if (message === "chat.message.accepted" && requiresRetainedPayloadRef(meta) && !hasPresentField(meta, "payloadRef")) {
       missingFields.push("payloadRef");
     }
-    if (
-      message === "chat.message.accepted" &&
-      requiresResourceIdentifier(meta) &&
-      !hasPresentField(meta, "fileId")
-    ) {
+    if (message === "chat.message.accepted" && requiresResourceIdentifier(meta) && !hasPresentField(meta, "fileId")) {
       missingFields.push("fileId");
     }
     const expectedPayloadRef = expectedPayloadRefForLog(message, meta);
-    if (
-      expectedPayloadRef &&
-      hasPresentField(meta, "payloadRef") &&
-      readString(meta.payloadRef) !== expectedPayloadRef
-    ) {
+    if (expectedPayloadRef && hasPresentField(meta, "payloadRef") && readString(meta.payloadRef) !== expectedPayloadRef) {
       missingFields.push(`payloadRef=${expectedPayloadRef}`);
     }
     if (missingFields.length > 0) {
@@ -2249,10 +1748,7 @@ function findMissingFeishuLogFields(logs: readonly unknown[]): string[] {
   return missing;
 }
 
-function isActiveFeishuSessionResumedLog(
-  logs: readonly unknown[],
-  resumedMeta: Record<string, unknown>
-): boolean {
+function isActiveFeishuSessionResumedLog(logs: readonly unknown[], resumedMeta: Record<string, unknown>): boolean {
   const messageId = readString(resumedMeta.messageId);
   const sessionKey = readString(resumedMeta.sessionKey);
   if (!messageId) {
@@ -2263,11 +1759,7 @@ function isActiveFeishuSessionResumedLog(
     const record = asRecord(log);
     const message = readString(record.message);
     const meta = asRecord(record.meta);
-    if (
-      readString(meta.platform) !== "feishu" ||
-      readString(meta.messageId) !== messageId ||
-      (sessionKey && readString(meta.sessionKey) !== sessionKey)
-    ) {
+    if (readString(meta.platform) !== "feishu" || readString(meta.messageId) !== messageId || (sessionKey && readString(meta.sessionKey) !== sessionKey)) {
       return false;
     }
 
@@ -2281,8 +1773,7 @@ function isActiveFeishuSessionResumedLog(
 
 function isPermissionRelatedDegradation(meta: Record<string, unknown>): boolean {
   const degradedReason = readString(meta.degradedReason);
-  return degradedReason === "all_message_delivery_unverified" ||
-    degradedReason === "group_message_all_unavailable";
+  return degradedReason === "all_message_delivery_unverified" || degradedReason === "group_message_all_unavailable";
 }
 
 function hasKnownCoauthorActionKind(meta: Record<string, unknown>): boolean {
@@ -2296,10 +1787,7 @@ function hasPositiveNumber(meta: Record<string, unknown>, field: string): boolea
 
 function requiresRetainedPayloadRef(meta: Record<string, unknown>): boolean {
   const msgType = readString(meta.msgType);
-  return msgType === "rich_text" ||
-    msgType === "card" ||
-    msgType === "image" ||
-    msgType === "file";
+  return msgType === "rich_text" || msgType === "card" || msgType === "image" || msgType === "file";
 }
 
 function requiresResourceIdentifier(meta: Record<string, unknown>): boolean {
@@ -2463,19 +1951,15 @@ function hasAcceptedMessageTransition(
     readonly knownSessions?: ReadonlyMap<string, FeishuKnownSession> | undefined;
     readonly excludeStoppedTurnMessages?: boolean | undefined;
     readonly requireActiveTurnId?: boolean | undefined;
-  }
+  },
 ): boolean {
   if (options?.knownSessions) {
-    return findAcceptedMessageTransitionSessionKeys(
-      logs,
-      acceptedRoute,
-      transitionMessages,
-      options.knownSessions,
-      {
+    return (
+      findAcceptedMessageTransitionSessionKeys(logs, acceptedRoute, transitionMessages, options.knownSessions, {
         excludeStoppedTurnMessages: options.excludeStoppedTurnMessages,
-        requireActiveTurnId: options.requireActiveTurnId
-      }
-    ).size > 0;
+        requireActiveTurnId: options.requireActiveTurnId,
+      }).size > 0
+    );
   }
 
   const acceptedMessages = logs
@@ -2484,15 +1968,10 @@ function hasAcceptedMessageTransition(
       meta: asRecord(asRecord(log).meta),
       matchesRoute: logMatches(log, "chat.message.accepted", {
         platform: "feishu",
-        route: acceptedRoute
-      })
+        route: acceptedRoute,
+      }),
     }))
-    .filter(({ matchesRoute, meta }) =>
-      matchesRoute &&
-      Boolean(readString(meta.messageId)) &&
-      !hasMatchingFeishuIgnoredMessage(logs, meta) &&
-      !(options?.excludeStoppedTurnMessages && hasMatchingFeishuStoppedTurnMessage(logs, meta))
-    );
+    .filter(({ matchesRoute, meta }) => matchesRoute && Boolean(readString(meta.messageId)) && !hasMatchingFeishuIgnoredMessage(logs, meta) && !(options?.excludeStoppedTurnMessages && hasMatchingFeishuStoppedTurnMessage(logs, meta)));
   if (acceptedMessages.length === 0) {
     return false;
   }
@@ -2509,25 +1988,15 @@ function hasAcceptedMessageTransition(
       return false;
     }
 
-    const knownSession = options?.knownSessions
-      ? findMatchingKnownSession(options.knownSessions, meta)
-      : undefined;
+    const knownSession = options?.knownSessions ? findMatchingKnownSession(options.knownSessions, meta) : undefined;
     if (options?.knownSessions && !knownSession) {
       return false;
     }
-    if (
-      options?.requireActiveTurnId &&
-      (message === "chat.session.resumed" || message === "chat.turn.steered") &&
-      !hasActiveTurnId(meta)
-    ) {
+    if (options?.requireActiveTurnId && (message === "chat.session.resumed" || message === "chat.turn.steered") && !hasActiveTurnId(meta)) {
       return false;
     }
 
-    return acceptedMessages.some((accepted) =>
-      accepted.index < transitionIndex &&
-      readString(accepted.meta.messageId) === readString(meta.messageId) &&
-      (!knownSession || sessionMatchesLogCoordinates(knownSession, accepted.meta))
-    );
+    return acceptedMessages.some((accepted) => accepted.index < transitionIndex && readString(accepted.meta.messageId) === readString(meta.messageId) && (!knownSession || sessionMatchesLogCoordinates(knownSession, accepted.meta)));
   });
 }
 
@@ -2540,7 +2009,7 @@ function findAcceptedMessageTransitionSessionKeys(
     readonly acceptedMsgType?: string | undefined;
     readonly excludeStoppedTurnMessages?: boolean | undefined;
     readonly requireActiveTurnId?: boolean | undefined;
-  }
+  },
 ): Set<string> {
   const acceptedMessages = logs
     .map((log, index) => ({
@@ -2548,15 +2017,11 @@ function findAcceptedMessageTransitionSessionKeys(
       meta: asRecord(asRecord(log).meta),
       matchesRoute: logMatches(log, "chat.message.accepted", {
         platform: "feishu",
-        route: acceptedRoute
-      })
+        route: acceptedRoute,
+      }),
     }))
-    .filter(({ matchesRoute, meta }) =>
-      matchesRoute &&
-      Boolean(readString(meta.messageId)) &&
-      (!options?.acceptedMsgType || readString(meta.msgType) === options.acceptedMsgType) &&
-      !hasMatchingFeishuIgnoredMessage(logs, meta) &&
-      !(options?.excludeStoppedTurnMessages && hasMatchingFeishuStoppedTurnMessage(logs, meta))
+    .filter(
+      ({ matchesRoute, meta }) => matchesRoute && Boolean(readString(meta.messageId)) && (!options?.acceptedMsgType || readString(meta.msgType) === options.acceptedMsgType) && !hasMatchingFeishuIgnoredMessage(logs, meta) && !(options?.excludeStoppedTurnMessages && hasMatchingFeishuStoppedTurnMessage(logs, meta)),
     );
   const transitionSessionKeys = new Set<string>();
   if (acceptedMessages.length === 0) {
@@ -2576,22 +2041,12 @@ function findAcceptedMessageTransitionSessionKeys(
       continue;
     }
 
-    if (
-      options?.requireActiveTurnId &&
-      (message === "chat.session.resumed" || message === "chat.turn.steered") &&
-      !hasActiveTurnId(meta)
-    ) {
+    if (options?.requireActiveTurnId && (message === "chat.session.resumed" || message === "chat.turn.steered") && !hasActiveTurnId(meta)) {
       continue;
     }
 
     const transitionMessageId = readString(meta.messageId);
-    if (
-      acceptedMessages.some((accepted) =>
-        accepted.index < transitionIndex &&
-        readString(accepted.meta.messageId) === transitionMessageId &&
-        acceptedMessageCanTransitionToKnownSession(acceptedRoute, accepted.meta, knownSession)
-      )
-    ) {
+    if (acceptedMessages.some((accepted) => accepted.index < transitionIndex && readString(accepted.meta.messageId) === transitionMessageId && acceptedMessageCanTransitionToKnownSession(acceptedRoute, accepted.meta, knownSession))) {
       transitionSessionKeys.add(knownSession.key);
     }
   }
@@ -2609,7 +2064,7 @@ function acceptedMessageTransitionEvidence(
     readonly allowedSessionKeys?: ReadonlySet<string> | undefined;
     readonly excludeStoppedTurnMessages?: boolean | undefined;
     readonly requireActiveTurnId?: boolean | undefined;
-  }
+  },
 ): string[] {
   return findAcceptedMessageTransitionEvidenceLogs(logs, acceptedRoute, transitionMessages, knownSessions, options)
     .slice(-6)
@@ -2626,7 +2081,7 @@ function findAcceptedMessageTransitionEvidenceLogs(
     readonly allowedSessionKeys?: ReadonlySet<string> | undefined;
     readonly excludeStoppedTurnMessages?: boolean | undefined;
     readonly requireActiveTurnId?: boolean | undefined;
-  }
+  },
 ): unknown[] {
   if (options?.allowedSessionKeys && options.allowedSessionKeys.size === 0) {
     return [];
@@ -2639,15 +2094,11 @@ function findAcceptedMessageTransitionEvidenceLogs(
       meta: asRecord(asRecord(log).meta),
       matchesRoute: logMatches(log, "chat.message.accepted", {
         platform: "feishu",
-        route: acceptedRoute
-      })
+        route: acceptedRoute,
+      }),
     }))
-    .filter(({ matchesRoute, meta }) =>
-      matchesRoute &&
-      Boolean(readString(meta.messageId)) &&
-      (!options?.acceptedMsgType || readString(meta.msgType) === options.acceptedMsgType) &&
-      !hasMatchingFeishuIgnoredMessage(logs, meta) &&
-      !(options?.excludeStoppedTurnMessages && hasMatchingFeishuStoppedTurnMessage(logs, meta))
+    .filter(
+      ({ matchesRoute, meta }) => matchesRoute && Boolean(readString(meta.messageId)) && (!options?.acceptedMsgType || readString(meta.msgType) === options.acceptedMsgType) && !hasMatchingFeishuIgnoredMessage(logs, meta) && !(options?.excludeStoppedTurnMessages && hasMatchingFeishuStoppedTurnMessage(logs, meta)),
     );
   if (acceptedMessages.length === 0) {
     return [];
@@ -2667,20 +2118,12 @@ function findAcceptedMessageTransitionEvidenceLogs(
       continue;
     }
 
-    if (
-      options?.requireActiveTurnId &&
-      (message === "chat.session.resumed" || message === "chat.turn.steered") &&
-      !hasActiveTurnId(meta)
-    ) {
+    if (options?.requireActiveTurnId && (message === "chat.session.resumed" || message === "chat.turn.steered") && !hasActiveTurnId(meta)) {
       continue;
     }
 
     const transitionMessageId = readString(meta.messageId);
-    const matchingAcceptedMessages = acceptedMessages.filter(({ index: acceptedIndex, meta: accepted }) =>
-      acceptedIndex < transitionIndex &&
-      readString(accepted.messageId) === transitionMessageId &&
-      acceptedMessageCanTransitionToKnownSession(acceptedRoute, accepted, knownSession)
-    );
+    const matchingAcceptedMessages = acceptedMessages.filter(({ index: acceptedIndex, meta: accepted }) => acceptedIndex < transitionIndex && readString(accepted.messageId) === transitionMessageId && acceptedMessageCanTransitionToKnownSession(acceptedRoute, accepted, knownSession));
     if (matchingAcceptedMessages.length === 0) {
       continue;
     }
@@ -2694,11 +2137,7 @@ function findAcceptedMessageTransitionEvidenceLogs(
   return logs.filter((log) => evidenceLogs.has(log));
 }
 
-function acceptedMessageCanTransitionToKnownSession(
-  acceptedRoute: string,
-  accepted: Record<string, unknown>,
-  knownSession: FeishuKnownSession
-): boolean {
+function acceptedMessageCanTransitionToKnownSession(acceptedRoute: string, accepted: Record<string, unknown>, knownSession: FeishuKnownSession): boolean {
   if (sessionMatchesLogCoordinates(knownSession, accepted)) {
     return true;
   }
@@ -2706,10 +2145,7 @@ function acceptedMessageCanTransitionToKnownSession(
   const acceptedConversationId = readString(accepted.conversationId);
   const acceptedRootMessageId = readString(accepted.rootMessageId);
   const acceptedMessageId = readString(accepted.messageId);
-  return acceptedRoute === "group_message" &&
-    acceptedConversationId === knownSession.conversationId &&
-    Boolean(acceptedRootMessageId) &&
-    acceptedRootMessageId === acceptedMessageId;
+  return acceptedRoute === "group_message" && acceptedConversationId === knownSession.conversationId && Boolean(acceptedRootMessageId) && acceptedRootMessageId === acceptedMessageId;
 }
 
 function hasActiveTurnId(meta: Record<string, unknown>): boolean {
@@ -2717,10 +2153,7 @@ function hasActiveTurnId(meta: Record<string, unknown>): boolean {
   return Boolean(turnId && turnId !== "none");
 }
 
-function hasMatchingFeishuStoppedTurnMessage(
-  logs: readonly unknown[],
-  sourceMeta: Record<string, unknown>
-): boolean {
+function hasMatchingFeishuStoppedTurnMessage(logs: readonly unknown[], sourceMeta: Record<string, unknown>): boolean {
   const sourceConversationId = readString(sourceMeta.conversationId);
   const sourceRootMessageId = readString(sourceMeta.rootMessageId);
   const sourceMessageId = readString(sourceMeta.messageId);
@@ -2731,21 +2164,19 @@ function hasMatchingFeishuStoppedTurnMessage(
   return logs.some((log) => {
     const record = asRecord(log);
     const meta = asRecord(record.meta);
-    return readString(record.message) === "chat.turn.stopped" &&
-      readString(meta.platform) === "feishu" &&
-      readString(meta.conversationId) === sourceConversationId &&
-      (!sourceRootMessageId || readString(meta.rootMessageId) === sourceRootMessageId) &&
-      readString(meta.messageId) === sourceMessageId;
+    return readString(record.message) === "chat.turn.stopped" && readString(meta.platform) === "feishu" && readString(meta.conversationId) === sourceConversationId && (!sourceRootMessageId || readString(meta.rootMessageId) === sourceRootMessageId) && readString(meta.messageId) === sourceMessageId;
   });
 }
 
 function hasFeishuPrivateChatIgnoredWithoutSession(logs: readonly unknown[], sessions: readonly unknown[]): boolean {
   const ignoredConversationIds = logs
-    .filter((log) => logMatches(log, "chat.message.ignored", {
-      platform: "feishu",
-      conversationKind: "direct",
-      ignoredReason: "ignored_private_chat"
-    }))
+    .filter((log) =>
+      logMatches(log, "chat.message.ignored", {
+        platform: "feishu",
+        conversationKind: "direct",
+        ignoredReason: "ignored_private_chat",
+      }),
+    )
     .map((log) => readString(asRecord(asRecord(log).meta).conversationId))
     .filter((conversationId): conversationId is string => Boolean(conversationId));
   if (ignoredConversationIds.length === 0) {
@@ -2757,7 +2188,7 @@ function hasFeishuPrivateChatIgnoredWithoutSession(logs: readonly unknown[], ses
       .map((session) => asRecord(session))
       .filter((session) => readString(session.platform) === "feishu")
       .map((session) => readString(session.conversationId))
-      .filter((conversationId): conversationId is string => Boolean(conversationId))
+      .filter((conversationId): conversationId is string => Boolean(conversationId)),
   );
 
   return ignoredConversationIds.every((conversationId) => !feishuSessionConversationIds.has(conversationId));
@@ -2779,7 +2210,7 @@ function findFeishuPrivateChatIgnoredWithoutSessionLogs(logs: readonly unknown[]
       .map((session) => asRecord(session))
       .filter((session) => readString(session.platform) === "feishu")
       .map((session) => readString(session.conversationId))
-      .filter((conversationId): conversationId is string => Boolean(conversationId))
+      .filter((conversationId): conversationId is string => Boolean(conversationId)),
   );
 
   return logs.filter((log) => {
@@ -2790,11 +2221,7 @@ function findFeishuPrivateChatIgnoredWithoutSessionLogs(logs: readonly unknown[]
       return false;
     }
 
-    return readString(record.message) === "chat.message.ignored" &&
-      readString(meta.platform) === "feishu" &&
-      readString(meta.conversationKind) === "direct" &&
-      readString(meta.ignoredReason) === "ignored_private_chat" &&
-      !feishuSessionConversationIds.has(conversationId);
+    return readString(record.message) === "chat.message.ignored" && readString(meta.platform) === "feishu" && readString(meta.conversationKind) === "direct" && readString(meta.ignoredReason) === "ignored_private_chat" && !feishuSessionConversationIds.has(conversationId);
   });
 }
 
@@ -2828,10 +2255,7 @@ function findFeishuSelfSenderIgnoredBeforeDispatchLogs(logs: readonly unknown[])
   });
 }
 
-function hasMatchingFeishuAcceptedOrDispatchMessage(
-  logs: readonly unknown[],
-  ignoredMeta: Record<string, unknown>
-): boolean {
+function hasMatchingFeishuAcceptedOrDispatchMessage(logs: readonly unknown[], ignoredMeta: Record<string, unknown>): boolean {
   const ignoredConversationId = readString(ignoredMeta.conversationId);
   const ignoredMessageId = readString(ignoredMeta.messageId);
   if (!ignoredConversationId || !ignoredMessageId) {
@@ -2842,10 +2266,7 @@ function hasMatchingFeishuAcceptedOrDispatchMessage(
     const candidateRecord = asRecord(candidate);
     const candidateMessage = readString(candidateRecord.message);
     const candidateMeta = asRecord(candidateRecord.meta);
-    if (
-      readString(candidateMeta.platform) !== "feishu" ||
-      readString(candidateMeta.conversationId) !== ignoredConversationId
-    ) {
+    if (readString(candidateMeta.platform) !== "feishu" || readString(candidateMeta.conversationId) !== ignoredConversationId) {
       return false;
     }
 
@@ -2853,15 +2274,8 @@ function hasMatchingFeishuAcceptedOrDispatchMessage(
       return readString(candidateMeta.messageId) === ignoredMessageId;
     }
 
-    if (
-      candidateMessage === "chat.session.created" ||
-      candidateMessage === "chat.session.resumed" ||
-      candidateMessage === "chat.turn.started" ||
-      candidateMessage === "chat.turn.steered" ||
-      candidateMessage === "chat.turn.stopped"
-    ) {
-      return readString(candidateMeta.messageId) === ignoredMessageId ||
-        readString(candidateMeta.batchId) === ignoredMessageId;
+    if (candidateMessage === "chat.session.created" || candidateMessage === "chat.session.resumed" || candidateMessage === "chat.turn.started" || candidateMessage === "chat.turn.steered" || candidateMessage === "chat.turn.stopped") {
+      return readString(candidateMeta.messageId) === ignoredMessageId || readString(candidateMeta.batchId) === ignoredMessageId;
     }
 
     return false;
@@ -2887,7 +2301,7 @@ function feishuSessionMap(sessions: readonly unknown[]): ReadonlyMap<string, Fei
       knownSessions.set(key, {
         key,
         conversationId: readString(record.conversationId),
-        rootMessageId: readString(record.rootMessageId)
+        rootMessageId: readString(record.rootMessageId),
       });
     }
   }
@@ -2895,10 +2309,7 @@ function feishuSessionMap(sessions: readonly unknown[]): ReadonlyMap<string, Fei
   return knownSessions;
 }
 
-function findMatchingKnownSession(
-  knownSessions: ReadonlyMap<string, FeishuKnownSession>,
-  meta: Record<string, unknown>
-): FeishuKnownSession | undefined {
+function findMatchingKnownSession(knownSessions: ReadonlyMap<string, FeishuKnownSession>, meta: Record<string, unknown>): FeishuKnownSession | undefined {
   const sessionKey = readString(meta.sessionKey);
   if (!sessionKey) {
     return undefined;
@@ -2912,10 +2323,7 @@ function findMatchingKnownSession(
   return knownSession;
 }
 
-function findMatchingKnownSessionWithRequiredCoordinates(
-  knownSessions: ReadonlyMap<string, FeishuKnownSession>,
-  meta: Record<string, unknown>
-): FeishuKnownSession | undefined {
+function findMatchingKnownSessionWithRequiredCoordinates(knownSessions: ReadonlyMap<string, FeishuKnownSession>, meta: Record<string, unknown>): FeishuKnownSession | undefined {
   if (!readString(meta.conversationId) || !readString(meta.rootMessageId)) {
     return undefined;
   }
@@ -2923,10 +2331,7 @@ function findMatchingKnownSessionWithRequiredCoordinates(
   return findMatchingKnownSession(knownSessions, meta);
 }
 
-function sessionMatchesLogCoordinates(
-  knownSession: FeishuKnownSession,
-  meta: Record<string, unknown>
-): boolean {
+function sessionMatchesLogCoordinates(knownSession: FeishuKnownSession, meta: Record<string, unknown>): boolean {
   const conversationId = readString(meta.conversationId);
   if (conversationId && knownSession.conversationId !== conversationId) {
     return false;
@@ -2940,45 +2345,27 @@ function sessionMatchesLogCoordinates(
   return true;
 }
 
-function coordinatesMatchKnownFeishuSession(
-  knownSessions: ReadonlyMap<string, FeishuKnownSession>,
-  meta: Record<string, unknown>
-): boolean {
+function coordinatesMatchKnownFeishuSession(knownSessions: ReadonlyMap<string, FeishuKnownSession>, meta: Record<string, unknown>): boolean {
   const conversationId = readString(meta.conversationId);
   const rootMessageId = readString(meta.rootMessageId);
   if (!conversationId || !rootMessageId) {
     return false;
   }
 
-  return [...knownSessions.values()].some((session) =>
-    session.conversationId === conversationId &&
-    session.rootMessageId === rootMessageId
-  );
+  return [...knownSessions.values()].some((session) => session.conversationId === conversationId && session.rootMessageId === rootMessageId);
 }
 
-function hasFeishuStoppedActiveTurn(
-  logs: readonly unknown[],
-  knownSessions: ReadonlyMap<string, FeishuKnownSession>,
-  allowedSessionKeys?: ReadonlySet<string> | undefined
-): boolean {
+function hasFeishuStoppedActiveTurn(logs: readonly unknown[], knownSessions: ReadonlyMap<string, FeishuKnownSession>, allowedSessionKeys?: ReadonlySet<string> | undefined): boolean {
   return feishuStoppedActiveTurnEvidence(logs, knownSessions, allowedSessionKeys).length > 0;
 }
 
-function feishuStoppedActiveTurnEvidence(
-  logs: readonly unknown[],
-  knownSessions: ReadonlyMap<string, FeishuKnownSession>,
-  allowedSessionKeys?: ReadonlySet<string> | undefined
-): string[] {
+function feishuStoppedActiveTurnEvidence(logs: readonly unknown[], knownSessions: ReadonlyMap<string, FeishuKnownSession>, allowedSessionKeys?: ReadonlySet<string> | undefined): string[] {
   return findFeishuStoppedActiveTurnEvidenceLogs(logs, knownSessions, allowedSessionKeys)
     .slice(-6)
     .map((log) => summarizeLog(log));
 }
 
-function findFeishuStoppedActiveTurnEvidenceLogs(
-  logs: readonly unknown[],
-  knownSessions: ReadonlyMap<string, FeishuKnownSession>,
-  allowedSessionKeys?: ReadonlySet<string> | undefined
-): unknown[] {
+function findFeishuStoppedActiveTurnEvidenceLogs(logs: readonly unknown[], knownSessions: ReadonlyMap<string, FeishuKnownSession>, allowedSessionKeys?: ReadonlySet<string> | undefined): unknown[] {
   if (allowedSessionKeys && allowedSessionKeys.size === 0) {
     return [];
   }
@@ -2993,9 +2380,7 @@ function findFeishuStoppedActiveTurnEvidenceLogs(
     const record = asRecord(log);
     const meta = asRecord(record.meta);
     const message = readString(record.message);
-    const knownSession = message === "chat.session.resumed"
-      ? findMatchingKnownSession(knownSessions, meta)
-      : undefined;
+    const knownSession = message === "chat.session.resumed" ? findMatchingKnownSession(knownSessions, meta) : undefined;
     const messageId = readString(meta.messageId);
     if (!knownSession || !messageId) {
       continue;
@@ -3005,7 +2390,7 @@ function findFeishuStoppedActiveTurnEvidenceLogs(
       log,
       index,
       messageId,
-      sessionKey: knownSession.key
+      sessionKey: knownSession.key,
     });
   }
 
@@ -3017,10 +2402,7 @@ function findFeishuStoppedActiveTurnEvidenceLogs(
   }> = [];
   for (const [index, log] of logs.entries()) {
     const meta = asRecord(asRecord(log).meta);
-    if (
-      !logMatches(log, "chat.message.accepted", { platform: "feishu" }) ||
-      hasMatchingFeishuIgnoredMessage(logs, meta)
-    ) {
+    if (!logMatches(log, "chat.message.accepted", { platform: "feishu" }) || hasMatchingFeishuIgnoredMessage(logs, meta)) {
       continue;
     }
 
@@ -3032,16 +2414,12 @@ function findFeishuStoppedActiveTurnEvidenceLogs(
     }
 
     for (const session of knownSessions.values()) {
-      if (
-        session.conversationId === conversationId &&
-        session.rootMessageId === rootMessageId &&
-        (!allowedSessionKeys || allowedSessionKeys.has(session.key))
-      ) {
+      if (session.conversationId === conversationId && session.rootMessageId === rootMessageId && (!allowedSessionKeys || allowedSessionKeys.has(session.key))) {
         acceptedEntries.push({
           log,
           index,
           messageId,
-          sessionKey: session.key
+          sessionKey: session.key,
         });
       }
     }
@@ -3053,36 +2431,17 @@ function findFeishuStoppedActiveTurnEvidenceLogs(
     const meta = asRecord(record.meta);
     const messageId = readString(meta.messageId);
     const knownSession = findMatchingKnownSession(knownSessions, meta);
-    if (
-      readString(record.message) !== "chat.turn.stopped" ||
-      readString(meta.platform) !== "feishu" ||
-      !messageId ||
-      readBoolean(meta.hadActiveTurn) !== true ||
-      !hasActiveTurnId(meta) ||
-      !knownSession ||
-      (allowedSessionKeys && !allowedSessionKeys.has(knownSession.key))
-    ) {
+    if (readString(record.message) !== "chat.turn.stopped" || readString(meta.platform) !== "feishu" || !messageId || readBoolean(meta.hadActiveTurn) !== true || !hasActiveTurnId(meta) || !knownSession || (allowedSessionKeys && !allowedSessionKeys.has(knownSession.key))) {
       continue;
     }
 
-    const matchingAcceptedEntries = acceptedEntries.filter((entry) =>
-      entry.messageId === messageId &&
-      entry.sessionKey === knownSession.key &&
-      entry.index < stoppedIndex
-    );
-    const matchingTransitionEntries = transitionEntries.filter((entry) =>
-      entry.messageId === messageId &&
-      entry.sessionKey === knownSession.key &&
-      entry.index < stoppedIndex &&
-      matchingAcceptedEntries.some((accepted) => accepted.index < entry.index)
-    );
+    const matchingAcceptedEntries = acceptedEntries.filter((entry) => entry.messageId === messageId && entry.sessionKey === knownSession.key && entry.index < stoppedIndex);
+    const matchingTransitionEntries = transitionEntries.filter((entry) => entry.messageId === messageId && entry.sessionKey === knownSession.key && entry.index < stoppedIndex && matchingAcceptedEntries.some((accepted) => accepted.index < entry.index));
     if (matchingAcceptedEntries.length === 0 || matchingTransitionEntries.length === 0) {
       continue;
     }
 
-    const acceptedEvidence = matchingAcceptedEntries.filter((accepted) =>
-      matchingTransitionEntries.some((transition) => accepted.index < transition.index)
-    );
+    const acceptedEvidence = matchingAcceptedEntries.filter((accepted) => matchingTransitionEntries.some((transition) => accepted.index < transition.index));
     for (const entry of acceptedEvidence) {
       evidenceLogs.add(entry.log);
     }
@@ -3105,28 +2464,18 @@ function hasOverlappingSessionKey(left: ReadonlySet<string>, right: ReadonlySet<
   return false;
 }
 
-function hasFeishuDedupedAcceptedMessage(
-  logs: readonly unknown[],
-  knownSessions: ReadonlyMap<string, FeishuKnownSession>
-): boolean {
+function hasFeishuDedupedAcceptedMessage(logs: readonly unknown[], knownSessions: ReadonlyMap<string, FeishuKnownSession>): boolean {
   return logs.some((log) => isFeishuDedupedAcceptedMessageEvidence(logs, log, knownSessions));
 }
 
-function feishuDedupedAcceptedMessageEvidence(
-  logs: readonly unknown[],
-  knownSessions: ReadonlyMap<string, FeishuKnownSession>
-): string[] {
+function feishuDedupedAcceptedMessageEvidence(logs: readonly unknown[], knownSessions: ReadonlyMap<string, FeishuKnownSession>): string[] {
   return logs
     .filter((log) => isFeishuDedupedAcceptedMessageEvidence(logs, log, knownSessions))
     .slice(-3)
     .map((log) => summarizeLog(log));
 }
 
-function isFeishuDedupedAcceptedMessageEvidence(
-  logs: readonly unknown[],
-  log: unknown,
-  knownSessions: ReadonlyMap<string, FeishuKnownSession>
-): boolean {
+function isFeishuDedupedAcceptedMessageEvidence(logs: readonly unknown[], log: unknown, knownSessions: ReadonlyMap<string, FeishuKnownSession>): boolean {
   const acceptedMessages = deliveredFeishuAcceptedMessageMetas(logs, knownSessions);
   if (acceptedMessages.length === 0) {
     return false;
@@ -3134,10 +2483,7 @@ function isFeishuDedupedAcceptedMessageEvidence(
 
   const record = asRecord(log);
   const meta = asRecord(record.meta);
-  if (
-    readString(record.message) !== "chat.message.deduped" ||
-    readString(meta.platform) !== "feishu"
-  ) {
+  if (readString(record.message) !== "chat.message.deduped" || readString(meta.platform) !== "feishu") {
     return false;
   }
 
@@ -3145,33 +2491,19 @@ function isFeishuDedupedAcceptedMessageEvidence(
     return false;
   }
 
-  return acceptedMessages.some((accepted) =>
-    readString(accepted.messageId) === readString(meta.messageId) &&
-    readString(accepted.conversationId) === readString(meta.conversationId) &&
-    coordinatesMatchWhenPresent(accepted, meta)
-  );
+  return acceptedMessages.some((accepted) => readString(accepted.messageId) === readString(meta.messageId) && readString(accepted.conversationId) === readString(meta.conversationId) && coordinatesMatchWhenPresent(accepted, meta));
 }
 
-function hasFeishuAcceptedOrDispatchAfterDeduped(
-  logs: readonly unknown[],
-  dedupedLog: unknown,
-  dedupedMeta: Record<string, unknown>
-): boolean {
+function hasFeishuAcceptedOrDispatchAfterDeduped(logs: readonly unknown[], dedupedLog: unknown, dedupedMeta: Record<string, unknown>): boolean {
   const dedupedIndex = logs.indexOf(dedupedLog);
   if (dedupedIndex < 0) {
     return true;
   }
 
-  return logs.some((candidate, index) =>
-    index > dedupedIndex &&
-    isMatchingFeishuAcceptedOrDispatchMessage(candidate, dedupedMeta)
-  );
+  return logs.some((candidate, index) => index > dedupedIndex && isMatchingFeishuAcceptedOrDispatchMessage(candidate, dedupedMeta));
 }
 
-function isMatchingFeishuAcceptedOrDispatchMessage(
-  log: unknown,
-  sourceMeta: Record<string, unknown>
-): boolean {
+function isMatchingFeishuAcceptedOrDispatchMessage(log: unknown, sourceMeta: Record<string, unknown>): boolean {
   const sourceConversationId = readString(sourceMeta.conversationId);
   const sourceMessageId = readString(sourceMeta.messageId);
   if (!sourceConversationId || !sourceMessageId) {
@@ -3181,28 +2513,14 @@ function isMatchingFeishuAcceptedOrDispatchMessage(
   const record = asRecord(log);
   const meta = asRecord(record.meta);
   const message = readString(record.message);
-  if (
-    readString(meta.platform) !== "feishu" ||
-    readString(meta.conversationId) !== sourceConversationId ||
-    ![
-      "chat.message.accepted",
-      "chat.session.created",
-      "chat.session.resumed",
-      "chat.turn.started",
-      "chat.turn.steered"
-    ].includes(message ?? "")
-  ) {
+  if (readString(meta.platform) !== "feishu" || readString(meta.conversationId) !== sourceConversationId || !["chat.message.accepted", "chat.session.created", "chat.session.resumed", "chat.turn.started", "chat.turn.steered"].includes(message ?? "")) {
     return false;
   }
 
-  return readString(meta.messageId) === sourceMessageId ||
-    readString(meta.batchId) === sourceMessageId;
+  return readString(meta.messageId) === sourceMessageId || readString(meta.batchId) === sourceMessageId;
 }
 
-function deliveredFeishuAcceptedMessageMetas(
-  logs: readonly unknown[],
-  knownSessions: ReadonlyMap<string, FeishuKnownSession>
-): Record<string, unknown>[] {
+function deliveredFeishuAcceptedMessageMetas(logs: readonly unknown[], knownSessions: ReadonlyMap<string, FeishuKnownSession>): Record<string, unknown>[] {
   return logs
     .filter((log) => isDeliveredFeishuAcceptedMessageEvidence(logs, log, knownSessions))
     .map((log) => asRecord(asRecord(log).meta))
@@ -3214,19 +2532,11 @@ function coordinatesMatchWhenPresent(left: Record<string, unknown>, right: Recor
   return !rootMessageId || readString(left.rootMessageId) === rootMessageId;
 }
 
-function hasFeishuTextReplyForKnownSession(
-  logs: readonly unknown[],
-  knownSessions: ReadonlyMap<string, FeishuKnownSession>,
-  allowedSessionKeys?: ReadonlySet<string> | undefined
-): boolean {
+function hasFeishuTextReplyForKnownSession(logs: readonly unknown[], knownSessions: ReadonlyMap<string, FeishuKnownSession>, allowedSessionKeys?: ReadonlySet<string> | undefined): boolean {
   return feishuTextReplyEvidence(logs, knownSessions, allowedSessionKeys).length > 0;
 }
 
-function feishuTextReplyEvidence(
-  logs: readonly unknown[],
-  knownSessions: ReadonlyMap<string, FeishuKnownSession>,
-  allowedSessionKeys?: ReadonlySet<string> | undefined
-): string[] {
+function feishuTextReplyEvidence(logs: readonly unknown[], knownSessions: ReadonlyMap<string, FeishuKnownSession>, allowedSessionKeys?: ReadonlySet<string> | undefined): string[] {
   if (allowedSessionKeys && allowedSessionKeys.size === 0) {
     return [];
   }
@@ -3237,11 +2547,7 @@ function feishuTextReplyEvidence(
     .map((log) => summarizeLog(log));
 }
 
-function findFeishuTextReplySessionKeys(
-  logs: readonly unknown[],
-  knownSessions: ReadonlyMap<string, FeishuKnownSession>,
-  allowedSessionKeys?: ReadonlySet<string> | undefined
-): Set<string> {
+function findFeishuTextReplySessionKeys(logs: readonly unknown[], knownSessions: ReadonlyMap<string, FeishuKnownSession>, allowedSessionKeys?: ReadonlySet<string> | undefined): Set<string> {
   const sessionKeys = new Set<string>();
   if (allowedSessionKeys && allowedSessionKeys.size === 0) {
     return sessionKeys;
@@ -3257,57 +2563,30 @@ function findFeishuTextReplySessionKeys(
   return sessionKeys;
 }
 
-function isFeishuTextReplyEvidence(
-  log: unknown,
-  knownSessions: ReadonlyMap<string, FeishuKnownSession>,
-  allowedSessionKeys?: ReadonlySet<string> | undefined
-): boolean {
+function isFeishuTextReplyEvidence(log: unknown, knownSessions: ReadonlyMap<string, FeishuKnownSession>, allowedSessionKeys?: ReadonlySet<string> | undefined): boolean {
   return Boolean(findFeishuTextReplyKnownSession(log, knownSessions, allowedSessionKeys));
 }
 
-function findFeishuTextReplyKnownSession(
-  log: unknown,
-  knownSessions: ReadonlyMap<string, FeishuKnownSession>,
-  allowedSessionKeys?: ReadonlySet<string> | undefined
-): FeishuKnownSession | undefined {
+function findFeishuTextReplyKnownSession(log: unknown, knownSessions: ReadonlyMap<string, FeishuKnownSession>, allowedSessionKeys?: ReadonlySet<string> | undefined): FeishuKnownSession | undefined {
   const record = asRecord(log);
   const meta = asRecord(record.meta);
   const knownSession = findMatchingKnownSession(knownSessions, meta);
-  if (
-    readString(record.message) !== "chat.outbound.posted" ||
-    readString(meta.platform) !== "feishu" ||
-    readString(meta.format) !== "text" ||
-    !knownSession ||
-    (allowedSessionKeys && !allowedSessionKeys.has(knownSession.key))
-  ) {
+  if (readString(record.message) !== "chat.outbound.posted" || readString(meta.platform) !== "feishu" || readString(meta.format) !== "text" || !knownSession || (allowedSessionKeys && !allowedSessionKeys.has(knownSession.key))) {
     return undefined;
   }
 
   return knownSession;
 }
 
-function hasFeishuCompletedTurnForTextReply(
-  logs: readonly unknown[],
-  knownSessions: ReadonlyMap<string, FeishuKnownSession>,
-  allowedSessionKeys?: ReadonlySet<string> | undefined
-): boolean {
+function hasFeishuCompletedTurnForTextReply(logs: readonly unknown[], knownSessions: ReadonlyMap<string, FeishuKnownSession>, allowedSessionKeys?: ReadonlySet<string> | undefined): boolean {
   return findFeishuCompletedTurnForTextReplyEvidenceLogs(logs, knownSessions, allowedSessionKeys).length > 0;
 }
 
-function feishuCompletedTurnForTextReplyEvidence(
-  logs: readonly unknown[],
-  knownSessions: ReadonlyMap<string, FeishuKnownSession>,
-  allowedSessionKeys?: ReadonlySet<string> | undefined
-): string[] {
-  return findFeishuCompletedTurnForTextReplyEvidenceLogs(logs, knownSessions, allowedSessionKeys)
-    .map((log) => summarizeLog(log));
+function feishuCompletedTurnForTextReplyEvidence(logs: readonly unknown[], knownSessions: ReadonlyMap<string, FeishuKnownSession>, allowedSessionKeys?: ReadonlySet<string> | undefined): string[] {
+  return findFeishuCompletedTurnForTextReplyEvidenceLogs(logs, knownSessions, allowedSessionKeys).map((log) => summarizeLog(log));
 }
 
-function findFeishuCompletedTurnForTextReplyEvidenceLogs(
-  logs: readonly unknown[],
-  knownSessions: ReadonlyMap<string, FeishuKnownSession>,
-  allowedSessionKeys?: ReadonlySet<string> | undefined
-): unknown[] {
+function findFeishuCompletedTurnForTextReplyEvidenceLogs(logs: readonly unknown[], knownSessions: ReadonlyMap<string, FeishuKnownSession>, allowedSessionKeys?: ReadonlySet<string> | undefined): unknown[] {
   if (allowedSessionKeys && allowedSessionKeys.size === 0) {
     return [];
   }
@@ -3341,35 +2620,24 @@ function findFeishuCompletedTurnForTextReplyEvidenceLogs(
       replies.push({
         log,
         index,
-        sessionKey: replySession.key
+        sessionKey: replySession.key,
       });
     }
 
-    if (
-      message === "chat.turn.completed" &&
-      readString(meta.platform) === "feishu" &&
-      knownSession &&
-      (!allowedSessionKeys || allowedSessionKeys.has(knownSession.key))
-    ) {
+    if (message === "chat.turn.completed" && readString(meta.platform) === "feishu" && knownSession && (!allowedSessionKeys || allowedSessionKeys.has(knownSession.key))) {
       const turnKey = feishuTurnCorrelationKey(meta);
       if (turnKey) {
         completions.push({
           log,
           index,
           sessionKey: knownSession.key,
-          turnKey
+          turnKey,
         });
       }
       continue;
     }
 
-    if (
-      (message === "chat.turn.started" || message === "chat.turn.steered") &&
-      readString(meta.platform) === "feishu" &&
-      readString(meta.source) !== "history_recovery" &&
-      knownSession &&
-      (!allowedSessionKeys || allowedSessionKeys.has(knownSession.key))
-    ) {
+    if ((message === "chat.turn.started" || message === "chat.turn.steered") && readString(meta.platform) === "feishu" && readString(meta.source) !== "history_recovery" && knownSession && (!allowedSessionKeys || allowedSessionKeys.has(knownSession.key))) {
       const key = feishuTurnCorrelationKey(meta);
       if (!key) {
         continue;
@@ -3378,27 +2646,19 @@ function findFeishuCompletedTurnForTextReplyEvidenceLogs(
         log,
         index,
         sessionKey: knownSession.key,
-        turnKey: key
+        turnKey: key,
       });
     }
   }
 
   const evidenceLogs = new Set<unknown>();
   for (const completion of completions) {
-    const started = turnStarts.find((candidate) =>
-      candidate.turnKey === completion.turnKey &&
-      candidate.sessionKey === completion.sessionKey &&
-      candidate.index < completion.index
-    );
+    const started = turnStarts.find((candidate) => candidate.turnKey === completion.turnKey && candidate.sessionKey === completion.sessionKey && candidate.index < completion.index);
     if (!started) {
       continue;
     }
 
-    const reply = replies.find((candidate) =>
-      candidate.sessionKey === completion.sessionKey &&
-      started.index < candidate.index &&
-      candidate.index < completion.index
-    );
+    const reply = replies.find((candidate) => candidate.sessionKey === completion.sessionKey && started.index < candidate.index && candidate.index < completion.index);
     if (!reply) {
       continue;
     }
@@ -3422,10 +2682,7 @@ function feishuTurnCorrelationKey(meta: Record<string, unknown>): string {
   return `${sessionKey}\u0000${turnId}\u0000${batchId}`;
 }
 
-function hasFeishuRecoveredHistory(
-  logs: readonly unknown[],
-  knownSessions: ReadonlyMap<string, FeishuKnownSession>
-): boolean {
+function hasFeishuRecoveredHistory(logs: readonly unknown[], knownSessions: ReadonlyMap<string, FeishuKnownSession>): boolean {
   const recoveredSessionKeys = findFeishuRecoveredHistorySessionKeys(logs, knownSessions);
   if (recoveredSessionKeys.size === 0) {
     return false;
@@ -3434,10 +2691,7 @@ function hasFeishuRecoveredHistory(
   return logs.some((log) => isFeishuRecoveredHistoryTurnEvidence(log, knownSessions, recoveredSessionKeys));
 }
 
-function feishuRecoveredHistoryEvidence(
-  logs: readonly unknown[],
-  knownSessions: ReadonlyMap<string, FeishuKnownSession>
-): string[] {
+function feishuRecoveredHistoryEvidence(logs: readonly unknown[], knownSessions: ReadonlyMap<string, FeishuKnownSession>): string[] {
   const recoveredSessionKeys = findFeishuRecoveredHistorySessionKeys(logs, knownSessions);
   if (recoveredSessionKeys.size === 0) {
     return [];
@@ -3449,21 +2703,11 @@ function feishuRecoveredHistoryEvidence(
     .map((log) => summarizeLog(log));
 }
 
-function findFeishuRecoveredHistorySessionKeys(
-  logs: readonly unknown[],
-  knownSessions: ReadonlyMap<string, FeishuKnownSession>
-): Set<string> {
-  return findFeishuKnownSessionLogKeys(logs, "chat.history.recovered", {}, knownSessions, (meta) =>
-    (readNumber(meta.recoveredCount) ?? 0) > 0 &&
-    Boolean(readString(meta.messageCursor))
-  );
+function findFeishuRecoveredHistorySessionKeys(logs: readonly unknown[], knownSessions: ReadonlyMap<string, FeishuKnownSession>): Set<string> {
+  return findFeishuKnownSessionLogKeys(logs, "chat.history.recovered", {}, knownSessions, (meta) => (readNumber(meta.recoveredCount) ?? 0) > 0 && Boolean(readString(meta.messageCursor)));
 }
 
-function isFeishuRecoveredHistoryEvidence(
-  log: unknown,
-  knownSessions: ReadonlyMap<string, FeishuKnownSession>,
-  recoveredSessionKeys: ReadonlySet<string>
-): boolean {
+function isFeishuRecoveredHistoryEvidence(log: unknown, knownSessions: ReadonlyMap<string, FeishuKnownSession>, recoveredSessionKeys: ReadonlySet<string>): boolean {
   const record = asRecord(log);
   const meta = asRecord(record.meta);
   const message = readString(record.message);
@@ -3475,113 +2719,48 @@ function isFeishuRecoveredHistoryEvidence(
   return isFeishuRecoveredHistoryTurnEvidence(log, knownSessions, recoveredSessionKeys);
 }
 
-function isFeishuRecoveredHistoryTurnEvidence(
-  log: unknown,
-  knownSessions: ReadonlyMap<string, FeishuKnownSession>,
-  recoveredSessionKeys: ReadonlySet<string>
-): boolean {
+function isFeishuRecoveredHistoryTurnEvidence(log: unknown, knownSessions: ReadonlyMap<string, FeishuKnownSession>, recoveredSessionKeys: ReadonlySet<string>): boolean {
   const record = asRecord(log);
   const meta = asRecord(record.meta);
   const message = readString(record.message);
-  return (message === "chat.turn.steered" || message === "chat.turn.started") &&
-    readString(meta.platform) === "feishu" &&
-    readString(meta.source) === "history_recovery" &&
-    Boolean(findMatchingKnownSession(knownSessions, meta)) &&
-    recoveredSessionKeys.has(readString(meta.sessionKey) ?? "");
+  return (message === "chat.turn.steered" || message === "chat.turn.started") && readString(meta.platform) === "feishu" && readString(meta.source) === "history_recovery" && Boolean(findMatchingKnownSession(knownSessions, meta)) && recoveredSessionKeys.has(readString(meta.sessionKey) ?? "");
 }
 
-function hasFeishuCoauthorConfirmedFromCardCallback(
-  logs: readonly unknown[],
-  knownSessions: ReadonlyMap<string, FeishuKnownSession>,
-  allowedSessionKeys: ReadonlySet<string>
-): boolean {
-  const outboundCardMessageIndexesBySession = findFeishuOutboundCardMessageIndexesBySession(
-    logs,
-    knownSessions,
-    allowedSessionKeys
-  );
-  const callbackRevisionIndexesBySession = findFeishuCoauthorCallbackRevisionIndexes(
-    logs,
-    knownSessions,
-    allowedSessionKeys,
-    outboundCardMessageIndexesBySession
-  );
+function hasFeishuCoauthorConfirmedFromCardCallback(logs: readonly unknown[], knownSessions: ReadonlyMap<string, FeishuKnownSession>, allowedSessionKeys: ReadonlySet<string>): boolean {
+  const outboundCardMessageIndexesBySession = findFeishuOutboundCardMessageIndexesBySession(logs, knownSessions, allowedSessionKeys);
+  const callbackRevisionIndexesBySession = findFeishuCoauthorCallbackRevisionIndexes(logs, knownSessions, allowedSessionKeys, outboundCardMessageIndexesBySession);
   if (callbackRevisionIndexesBySession.size === 0) {
     return false;
   }
 
-  return hasFeishuRevisionEntries(
-    findFeishuCoauthorConfirmedRevisionIndexes(logs, knownSessions, callbackRevisionIndexesBySession)
-  );
+  return hasFeishuRevisionEntries(findFeishuCoauthorConfirmedRevisionIndexes(logs, knownSessions, callbackRevisionIndexesBySession));
 }
 
-function feishuCoauthorCardEvidence(
-  logs: readonly unknown[],
-  knownSessions: ReadonlyMap<string, FeishuKnownSession>,
-  allowedSessionKeys: ReadonlySet<string>
-): string[] {
-  const outboundCardMessageIndexesBySession = findFeishuOutboundCardMessageIndexesBySession(
-    logs,
-    knownSessions,
-    allowedSessionKeys
-  );
-  const callbackRevisionIndexesBySession = findFeishuCoauthorCallbackRevisionIndexes(
-    logs,
-    knownSessions,
-    allowedSessionKeys,
-    outboundCardMessageIndexesBySession
-  );
-  const confirmedRevisionIndexesBySession = findFeishuCoauthorConfirmedRevisionIndexes(
-    logs,
-    knownSessions,
-    callbackRevisionIndexesBySession
-  );
+function feishuCoauthorCardEvidence(logs: readonly unknown[], knownSessions: ReadonlyMap<string, FeishuKnownSession>, allowedSessionKeys: ReadonlySet<string>): string[] {
+  const outboundCardMessageIndexesBySession = findFeishuOutboundCardMessageIndexesBySession(logs, knownSessions, allowedSessionKeys);
+  const callbackRevisionIndexesBySession = findFeishuCoauthorCallbackRevisionIndexes(logs, knownSessions, allowedSessionKeys, outboundCardMessageIndexesBySession);
+  const confirmedRevisionIndexesBySession = findFeishuCoauthorConfirmedRevisionIndexes(logs, knownSessions, callbackRevisionIndexesBySession);
   if (!hasFeishuRevisionEntries(confirmedRevisionIndexesBySession)) {
-    return [
-      `requiredSession=group_at outboundCardSessionCount=${outboundCardMessageIndexesBySession.size}`,
-      `outboundCardMessageCount=${countFeishuOutboundCardMessages(outboundCardMessageIndexesBySession)}`
-    ];
+    return [`requiredSession=group_at outboundCardSessionCount=${outboundCardMessageIndexesBySession.size}`, `outboundCardMessageCount=${countFeishuOutboundCardMessages(outboundCardMessageIndexesBySession)}`];
   }
 
   const observed = logs
     .filter((log, index) => {
-      const callback = readFeishuCoauthorCallbackRevision(
-        log,
-        index,
-        knownSessions,
-        allowedSessionKeys,
-        outboundCardMessageIndexesBySession
-      );
+      const callback = readFeishuCoauthorCallbackRevision(log, index, knownSessions, allowedSessionKeys, outboundCardMessageIndexesBySession);
       if (callback) {
         return confirmedRevisionIndexesBySession.get(callback.sessionKey)?.has(callback.candidateRevision) === true;
       }
 
-      const confirmation = readFeishuCoauthorConfirmedRevision(
-        log,
-        index,
-        knownSessions,
-        callbackRevisionIndexesBySession
-      );
-      return Boolean(
-        confirmation &&
-        confirmedRevisionIndexesBySession.get(confirmation.sessionKey)?.has(confirmation.candidateRevision)
-      );
+      const confirmation = readFeishuCoauthorConfirmedRevision(log, index, knownSessions, callbackRevisionIndexesBySession);
+      return Boolean(confirmation && confirmedRevisionIndexesBySession.get(confirmation.sessionKey)?.has(confirmation.candidateRevision));
     })
     .slice(-4)
     .map((log) => summarizeLog(log));
 
-  return [
-    `requiredSession=group_at outboundCardSessionCount=${outboundCardMessageIndexesBySession.size}`,
-    `outboundCardMessageCount=${countFeishuOutboundCardMessages(outboundCardMessageIndexesBySession)}`,
-    ...observed
-  ];
+  return [`requiredSession=group_at outboundCardSessionCount=${outboundCardMessageIndexesBySession.size}`, `outboundCardMessageCount=${countFeishuOutboundCardMessages(outboundCardMessageIndexesBySession)}`, ...observed];
 }
 
-function findFeishuCoauthorConfirmedRevisionIndexes(
-  logs: readonly unknown[],
-  knownSessions: ReadonlyMap<string, FeishuKnownSession>,
-  callbackRevisionIndexesBySession: ReadonlyMap<string, ReadonlyMap<number, number>>
-): Map<string, Map<number, number>> {
+function findFeishuCoauthorConfirmedRevisionIndexes(logs: readonly unknown[], knownSessions: ReadonlyMap<string, FeishuKnownSession>, callbackRevisionIndexesBySession: ReadonlyMap<string, ReadonlyMap<number, number>>): Map<string, Map<number, number>> {
   const revisionIndexesBySession = new Map<string, Map<number, number>>();
   for (const [index, log] of logs.entries()) {
     const revision = readFeishuCoauthorConfirmedRevision(log, index, knownSessions, callbackRevisionIndexesBySession);
@@ -3600,40 +2779,23 @@ function findFeishuCoauthorConfirmedRevisionIndexes(
   return revisionIndexesBySession;
 }
 
-function readFeishuCoauthorConfirmedRevision(
-  log: unknown,
-  confirmationIndex: number,
-  knownSessions: ReadonlyMap<string, FeishuKnownSession>,
-  callbackRevisionIndexesBySession: ReadonlyMap<string, ReadonlyMap<number, number>>
-): { readonly sessionKey: string; readonly candidateRevision: number } | undefined {
+function readFeishuCoauthorConfirmedRevision(log: unknown, confirmationIndex: number, knownSessions: ReadonlyMap<string, FeishuKnownSession>, callbackRevisionIndexesBySession: ReadonlyMap<string, ReadonlyMap<number, number>>): { readonly sessionKey: string; readonly candidateRevision: number } | undefined {
   const record = asRecord(log);
   const meta = asRecord(record.meta);
   const knownSession = findMatchingKnownSessionWithRequiredCoordinates(knownSessions, meta);
   const candidateRevision = readNumber(meta.candidateRevision) ?? 0;
-  const callbackIndex = knownSession
-    ? callbackRevisionIndexesBySession.get(knownSession.key)?.get(candidateRevision)
-    : undefined;
-  if (
-    readString(record.message) !== "chat.coauthor.confirmed" ||
-    readString(meta.platform) !== "feishu" ||
-    !knownSession ||
-    candidateRevision <= 0 ||
-    callbackIndex === undefined ||
-    callbackIndex >= confirmationIndex ||
-    (readNumber(meta.confirmedCount) ?? 0) <= 0
-  ) {
+  const callbackIndex = knownSession ? callbackRevisionIndexesBySession.get(knownSession.key)?.get(candidateRevision) : undefined;
+  if (readString(record.message) !== "chat.coauthor.confirmed" || readString(meta.platform) !== "feishu" || !knownSession || candidateRevision <= 0 || callbackIndex === undefined || callbackIndex >= confirmationIndex || (readNumber(meta.confirmedCount) ?? 0) <= 0) {
     return undefined;
   }
 
   return {
     sessionKey: knownSession.key,
-    candidateRevision
+    candidateRevision,
   };
 }
 
-function hasFeishuRevisionEntries(
-  revisionIndexesBySession: ReadonlyMap<string, ReadonlyMap<number, number>>
-): boolean {
+function hasFeishuRevisionEntries(revisionIndexesBySession: ReadonlyMap<string, ReadonlyMap<number, number>>): boolean {
   for (const revisionIndexes of revisionIndexesBySession.values()) {
     if (revisionIndexes.size > 0) {
       return true;
@@ -3643,21 +2805,10 @@ function hasFeishuRevisionEntries(
   return false;
 }
 
-function findFeishuCoauthorCallbackRevisionIndexes(
-  logs: readonly unknown[],
-  knownSessions: ReadonlyMap<string, FeishuKnownSession>,
-  allowedSessionKeys: ReadonlySet<string>,
-  outboundCardMessageIndexesBySession: ReadonlyMap<string, ReadonlyMap<string, number>>
-): Map<string, Map<number, number>> {
+function findFeishuCoauthorCallbackRevisionIndexes(logs: readonly unknown[], knownSessions: ReadonlyMap<string, FeishuKnownSession>, allowedSessionKeys: ReadonlySet<string>, outboundCardMessageIndexesBySession: ReadonlyMap<string, ReadonlyMap<string, number>>): Map<string, Map<number, number>> {
   const revisionIndexesBySession = new Map<string, Map<number, number>>();
   for (const [index, log] of logs.entries()) {
-    const revision = readFeishuCoauthorCallbackRevision(
-      log,
-      index,
-      knownSessions,
-      allowedSessionKeys,
-      outboundCardMessageIndexesBySession
-    );
+    const revision = readFeishuCoauthorCallbackRevision(log, index, knownSessions, allowedSessionKeys, outboundCardMessageIndexesBySession);
     if (!revision) {
       continue;
     }
@@ -3678,114 +2829,59 @@ function readFeishuCoauthorCallbackRevision(
   callbackIndex: number,
   knownSessions: ReadonlyMap<string, FeishuKnownSession>,
   allowedSessionKeys: ReadonlySet<string>,
-  outboundCardMessageIndexesBySession: ReadonlyMap<string, ReadonlyMap<string, number>>
+  outboundCardMessageIndexesBySession: ReadonlyMap<string, ReadonlyMap<string, number>>,
 ): { readonly sessionKey: string; readonly candidateRevision: number } | undefined {
   const record = asRecord(log);
   const meta = asRecord(record.meta);
-  if (
-    readString(record.message) !== "chat.card.callback.received" ||
-    readString(meta.platform) !== "feishu" ||
-    readString(meta.kind) !== "coauthor_confirm_all"
-  ) {
+  if (readString(record.message) !== "chat.card.callback.received" || readString(meta.platform) !== "feishu" || readString(meta.kind) !== "coauthor_confirm_all") {
     return undefined;
   }
 
   const knownSession = findMatchingKnownSessionWithRequiredCoordinates(knownSessions, meta);
   const candidateRevision = readNumber(meta.candidateRevision) ?? 0;
-  if (
-    !knownSession ||
-    !allowedSessionKeys.has(knownSession.key) ||
-    !hasMatchingFeishuOutboundCardMessage(meta, knownSession.key, outboundCardMessageIndexesBySession, callbackIndex) ||
-    candidateRevision <= 0
-  ) {
+  if (!knownSession || !allowedSessionKeys.has(knownSession.key) || !hasMatchingFeishuOutboundCardMessage(meta, knownSession.key, outboundCardMessageIndexesBySession, callbackIndex) || candidateRevision <= 0) {
     return undefined;
   }
 
   return {
     sessionKey: knownSession.key,
-    candidateRevision
+    candidateRevision,
   };
 }
 
-function hasFeishuCardCallbackForBrokerPostedGroupCard(
-  logs: readonly unknown[],
-  knownSessions: ReadonlyMap<string, FeishuKnownSession>,
-  allowedSessionKeys: ReadonlySet<string>
-): boolean {
-  const outboundCardMessageIndexesBySession = findFeishuOutboundCardMessageIndexesBySession(
-    logs,
-    knownSessions,
-    allowedSessionKeys
-  );
-  return logs.some((log, index) =>
-    isFeishuCardCallbackEvidence(log, index, knownSessions, allowedSessionKeys, outboundCardMessageIndexesBySession)
-  );
+function hasFeishuCardCallbackForBrokerPostedGroupCard(logs: readonly unknown[], knownSessions: ReadonlyMap<string, FeishuKnownSession>, allowedSessionKeys: ReadonlySet<string>): boolean {
+  const outboundCardMessageIndexesBySession = findFeishuOutboundCardMessageIndexesBySession(logs, knownSessions, allowedSessionKeys);
+  return logs.some((log, index) => isFeishuCardCallbackEvidence(log, index, knownSessions, allowedSessionKeys, outboundCardMessageIndexesBySession));
 }
 
-function feishuCardCallbackEvidence(
-  logs: readonly unknown[],
-  knownSessions: ReadonlyMap<string, FeishuKnownSession>,
-  allowedSessionKeys: ReadonlySet<string>
-): string[] {
-  const outboundCardMessageIndexesBySession = findFeishuOutboundCardMessageIndexesBySession(
-    logs,
-    knownSessions,
-    allowedSessionKeys
-  );
+function feishuCardCallbackEvidence(logs: readonly unknown[], knownSessions: ReadonlyMap<string, FeishuKnownSession>, allowedSessionKeys: ReadonlySet<string>): string[] {
+  const outboundCardMessageIndexesBySession = findFeishuOutboundCardMessageIndexesBySession(logs, knownSessions, allowedSessionKeys);
   const observed = logs
-    .filter((log, index) =>
-      isFeishuCardCallbackEvidence(log, index, knownSessions, allowedSessionKeys, outboundCardMessageIndexesBySession)
-    )
+    .filter((log, index) => isFeishuCardCallbackEvidence(log, index, knownSessions, allowedSessionKeys, outboundCardMessageIndexesBySession))
     .slice(-3)
     .map((log) => summarizeLog(log));
 
-  return [
-    `requiredSession=group_at outboundCardSessionCount=${outboundCardMessageIndexesBySession.size}`,
-    `outboundCardMessageCount=${countFeishuOutboundCardMessages(outboundCardMessageIndexesBySession)}`,
-    ...observed
-  ];
+  return [`requiredSession=group_at outboundCardSessionCount=${outboundCardMessageIndexesBySession.size}`, `outboundCardMessageCount=${countFeishuOutboundCardMessages(outboundCardMessageIndexesBySession)}`, ...observed];
 }
 
-function isFeishuCardCallbackEvidence(
-  log: unknown,
-  callbackIndex: number,
-  knownSessions: ReadonlyMap<string, FeishuKnownSession>,
-  allowedSessionKeys: ReadonlySet<string>,
-  outboundCardMessageIndexesBySession: ReadonlyMap<string, ReadonlyMap<string, number>>
-): boolean {
+function isFeishuCardCallbackEvidence(log: unknown, callbackIndex: number, knownSessions: ReadonlyMap<string, FeishuKnownSession>, allowedSessionKeys: ReadonlySet<string>, outboundCardMessageIndexesBySession: ReadonlyMap<string, ReadonlyMap<string, number>>): boolean {
   const record = asRecord(log);
   const meta = asRecord(record.meta);
-  if (
-    readString(record.message) !== "chat.card.callback.received" ||
-    readString(meta.platform) !== "feishu"
-  ) {
+  if (readString(record.message) !== "chat.card.callback.received" || readString(meta.platform) !== "feishu") {
     return false;
   }
 
   const knownSession = findMatchingKnownSessionWithRequiredCoordinates(knownSessions, meta);
-  return Boolean(
-    knownSession &&
-    allowedSessionKeys.has(knownSession.key) &&
-    hasMatchingFeishuOutboundCardMessage(meta, knownSession.key, outboundCardMessageIndexesBySession, callbackIndex)
-  );
+  return Boolean(knownSession && allowedSessionKeys.has(knownSession.key) && hasMatchingFeishuOutboundCardMessage(meta, knownSession.key, outboundCardMessageIndexesBySession, callbackIndex));
 }
 
-function findFeishuOutboundCardMessageIndexesBySession(
-  logs: readonly unknown[],
-  knownSessions: ReadonlyMap<string, FeishuKnownSession>,
-  allowedSessionKeys: ReadonlySet<string>
-): Map<string, Map<string, number>> {
+function findFeishuOutboundCardMessageIndexesBySession(logs: readonly unknown[], knownSessions: ReadonlyMap<string, FeishuKnownSession>, allowedSessionKeys: ReadonlySet<string>): Map<string, Map<string, number>> {
   const messageIndexesBySession = new Map<string, Map<string, number>>();
   for (const [index, log] of logs.entries()) {
     const record = asRecord(log);
     const meta = asRecord(record.meta);
     const messageId = readString(meta.messageId);
-    if (
-      readString(record.message) !== "chat.outbound.posted" ||
-      readString(meta.platform) !== "feishu" ||
-      readString(meta.format) !== "card" ||
-      !messageId
-    ) {
+    if (readString(record.message) !== "chat.outbound.posted" || readString(meta.platform) !== "feishu" || readString(meta.format) !== "card" || !messageId) {
       continue;
     }
 
@@ -3803,12 +2899,7 @@ function findFeishuOutboundCardMessageIndexesBySession(
   return messageIndexesBySession;
 }
 
-function hasMatchingFeishuOutboundCardMessage(
-  callbackMeta: Record<string, unknown>,
-  sessionKey: string,
-  outboundCardMessageIndexesBySession: ReadonlyMap<string, ReadonlyMap<string, number>>,
-  callbackIndex: number
-): boolean {
+function hasMatchingFeishuOutboundCardMessage(callbackMeta: Record<string, unknown>, sessionKey: string, outboundCardMessageIndexesBySession: ReadonlyMap<string, ReadonlyMap<string, number>>, callbackIndex: number): boolean {
   const callbackMessageId = readString(callbackMeta.messageId);
   const outboundCardIndexes = outboundCardMessageIndexesBySession.get(sessionKey);
   if (!outboundCardIndexes) {
@@ -3823,9 +2914,7 @@ function hasMatchingFeishuOutboundCardMessage(
   return [...outboundCardIndexes.values()].some((outboundCardIndex) => outboundCardIndex < callbackIndex);
 }
 
-function countFeishuOutboundCardMessages(
-  outboundCardMessageIndexesBySession: ReadonlyMap<string, ReadonlyMap<string, number>>
-): number {
+function countFeishuOutboundCardMessages(outboundCardMessageIndexesBySession: ReadonlyMap<string, ReadonlyMap<string, number>>): number {
   let count = 0;
   for (const messageIndexes of outboundCardMessageIndexesBySession.values()) {
     count += messageIndexes.size;
@@ -3834,23 +2923,12 @@ function countFeishuOutboundCardMessages(
   return count;
 }
 
-function findFeishuKnownSessionLogKeys(
-  logs: readonly unknown[],
-  message: string,
-  metaExpectation: Record<string, string>,
-  knownSessions: ReadonlyMap<string, FeishuKnownSession>,
-  predicate?: (meta: Record<string, unknown>) => boolean
-): Set<string> {
+function findFeishuKnownSessionLogKeys(logs: readonly unknown[], message: string, metaExpectation: Record<string, string>, knownSessions: ReadonlyMap<string, FeishuKnownSession>, predicate?: (meta: Record<string, unknown>) => boolean): Set<string> {
   const sessionKeys = new Set<string>();
   for (const log of logs) {
     const record = asRecord(log);
     const meta = asRecord(record.meta);
-    if (
-      readString(record.message) !== message ||
-      readString(meta.platform) !== "feishu" ||
-      !Object.entries(metaExpectation).every(([key, value]) => readString(meta[key]) === value) ||
-      (predicate && !predicate(meta))
-    ) {
+    if (readString(record.message) !== message || readString(meta.platform) !== "feishu" || !Object.entries(metaExpectation).every(([key, value]) => readString(meta[key]) === value) || (predicate && !predicate(meta))) {
       continue;
     }
 
@@ -3863,22 +2941,12 @@ function findFeishuKnownSessionLogKeys(
   return sessionKeys;
 }
 
-function findFeishuLogSessionKeys(
-  logs: readonly unknown[],
-  message: string,
-  metaExpectation: Record<string, string>,
-  predicate?: (meta: Record<string, unknown>) => boolean
-): Set<string> {
+function findFeishuLogSessionKeys(logs: readonly unknown[], message: string, metaExpectation: Record<string, string>, predicate?: (meta: Record<string, unknown>) => boolean): Set<string> {
   const sessionKeys = new Set<string>();
   for (const log of logs) {
     const record = asRecord(log);
     const meta = asRecord(record.meta);
-    if (
-      readString(record.message) !== message ||
-      readString(meta.platform) !== "feishu" ||
-      !Object.entries(metaExpectation).every(([key, value]) => readString(meta[key]) === value) ||
-      (predicate && !predicate(meta))
-    ) {
+    if (readString(record.message) !== message || readString(meta.platform) !== "feishu" || !Object.entries(metaExpectation).every(([key, value]) => readString(meta[key]) === value) || (predicate && !predicate(meta))) {
       continue;
     }
 
@@ -3893,30 +2961,28 @@ function findFeishuLogSessionKeys(
 
 function hasFeishuLongConnectionReadyEvidence(feishu: Record<string, unknown>, logs: readonly unknown[]): boolean {
   const connection = asRecord(feishu.connection);
-  const adminConnectionReady =
-    readString(connection.mode) === "long_connection" &&
-    readBoolean(connection.connected) === true &&
-    Boolean(readString(connection.lastConnectedAt));
+  const adminConnectionReady = readString(connection.mode) === "long_connection" && readBoolean(connection.connected) === true && Boolean(readString(connection.lastConnectedAt));
 
-  return adminConnectionReady ||
+  return (
+    adminConnectionReady ||
     hasLog(logs, "chat.platform.ready", {
       platform: "feishu",
-      source: "long_connection"
-    });
+      source: "long_connection",
+    })
+  );
 }
 
 function hasSlackSocketModeReadyEvidence(slack: Record<string, unknown>, logs: readonly unknown[]): boolean {
   const connection = asRecord(slack.connection);
-  const adminConnectionReady =
-    readString(connection.mode) === "socket_mode" &&
-    readBoolean(connection.connected) === true &&
-    Boolean(readString(connection.lastConnectedAt));
+  const adminConnectionReady = readString(connection.mode) === "socket_mode" && readBoolean(connection.connected) === true && Boolean(readString(connection.lastConnectedAt));
 
-  return adminConnectionReady ||
+  return (
+    adminConnectionReady ||
     hasLog(logs, "chat.platform.ready", {
       platform: "slack",
-      source: "socket_mode"
-    });
+      source: "socket_mode",
+    })
+  );
 }
 
 function hasSlackMessageRoundtrip(logs: readonly unknown[]): boolean {
@@ -3933,16 +2999,9 @@ function findSlackMessageRoundtripEvidenceLogs(logs: readonly unknown[]): unknow
       index,
       log,
       meta: asRecord(asRecord(log).meta),
-      accepted: logMatches(log, "chat.message.accepted", { platform: "slack" })
+      accepted: logMatches(log, "chat.message.accepted", { platform: "slack" }),
     }))
-    .filter(({ meta }) =>
-      Boolean(
-        readString(meta.sessionKey) &&
-        readString(meta.conversationId) &&
-        readString(meta.rootMessageId) &&
-        readString(meta.messageId)
-      )
-    )
+    .filter(({ meta }) => Boolean(readString(meta.sessionKey) && readString(meta.conversationId) && readString(meta.rootMessageId) && readString(meta.messageId)))
     .filter(({ accepted }) => accepted);
   if (acceptedMessages.length === 0) {
     return [];
@@ -3952,23 +3011,12 @@ function findSlackMessageRoundtripEvidenceLogs(logs: readonly unknown[]): unknow
   for (const [outboundIndex, log] of logs.entries()) {
     const record = asRecord(log);
     const meta = asRecord(record.meta);
-    if (
-      readString(record.message) !== "chat.outbound.posted" ||
-      readString(meta.platform) !== "slack" ||
-      readString(meta.format) !== "text" ||
-      !readString(meta.sessionKey) ||
-      !readString(meta.conversationId) ||
-      !readString(meta.rootMessageId) ||
-      !readString(meta.messageId)
-    ) {
+    if (readString(record.message) !== "chat.outbound.posted" || readString(meta.platform) !== "slack" || readString(meta.format) !== "text" || !readString(meta.sessionKey) || !readString(meta.conversationId) || !readString(meta.rootMessageId) || !readString(meta.messageId)) {
       continue;
     }
 
-    const accepted = acceptedMessages.find((candidate) =>
-      candidate.index < outboundIndex &&
-      readString(candidate.meta.sessionKey) === readString(meta.sessionKey) &&
-      readString(candidate.meta.conversationId) === readString(meta.conversationId) &&
-      readString(candidate.meta.rootMessageId) === readString(meta.rootMessageId)
+    const accepted = acceptedMessages.find(
+      (candidate) => candidate.index < outboundIndex && readString(candidate.meta.sessionKey) === readString(meta.sessionKey) && readString(candidate.meta.conversationId) === readString(meta.conversationId) && readString(candidate.meta.rootMessageId) === readString(meta.rootMessageId),
     );
     if (accepted) {
       evidenceLogs = [accepted.log, log];
@@ -3983,17 +3031,11 @@ function findSlackMessageRoundtripEvidenceLogs(logs: readonly unknown[]): unknow
   return logs.filter((log) => selected.has(log));
 }
 
-function hasAdminPlatformHealthContract(
-  slack: Record<string, unknown>,
-  feishu: Record<string, unknown>
-): boolean {
+function hasAdminPlatformHealthContract(slack: Record<string, unknown>, feishu: Record<string, unknown>): boolean {
   return missingAdminPlatformHealthFields(slack, feishu).length === 0;
 }
 
-function adminPlatformHealthEvidence(
-  slack: Record<string, unknown>,
-  feishu: Record<string, unknown>
-): string[] {
+function adminPlatformHealthEvidence(slack: Record<string, unknown>, feishu: Record<string, unknown>): string[] {
   const slackConnection = asRecord(slack.connection);
   const feishuConnection = asRecord(feishu.connection);
   const permissionStatuses = readPermissionStatusEntries(feishu);
@@ -4005,22 +3047,17 @@ function adminPlatformHealthEvidence(
     `feishu.state=${readString(feishu.state) ?? "unknown"}`,
     `feishu.connection.mode=${readString(feishuConnection.mode) ?? "unknown"}`,
     `feishu.permissions=${permissionStatuses.length > 0 ? permissionStatuses.join(",") : "missing"}`,
-    missing.length === 0
-      ? "admin platform health contract is present"
-      : `missing admin health fields: ${missing.join(", ")}`
+    missing.length === 0 ? "admin platform health contract is present" : `missing admin health fields: ${missing.join(", ")}`,
   ];
 }
 
 const ADMIN_FEISHU_PERMISSION_STATUS_REQUIREMENTS = [
   ["bot_identity", "configured"],
   ["im:message.group_msg", "verified"],
-  ["im:message:send_as_bot", "configured"]
+  ["im:message:send_as_bot", "configured"],
 ] as const;
 
-function missingAdminPlatformHealthFields(
-  slack: Record<string, unknown>,
-  feishu: Record<string, unknown>
-): string[] {
+function missingAdminPlatformHealthFields(slack: Record<string, unknown>, feishu: Record<string, unknown>): string[] {
   const slackConnection = asRecord(slack.connection);
   const feishuConnection = asRecord(feishu.connection);
   const permissionStatuses = readPermissionStatusMap(feishu);
@@ -4069,11 +3106,7 @@ function missingAdminPlatformHealthFields(
       missing.push(`platforms.feishu.permissions.${permissionName}.status=${expectedStatus}`);
     }
   }
-  if (
-    (feishuState === "degraded" || feishuState === "failed") &&
-    !readString(feishu.degradedReason) &&
-    !readString(asRecord(feishu.lastError).message)
-  ) {
+  if ((feishuState === "degraded" || feishuState === "failed") && !readString(feishu.degradedReason) && !readString(asRecord(feishu.lastError).message)) {
     missing.push("platforms.feishu.degradedReason_or_lastError");
   }
 
@@ -4112,20 +3145,12 @@ function readPermissionStatus(permission: Record<string, unknown>): string | und
 }
 
 function isPlatformHealthState(value: string | undefined): boolean {
-  return value === "disabled" ||
-    value === "starting" ||
-    value === "ready" ||
-    value === "degraded" ||
-    value === "failed";
+  return value === "disabled" || value === "starting" || value === "ready" || value === "degraded" || value === "failed";
 }
 
 function connectionEvidence(platformStatus: Record<string, unknown>): string[] {
   const connection = asRecord(platformStatus.connection);
-  return [
-    `connection.mode=${readString(connection.mode) ?? "unknown"}`,
-    `connection.connected=${String(connection.connected)}`,
-    `connection.lastConnectedAt=${readString(connection.lastConnectedAt) ?? "missing"}`
-  ];
+  return [`connection.mode=${readString(connection.mode) ?? "unknown"}`, `connection.connected=${String(connection.connected)}`, `connection.lastConnectedAt=${readString(connection.lastConnectedAt) ?? "missing"}`];
 }
 
 function platformReadyLogEvidence(logs: readonly unknown[], platform: string, source: string): string[] {
@@ -4155,11 +3180,7 @@ function sessionEvidence(sessions: readonly unknown[], platform: string): string
     .slice(0, 3)
     .map((session) => {
       const record = asRecord(session);
-      return [
-        `session=${readString(record.key) ?? "unknown"}`,
-        `conversation=${readString(record.conversationId) ?? "unknown"}`,
-        `root=${readString(record.rootMessageId) ?? "unknown"}`
-      ].join(" ");
+      return [`session=${readString(record.key) ?? "unknown"}`, `conversation=${readString(record.conversationId) ?? "unknown"}`, `root=${readString(record.rootMessageId) ?? "unknown"}`].join(" ");
     });
 }
 
@@ -4178,14 +3199,14 @@ function summarizeLog(log: unknown): string {
     readString(meta.route),
     readString(meta.ignoredReason),
     readString(meta.msgType),
-    readString(meta.degradedReason)
-  ].filter(Boolean).join(" ");
+    readString(meta.degradedReason),
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : {};
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
 function asArray(value: unknown): readonly unknown[] {
@@ -4230,11 +3251,7 @@ function normalizeKnownEnvValue(value: string | undefined, allowedValues: readon
   return allowedValues.includes(normalized) ? normalized : "invalid";
 }
 
-function formatEnvEnumEvidence(
-  value: string | undefined,
-  fallback: string,
-  allowedValues: readonly string[]
-): string {
+function formatEnvEnumEvidence(value: string | undefined, fallback: string, allowedValues: readonly string[]): string {
   const normalized = normalizeKnownEnvValue(value, allowedValues);
   if (!normalized) {
     return `${fallback}(default)`;
@@ -4272,11 +3289,7 @@ function formatFeishuApiBaseEvidence(value: string): string {
   try {
     const url = new URL(value);
     const pathname = url.pathname.replace(/\/+$/u, "");
-    const safePath = !pathname
-      ? ""
-      : pathname === "/open-apis"
-        ? "/open-apis"
-        : "/unsupported-path";
+    const safePath = !pathname ? "" : pathname === "/open-apis" ? "/open-apis" : "/unsupported-path";
     const suffix = url.search || url.hash ? " (query/hash omitted)" : "";
     return `${url.origin}${safePath}${suffix}`;
   } catch {

@@ -1,12 +1,5 @@
-import {
-  profileTitle,
-  profileWeeklyQuotaLabel
-} from "./auth-profile-display.js";
-import {
-  evaluateAuthProfile,
-  isAuthProfileProbeFailure,
-  isAuthProfileProbeFailureReason
-} from "../services/session-auth-profile-selector.js";
+import { profileTitle, profileWeeklyQuotaLabel } from "./auth-profile-display.js";
+import { evaluateAuthProfile, isAuthProfileProbeFailure, isAuthProfileProbeFailureReason } from "../services/session-auth-profile-selector.js";
 
 type SessionRecord = Record<string, any>;
 
@@ -40,38 +33,31 @@ export function buildChannelLabelById(sessions: readonly SessionRecord[]): Reado
   return labels;
 }
 
-export function resolveSessionChannelLabel(
-  session: SessionRecord,
-  channelLabelById?: ReadonlyMap<string, string>
-): string {
+export function resolveSessionChannelLabel(session: SessionRecord, channelLabelById?: ReadonlyMap<string, string>): string {
   const channelId = String(session.channelId || "");
   return sessionHumanChannelLabel(session) || (channelId ? channelLabelById?.get(channelId) : undefined) || channelId || "未知频道";
 }
 
-export function renderSessionMeta(
-  session: SessionRecord,
-  authProfileByName: ReadonlyMap<string, SessionRecord>,
-  channelLabelById?: ReadonlyMap<string, string>
-): SessionMetaPill[] {
+export function renderSessionMeta(session: SessionRecord, authProfileByName: ReadonlyMap<string, SessionRecord>, channelLabelById?: ReadonlyMap<string, string>): SessionMetaPill[] {
   const usage = session.usage || {};
-  const pendingDetail = Number(session.openInboundCount || 0)
-    ? "待处理 " + (session.openInboundCount || 0) + "（人 " + (session.openHumanInboundCount || 0) + " / 系统 " + (session.openSystemInboundCount || 0) + "）"
-    : "";
+  const pendingDetail = Number(session.openInboundCount || 0) ? "待处理 " + (session.openInboundCount || 0) + "（人 " + (session.openHumanInboundCount || 0) + " / 系统 " + (session.openSystemInboundCount || 0) + "）" : "";
   const authProfile = session.authProfileName ? authProfileByName.get(String(session.authProfileName)) : null;
   const activeJobCount = activeBackgroundJobCount(session);
   const authBlockActive = sessionAuthBlockActive(session, authProfile);
   return [
     { key: "channel", label: resolveSessionChannelLabel(session, channelLabelById), tone: "info", title: stringOrUndefined(session.channelId || session.key) },
     authBlockActive ? { key: "auth-blocked", label: "账号待切换", tone: "danger", title: stringOrUndefined(session.authBlockReasonLabel || session.authBlockReason) } : null,
-    session.authProfileName ? {
-      key: "auth-profile",
-      label: authProfile ? profileWeeklyQuotaLabel(authProfile) : "账号已绑定",
-      tone: "info",
-      title: authProfile ? profileTitle(authProfile) : String(session.authProfileName)
-    } : null,
+    session.authProfileName
+      ? {
+          key: "auth-profile",
+          label: authProfile ? profileWeeklyQuotaLabel(authProfile) : "账号已绑定",
+          tone: "info",
+          title: authProfile ? profileTitle(authProfile) : String(session.authProfileName),
+        }
+      : null,
     pendingDetail ? { key: "pending", label: pendingDetail, tone: Number(session.openHumanInboundCount || 0) ? "warn" : "" } : null,
     activeJobCount > 0 ? { key: "jobs", label: "Jobs " + activeJobCount, tone: "good" } : null,
-    { key: "tokens", label: "Token " + formatSessionTokens(usage.totalTokens || 0), tone: "info" }
+    { key: "tokens", label: "Token " + formatSessionTokens(usage.totalTokens || 0), tone: "info" },
   ].filter((item): item is SessionMetaPill => Boolean(item));
 }
 
@@ -123,7 +109,7 @@ export function sessionActivityAt(session: SessionRecord): unknown {
     session.usage?.lastTurnAt,
     ...(session.openInbound || []).map((message: Record<string, any>) => message.updatedAt || message.createdAt),
     ...(session.backgroundJobs || []).flatMap(jobActivityTimestamps),
-    ...(session.failedBackgroundJobs || []).flatMap(jobActivityTimestamps)
+    ...(session.failedBackgroundJobs || []).flatMap(jobActivityTimestamps),
   ];
   const latestMs = newestTimestamp(candidates);
   return candidates.find((value) => timestampMs(value) === latestMs) || session.createdAt || session.updatedAt;
@@ -194,11 +180,7 @@ function stringOrUndefined(value: unknown): string | undefined {
 }
 
 function jobActivityTimestamps(job: Record<string, any>): unknown[] {
-  return [
-    job.lastEventAt,
-    job.status === "running" ? null : job.updatedAt,
-    job.createdAt
-  ];
+  return [job.lastEventAt, job.status === "running" ? null : job.updatedAt, job.createdAt];
 }
 
 function timestampMs(value: unknown): number {

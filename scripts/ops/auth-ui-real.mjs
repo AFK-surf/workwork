@@ -14,7 +14,7 @@ function parseArgs(argv) {
     port: 3071,
     openBrowser: true,
     openInboundLimit: 20,
-    logLineLimit: 20
+    logLineLimit: 20,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -45,9 +45,7 @@ function parseArgs(argv) {
         break;
       case "--help":
       case "-h":
-        console.log(
-          "Usage: node scripts/ops/auth-ui-real.mjs [--container <name>] [--port <n>] [--open-inbound-limit <n>] [--log-lines <n>] [--no-open]"
-        );
+        console.log("Usage: node scripts/ops/auth-ui-real.mjs [--container <name>] [--port <n>] [--open-inbound-limit <n>] [--log-lines <n>] [--no-open]");
         process.exit(0);
       default:
         throw new Error(`Unknown argument: ${argument}`);
@@ -64,7 +62,7 @@ function parseArgs(argv) {
 function json(response, statusCode, payload) {
   response.writeHead(statusCode, {
     "content-type": "application/json; charset=utf-8",
-    "cache-control": "no-store"
+    "cache-control": "no-store",
   });
   response.end(`${JSON.stringify(payload, null, 2)}\n`);
 }
@@ -72,25 +70,20 @@ function json(response, statusCode, payload) {
 function html(response, body) {
   response.writeHead(200, {
     "content-type": "text/html; charset=utf-8",
-    "cache-control": "no-store"
+    "cache-control": "no-store",
   });
   response.end(body);
 }
 
 function notFound(response) {
   response.writeHead(404, {
-    "content-type": "text/plain; charset=utf-8"
+    "content-type": "text/plain; charset=utf-8",
   });
   response.end("Not found\n");
 }
 
 function escapeHtml(value) {
-  return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
+  return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
 }
 
 function renderPage(options) {
@@ -585,7 +578,7 @@ async function requestToFormData(request, url) {
     method: request.method,
     headers: request.headers,
     body: request,
-    duplex: "half"
+    duplex: "half",
   });
   return webRequest.formData();
 }
@@ -605,12 +598,11 @@ function maybeOpenBrowser(url) {
     if (process.platform === "darwin") {
       const child = spawn("open", [url], {
         detached: true,
-        stdio: "ignore"
+        stdio: "ignore",
       });
       child.unref();
     }
-  } catch {
-  }
+  } catch {}
 }
 
 const options = parseArgs(process.argv.slice(2));
@@ -631,8 +623,8 @@ const server = createServer(async (request, response) => {
         await getAuthRealStatus({
           containerName: options.containerName,
           openInboundLimit: options.openInboundLimit,
-          logLineLimit: options.logLineLimit
-        })
+          logLineLimit: options.logLineLimit,
+        }),
       );
       return;
     }
@@ -650,7 +642,7 @@ const server = createServer(async (request, response) => {
         if (!authJsonPath) {
           json(response, 400, {
             ok: false,
-            error: "auth.json is required"
+            error: "auth.json is required",
           });
           return;
         }
@@ -664,7 +656,7 @@ const server = createServer(async (request, response) => {
           credentialsJsonPath,
           configTomlPath,
           restart: true,
-          allowActive
+          allowActive,
         });
         json(response, 200, result);
       } finally {
@@ -677,7 +669,7 @@ const server = createServer(async (request, response) => {
   } catch (error) {
     json(response, 500, {
       ok: false,
-      error: error instanceof Error ? error.message : String(error)
+      error: error instanceof Error ? error.message : String(error),
     });
   }
 });

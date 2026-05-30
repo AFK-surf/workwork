@@ -2,27 +2,13 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import { logger } from "../../logger.js";
-import type {
-  AgentInputItem,
-  AgentRuntime,
-  AgentTurnResult
-} from "../agent-runtime/types.js";
-import type {
-  PersistedAgentTurnStatus,
-  PersistedAgentTurnUsage,
-  SlackBatchInputMessage,
-  SlackImageAttachment,
-  SlackInputMessage,
-  SlackSessionRecord
-} from "../../types.js";
+import type { AgentInputItem, AgentRuntime, AgentTurnResult } from "../agent-runtime/types.js";
+import type { PersistedAgentTurnStatus, PersistedAgentTurnUsage, SlackBatchInputMessage, SlackImageAttachment, SlackInputMessage, SlackSessionRecord } from "../../types.js";
 import { SessionManager } from "../session-manager.js";
 import { SlackApi } from "./slack-api.js";
 import { formatSlackMessageForAgent } from "./slack-message-format.js";
 import { SlackInboundStore } from "./slack-inbound-store.js";
-import {
-  isMissingAgentSessionError,
-  isRecoverableAgentTurnFailure
-} from "./slack-conversation-utils.js";
+import { isMissingAgentSessionError, isRecoverableAgentTurnFailure } from "./slack-conversation-utils.js";
 
 export class SlackTurnRunner {
   readonly #agentRuntime: AgentRuntime;
@@ -30,12 +16,7 @@ export class SlackTurnRunner {
   readonly #sessions: SessionManager;
   readonly #inboundStore: SlackInboundStore;
 
-  constructor(options: {
-    readonly agentRuntime: AgentRuntime;
-    readonly slackApi: SlackApi;
-    readonly sessions: SessionManager;
-    readonly inboundStore: SlackInboundStore;
-  }) {
+  constructor(options: { readonly agentRuntime: AgentRuntime; readonly slackApi: SlackApi; readonly sessions: SessionManager; readonly inboundStore: SlackInboundStore }) {
     this.#agentRuntime = options.agentRuntime;
     this.#slackApi = options.slackApi;
     this.#sessions = options.sessions;
@@ -48,7 +29,7 @@ export class SlackTurnRunner {
       session,
       input,
       inputId: inputIdForSessionInput(session, item.messageTs ?? "active", "additional"),
-      source: agentInputSourceForSlackInput(item)
+      source: agentInputSourceForSlackInput(item),
     });
     if (result.receipt.delivery !== "joined_active_turn") {
       throw new Error(`Expected active input delivery for ${session.key}, got ${result.receipt.delivery}`);
@@ -57,31 +38,16 @@ export class SlackTurnRunner {
 
   async buildTurnInput(message: SlackInputMessage): Promise<readonly AgentInputItem[]>;
   async buildTurnInput(session: SlackSessionRecord, message: SlackInputMessage): Promise<readonly AgentInputItem[]>;
-  async buildTurnInput(
-    sessionOrMessage: SlackSessionRecord | SlackInputMessage,
-    maybeMessage?: SlackInputMessage
-  ): Promise<readonly AgentInputItem[]> {
-    const message = maybeMessage ?? sessionOrMessage as SlackInputMessage;
-    const session = maybeMessage
-      ? sessionOrMessage as SlackSessionRecord
-      : this.#sessions.getSession(message.channelId, message.rootThreadTs);
-    const enrichedMessage = session
-      ? await this.#prepareSlackInput(session, message)
-      : await this.#enrichMentionedUsers(message);
-    const sender = enrichedMessage.source !== "background_job_event" && enrichedMessage.source !== "recovered_thread_batch" && enrichedMessage.senderKind === "user"
-      ? await this.#slackApi.getUserIdentity(enrichedMessage.userId)
-      : null;
+  async buildTurnInput(sessionOrMessage: SlackSessionRecord | SlackInputMessage, maybeMessage?: SlackInputMessage): Promise<readonly AgentInputItem[]> {
+    const message = maybeMessage ?? (sessionOrMessage as SlackInputMessage);
+    const session = maybeMessage ? (sessionOrMessage as SlackSessionRecord) : this.#sessions.getSession(message.channelId, message.rootThreadTs);
+    const enrichedMessage = session ? await this.#prepareSlackInput(session, message) : await this.#enrichMentionedUsers(message);
+    const sender = enrichedMessage.source !== "background_job_event" && enrichedMessage.source !== "recovered_thread_batch" && enrichedMessage.senderKind === "user" ? await this.#slackApi.getUserIdentity(enrichedMessage.userId) : null;
     const inputText = formatSlackMessageForAgent(enrichedMessage, sender);
     return [createTextInputItem(inputText)];
   }
 
-  async submitInputWithRecovery(options: {
-    readonly session: SlackSessionRecord;
-    readonly sessionKey: string;
-    readonly senderUserId: string;
-    readonly input: readonly AgentInputItem[];
-    readonly messageTsList: readonly string[];
-  }): Promise<{
+  async submitInputWithRecovery(options: { readonly session: SlackSessionRecord; readonly sessionKey: string; readonly senderUserId: string; readonly input: readonly AgentInputItem[]; readonly messageTsList: readonly string[] }): Promise<{
     readonly session: SlackSessionRecord;
     readonly result: AgentTurnResult;
   }> {
@@ -92,7 +58,7 @@ export class SlackTurnRunner {
         session,
         input: options.input,
         inputId: inputIdForSessionInput(session, options.messageTsList.join(","), `turn-${attempt + 1}`),
-        source: "slack_user"
+        source: "slack_user",
       });
       if (submitted.receipt.delivery !== "started_turn" || !submitted.completion) {
         throw new Error(`Expected new turn delivery for queued input in ${session.key}, got ${submitted.receipt.delivery}`);
@@ -102,13 +68,9 @@ export class SlackTurnRunner {
         sessionKey: options.sessionKey,
         turnId: submitted.receipt.turnId,
         senderUserId: options.senderUserId,
-        attempt: attempt + 1
+        attempt: attempt + 1,
       });
-      session = await this.#sessions.setActiveTurnId(
-        session.channelId,
-        session.rootThreadTs,
-        submitted.receipt.turnId
-      );
+      session = await this.#sessions.setActiveTurnId(session.channelId, session.rootThreadTs, submitted.receipt.turnId);
       await this.#inboundStore.markMessagesInflightByTs(session, options.messageTsList, submitted.receipt.turnId);
 
       try {
@@ -117,18 +79,14 @@ export class SlackTurnRunner {
           sessionKey: options.sessionKey,
           turnId: result.turnId,
           aborted: result.aborted,
-          attempt: attempt + 1
+          attempt: attempt + 1,
         });
         await this.#persistTurnUsage(session, result);
         session = await this.#inboundStore.markTurnBatchDone(session, submitted.receipt.turnId);
-        session = await this.#sessions.clearActiveTurnIdIfMatches(
-          session.channelId,
-          session.rootThreadTs,
-          submitted.receipt.turnId
-        );
+        session = await this.#sessions.clearActiveTurnIdIfMatches(session.channelId, session.rootThreadTs, submitted.receipt.turnId);
         return {
           session,
-          result
+          result,
         };
       } catch (error) {
         const recovered = await this.#recoverTurnResult(session, submitted.receipt.turnId);
@@ -138,18 +96,14 @@ export class SlackTurnRunner {
             sessionKey: options.sessionKey,
             senderUserId: options.senderUserId,
             turnId: submitted.receipt.turnId,
-            recoveredStatus: recovered.aborted ? "interrupted" : "completed"
+            recoveredStatus: recovered.aborted ? "interrupted" : "completed",
           });
           await this.#persistTurnUsage(session, recovered);
           session = await this.#inboundStore.markTurnBatchDone(session, submitted.receipt.turnId);
-          session = await this.#sessions.clearActiveTurnIdIfMatches(
-            session.channelId,
-            session.rootThreadTs,
-            submitted.receipt.turnId
-          );
+          session = await this.#sessions.clearActiveTurnIdIfMatches(session.channelId, session.rootThreadTs, submitted.receipt.turnId);
           return {
             session,
-            result: recovered
+            result: recovered,
           };
         }
 
@@ -159,11 +113,7 @@ export class SlackTurnRunner {
         }
 
         await this.#inboundStore.resetTurnBatchToPending(session, submitted.receipt.turnId);
-        session = await this.#sessions.clearActiveTurnIdIfMatches(
-          session.channelId,
-          session.rootThreadTs,
-          submitted.receipt.turnId
-        );
+        session = await this.#sessions.clearActiveTurnIdIfMatches(session.channelId, session.rootThreadTs, submitted.receipt.turnId);
 
         if (shouldStop) {
           throw error;
@@ -172,7 +122,7 @@ export class SlackTurnRunner {
         logger.warn("Agent turn lost during runtime disconnect; retrying once", {
           sessionKey: options.sessionKey,
           senderUserId: options.senderUserId,
-          error: error instanceof Error ? error.message : String(error)
+          error: error instanceof Error ? error.message : String(error),
         });
         session = await this.#ensureAgentSessionInternal(session);
       }
@@ -187,7 +137,7 @@ export class SlackTurnRunner {
     options?: {
       readonly syncActiveTurn?: boolean | undefined;
       readonly treatMissingAsStale?: boolean | undefined;
-    }
+    },
   ) {
     return await this.#agentRuntime.readTurn(session, turnId, options);
   }
@@ -213,7 +163,7 @@ export class SlackTurnRunner {
         logger.warn("Stored agent session id no longer exists; resetting broker session runtime state", {
           sessionKey: session.key,
           agentSessionId: session.agentSessionId,
-          error: error instanceof Error ? error.message : String(error)
+          error: error instanceof Error ? error.message : String(error),
         });
 
         session = await this.#sessions.setActiveTurnId(session.channelId, session.rootThreadTs, undefined);
@@ -227,62 +177,45 @@ export class SlackTurnRunner {
 
   async #buildImmediateSlackInput(session: SlackSessionRecord, message: SlackInputMessage): Promise<readonly AgentInputItem[]> {
     const enrichedItem = await this.#prepareSlackInput(session, message);
-    const sender = enrichedItem.source !== "background_job_event" && enrichedItem.source !== "recovered_thread_batch" && enrichedItem.senderKind === "user"
-      ? await this.#slackApi.getUserIdentity(enrichedItem.userId)
-      : null;
+    const sender = enrichedItem.source !== "background_job_event" && enrichedItem.source !== "recovered_thread_batch" && enrichedItem.senderKind === "user" ? await this.#slackApi.getUserIdentity(enrichedItem.userId) : null;
     const formattedMessage = formatSlackMessageForAgent(enrichedItem, sender);
     return [
-      createTextInputItem([
-        enrichedItem.recoveryKind === "missed_thread_messages"
-          ? "The broker detected Slack thread messages that were not previously delivered into the active turn."
-          : "A newer Slack message arrived while the current turn is still active.",
-        enrichedItem.recoveryKind === "missed_thread_messages"
-          ? "Review the recovered batch, merge it into the current context, and decide whether you need to adjust the ongoing work or reply now."
-          : "Treat it as the latest instruction and adjust the ongoing work accordingly.",
-        "",
-        formattedMessage
-      ].join("\n"))
+      createTextInputItem(
+        [
+          enrichedItem.recoveryKind === "missed_thread_messages" ? "The broker detected Slack thread messages that were not previously delivered into the active turn." : "A newer Slack message arrived while the current turn is still active.",
+          enrichedItem.recoveryKind === "missed_thread_messages" ? "Review the recovered batch, merge it into the current context, and decide whether you need to adjust the ongoing work or reply now." : "Treat it as the latest instruction and adjust the ongoing work accordingly.",
+          "",
+          formattedMessage,
+        ].join("\n"),
+      ),
     ];
   }
 
   async #prepareSlackInput(session: SlackSessionRecord, message: SlackInputMessage): Promise<SlackInputMessage> {
     const enrichedMessage = await this.#enrichMentionedUsers(message);
-    const batchMessages = enrichedMessage.batchMessages
-      ? await Promise.all(
-        enrichedMessage.batchMessages.map((entry) => this.#materializeSlackAttachments(session, entry))
-      )
-      : undefined;
+    const batchMessages = enrichedMessage.batchMessages ? await Promise.all(enrichedMessage.batchMessages.map((entry) => this.#materializeSlackAttachments(session, entry))) : undefined;
     const messageWithAttachments = await this.#materializeSlackAttachments(session, enrichedMessage);
 
     return {
       ...messageWithAttachments,
-      batchMessages
+      batchMessages,
     };
   }
 
-  async #materializeSlackAttachments<T extends SlackInputMessage | SlackBatchInputMessage>(
-    session: SlackSessionRecord,
-    message: T
-  ): Promise<T> {
+  async #materializeSlackAttachments<T extends SlackInputMessage | SlackBatchInputMessage>(session: SlackSessionRecord, message: T): Promise<T> {
     if (!message.images || message.images.length === 0) {
       return message;
     }
 
-    const images = await Promise.all(
-      message.images.map((attachment) => this.#downloadSlackAttachment(session, message, attachment))
-    );
+    const images = await Promise.all(message.images.map((attachment) => this.#downloadSlackAttachment(session, message, attachment)));
 
     return {
       ...message,
-      images
+      images,
     };
   }
 
-  async #downloadSlackAttachment(
-    session: SlackSessionRecord,
-    message: Pick<SlackInputMessage | SlackBatchInputMessage, "messageTs" | "source">,
-    attachment: SlackImageAttachment
-  ): Promise<SlackImageAttachment> {
+  async #downloadSlackAttachment(session: SlackSessionRecord, message: Pick<SlackInputMessage | SlackBatchInputMessage, "messageTs" | "source">, attachment: SlackImageAttachment): Promise<SlackImageAttachment> {
     if (attachment.localPath || attachment.downloadError) {
       return attachment;
     }
@@ -293,13 +226,13 @@ export class SlackTurnRunner {
         workspacePath: session.workspacePath,
         messageTs: message.messageTs,
         attachment,
-        bytes: downloaded.bytes
+        bytes: downloaded.bytes,
       });
 
       return {
         ...attachment,
         mimetype: downloaded.contentType || attachment.mimetype,
-        localPath
+        localPath,
       };
     } catch (error) {
       const downloadError = error instanceof Error ? error.message : String(error);
@@ -309,12 +242,12 @@ export class SlackTurnRunner {
         rootThreadTs: session.rootThreadTs,
         messageTs: message.messageTs,
         fileId: attachment.fileId,
-        error: downloadError
+        error: downloadError,
       });
 
       return {
         ...attachment,
-        downloadError
+        downloadError,
       };
     }
   }
@@ -324,9 +257,7 @@ export class SlackTurnRunner {
       return message;
     }
 
-    const mentionedUsers = (
-      await Promise.all(message.mentionedUserIds.map((userId) => this.#slackApi.getUserIdentity(userId)))
-    ).filter((user): user is NonNullable<typeof user> => user !== null);
+    const mentionedUsers = (await Promise.all(message.mentionedUserIds.map((userId) => this.#slackApi.getUserIdentity(userId)))).filter((user): user is NonNullable<typeof user> => user !== null);
 
     if (mentionedUsers.length === 0) {
       return message;
@@ -334,17 +265,14 @@ export class SlackTurnRunner {
 
     return {
       ...message,
-      mentionedUsers
+      mentionedUsers,
     };
   }
 
-  async #recoverTurnResult(
-    session: SlackSessionRecord,
-    turnId: string
-  ): Promise<AgentTurnResult | null> {
+  async #recoverTurnResult(session: SlackSessionRecord, turnId: string): Promise<AgentTurnResult | null> {
     try {
       const snapshot = await this.#agentRuntime.readTurn(session, turnId, {
-        syncActiveTurn: true
+        syncActiveTurn: true,
       });
 
       if (!snapshot) {
@@ -358,7 +286,7 @@ export class SlackTurnRunner {
           finalMessage: snapshot.finalMessage,
           aborted: false,
           generatedImages: snapshot.generatedImages,
-          usage: snapshot.usage
+          usage: snapshot.usage,
         };
       }
 
@@ -369,7 +297,7 @@ export class SlackTurnRunner {
           finalMessage: snapshot.finalMessage,
           aborted: true,
           generatedImages: snapshot.generatedImages,
-          usage: snapshot.usage
+          usage: snapshot.usage,
         };
       }
 
@@ -382,7 +310,7 @@ export class SlackTurnRunner {
       logger.warn("Failed to recover agent turn result from runtime snapshot", {
         sessionKey: session.key,
         turnId,
-        error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
       });
       return null;
     }
@@ -407,15 +335,11 @@ export class SlackTurnRunner {
       reasoningTokens: usage?.reasoningTokens ?? 0,
       totalTokens: usage?.totalTokens ?? 0,
       rawUsage: usage?.rawUsage,
-      startedAt: session.activeTurnId === result.turnId ? session.activeTurnStartedAt : undefined
+      startedAt: session.activeTurnId === result.turnId ? session.activeTurnStartedAt : undefined,
     });
   }
 
-  async #persistMissingTurnUsage(
-    session: SlackSessionRecord,
-    turnId: string,
-    status: PersistedAgentTurnStatus
-  ): Promise<void> {
+  async #persistMissingTurnUsage(session: SlackSessionRecord, turnId: string, status: PersistedAgentTurnStatus): Promise<void> {
     await this.#upsertTurnUsage({
       turnId,
       sessionKey: session.key,
@@ -429,7 +353,7 @@ export class SlackTurnRunner {
       outputTokens: 0,
       reasoningTokens: 0,
       totalTokens: 0,
-      startedAt: session.activeTurnId === turnId ? session.activeTurnStartedAt : undefined
+      startedAt: session.activeTurnId === turnId ? session.activeTurnStartedAt : undefined,
     });
   }
 
@@ -439,7 +363,7 @@ export class SlackTurnRunner {
       ...record,
       completedAt: now,
       createdAt: record.startedAt ?? now,
-      updatedAt: now
+      updatedAt: now,
     });
   }
 }
@@ -448,18 +372,13 @@ function createTextInputItem(text: string): AgentInputItem {
   return {
     type: "text",
     text,
-    text_elements: []
+    text_elements: [],
   };
 }
 
 const SLACK_ATTACHMENTS_DIRECTORY = ".slack-attachments";
 
-async function writeSlackAttachmentFile(options: {
-  readonly workspacePath: string;
-  readonly messageTs?: string | undefined;
-  readonly attachment: SlackImageAttachment;
-  readonly bytes: Buffer;
-}): Promise<string> {
+async function writeSlackAttachmentFile(options: { readonly workspacePath: string; readonly messageTs?: string | undefined; readonly attachment: SlackImageAttachment; readonly bytes: Buffer }): Promise<string> {
   const workspaceRoot = path.resolve(options.workspacePath);
   const messageDirectory = sanitizePathSegment(options.messageTs ?? "unknown-message");
   const directoryPath = path.join(workspaceRoot, SLACK_ATTACHMENTS_DIRECTORY, messageDirectory);
@@ -480,9 +399,7 @@ function buildAttachmentFileName(attachment: SlackImageAttachment): string {
   const rawName = attachment.name ?? attachment.title ?? attachment.fileId;
   const safeBaseName = sanitizePathSegment(path.basename(rawName)) || "attachment";
   const safeFileId = sanitizePathSegment(attachment.fileId) || "slack-file";
-  const prefixedName = safeBaseName.startsWith(`${safeFileId}-`)
-    ? safeBaseName
-    : `${safeFileId}-${safeBaseName}`;
+  const prefixedName = safeBaseName.startsWith(`${safeFileId}-`) ? safeBaseName : `${safeFileId}-${safeBaseName}`;
   return truncateFileName(prefixedName, 180);
 }
 

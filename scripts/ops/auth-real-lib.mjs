@@ -3,18 +3,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import {
-  checkContainer,
-  dockerExecNode,
-  getDataRootSource,
-  getPublishedPort,
-  inspectContainer,
-  readDetailedStateFromHost,
-  readSessionStatsFromHost,
-  repoRoot,
-  runCommand,
-  summarizeOpsDisplayPath
-} from "./lib.mjs";
+import { checkContainer, dockerExecNode, getDataRootSource, getPublishedPort, inspectContainer, readDetailedStateFromHost, readSessionStatsFromHost, repoRoot, runCommand, summarizeOpsDisplayPath } from "./lib.mjs";
 
 async function fileInfo(filePath) {
   try {
@@ -23,13 +12,13 @@ async function fileInfo(filePath) {
       exists: true,
       path: summarizeOpsDisplayPath(filePath),
       size: stat.size,
-      mtime: stat.mtime.toISOString()
+      mtime: stat.mtime.toISOString(),
     };
   } catch (error) {
     if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
       return {
         exists: false,
-        path: summarizeOpsDisplayPath(filePath)
+        path: summarizeOpsDisplayPath(filePath),
       };
     }
 
@@ -67,8 +56,8 @@ export function readAccountSummary(containerName) {
         "ws.on('error', (error) => {",
         "  console.log(JSON.stringify({ ok: false, error: error.stack || String(error) }));",
         "  process.exit(0);",
-        "});"
-      ].join("\n")
+        "});",
+      ].join("\n"),
     );
     const parsed = JSON.parse(raw);
     const account = parsed.account ?? null;
@@ -77,14 +66,12 @@ export function readAccountSummary(containerName) {
       ok: true,
       account,
       quota,
-      note: quota
-        ? undefined
-        : "Codex app-server account/read did not expose quota or usage fields."
+      note: quota ? undefined : "Codex app-server account/read did not expose quota or usage fields.",
     };
   } catch (error) {
     return {
       ok: false,
-      error: error instanceof Error ? error.message : String(error)
+      error: error instanceof Error ? error.message : String(error),
     };
   }
 }
@@ -96,12 +83,12 @@ async function readHealthSummary(hostPort) {
     return {
       ok: response.ok,
       status: response.status,
-      body: safeParseJson(body)
+      body: safeParseJson(body),
     };
   } catch (error) {
     return {
       ok: false,
-      error: error instanceof Error ? error.message : String(error)
+      error: error instanceof Error ? error.message : String(error),
     };
   }
 }
@@ -120,14 +107,14 @@ function readReadySummary(containerName) {
           "  })",
           "  .catch((error) => {",
           "    console.log(JSON.stringify({ ok: false, error: error.stack || String(error) }));",
-          "  });"
-        ].join("\n")
-      )
+          "  });",
+        ].join("\n"),
+      ),
     );
   } catch (error) {
     return {
       ok: false,
-      error: error instanceof Error ? error.message : String(error)
+      error: error instanceof Error ? error.message : String(error),
     };
   }
 }
@@ -151,7 +138,7 @@ export async function getAuthRealStatus(options = {}) {
   const codexHome = path.join(dataRootSource, "codex-home");
   const state = await readDetailedStateFromHost(dataRootSource, {
     openInboundLimit,
-    logLineLimit
+    logLineLimit,
   });
   const health = await readHealthSummary(hostPort);
   const ready = readReadySummary(containerName);
@@ -159,7 +146,7 @@ export async function getAuthRealStatus(options = {}) {
     ? readAccountSummary(containerName)
     : {
         ok: false,
-        error: "container is not running"
+        error: "container is not running",
       };
 
   return {
@@ -170,7 +157,7 @@ export async function getAuthRealStatus(options = {}) {
       startedAt: inspect.State?.StartedAt ?? null,
       restartCount: inspect.RestartCount ?? 0,
       hostPort,
-      dataRootSource: summarizeOpsDisplayPath(dataRootSource)
+      dataRootSource: summarizeOpsDisplayPath(dataRootSource),
     },
     health,
     ready,
@@ -178,10 +165,10 @@ export async function getAuthRealStatus(options = {}) {
     authFiles: {
       authJson: await fileInfo(path.join(codexHome, "auth.json")),
       credentialsJson: await fileInfo(path.join(codexHome, ".credentials.json")),
-      configToml: await fileInfo(path.join(codexHome, "config.toml"))
+      configToml: await fileInfo(path.join(codexHome, "config.toml")),
     },
     account,
-    state
+    state,
   };
 }
 
@@ -219,28 +206,26 @@ export async function replaceAuthInRealContainer(options) {
   const sessionStats = await readSessionStatsFromHost(dataRootSource);
 
   if ((options.restart ?? true) && !options.allowActive && sessionStats.activeCount > 0) {
-    throw new Error(
-      `Refusing auth replacement restart while active sessions exist (activeCount=${sessionStats.activeCount}). Re-run with allowActive if you really want to interrupt them.`
-    );
+    throw new Error(`Refusing auth replacement restart while active sessions exist (activeCount=${sessionStats.activeCount}). Re-run with allowActive if you really want to interrupt them.`);
   }
 
   const replacements = [
     {
       source: options.authJsonPath,
-      target: path.join(codexHome, "auth.json")
+      target: path.join(codexHome, "auth.json"),
     },
     options.credentialsJsonPath
       ? {
           source: options.credentialsJsonPath,
-          target: path.join(codexHome, ".credentials.json")
+          target: path.join(codexHome, ".credentials.json"),
         }
       : null,
     options.configTomlPath
       ? {
           source: options.configTomlPath,
-          target: path.join(codexHome, "config.toml")
+          target: path.join(codexHome, "config.toml"),
         }
-      : null
+      : null,
   ].filter(Boolean);
 
   for (const entry of replacements) {
@@ -255,7 +240,7 @@ export async function replaceAuthInRealContainer(options) {
     const backupPath = await backupIfExists(entry.target, backupDir);
     backups.push({
       target: summarizeOpsDisplayPath(entry.target),
-      backupPath: backupPath ? summarizeOpsDisplayPath(backupPath) : null
+      backupPath: backupPath ? summarizeOpsDisplayPath(backupPath) : null,
     });
     await copyIntoCodexHome(entry.source, entry.target);
   }
@@ -282,7 +267,7 @@ export async function replaceAuthInRealContainer(options) {
     backups,
     replaced: replacements.map((entry) => ({
       source: summarizeOpsDisplayPath(entry.source),
-      target: summarizeOpsDisplayPath(entry.target)
-    }))
+      target: summarizeOpsDisplayPath(entry.target),
+    })),
   };
 }

@@ -322,7 +322,7 @@ If `BROKER_ADMIN_TOKEN` is set, `/admin/api/*` requires that token via `x-admin-
 
 The container image:
 
-- uses Node 22.5+ for the built-in SQLite runtime state store
+- uses Node 22.13+ for the built-in SQLite runtime state store and lint/format toolchain
 - installs `git`
 - installs `gh`
 - installs `rg` via `ripgrep`

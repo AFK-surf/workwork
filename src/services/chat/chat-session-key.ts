@@ -9,32 +9,15 @@ export interface ChatSessionCoordinates {
 }
 
 export function createChatSessionKey(coordinates: ChatSessionCoordinates): string {
-  return [
-    coordinates.platform,
-    encodeSessionKeyPart(coordinates.conversationId),
-    encodeSessionKeyPart(coordinates.rootMessageId)
-  ].join(":");
+  return [coordinates.platform, encodeSessionKeyPart(coordinates.conversationId), encodeSessionKeyPart(coordinates.rootMessageId)].join(":");
 }
 
-export function createChatWorkspacePath(
-  sessionsRoot: string,
-  coordinates: ChatSessionCoordinates
-): string {
-  return path.join(
-    sessionsRoot,
-    createChatWorkspaceDirectoryName(coordinates),
-    "workspace"
-  );
+export function createChatWorkspacePath(sessionsRoot: string, coordinates: ChatSessionCoordinates): string {
+  return path.join(sessionsRoot, createChatWorkspaceDirectoryName(coordinates), "workspace");
 }
 
-export function createChatWorkspaceDirectoryName(
-  coordinates: ChatSessionCoordinates
-): string {
-  return [
-    coordinates.platform,
-    sanitizeForPath(coordinates.conversationId),
-    sanitizeForPath(coordinates.rootMessageId)
-  ].filter(Boolean).join("-");
+export function createChatWorkspaceDirectoryName(coordinates: ChatSessionCoordinates): string {
+  return [coordinates.platform, sanitizeForPath(coordinates.conversationId), sanitizeForPath(coordinates.rootMessageId)].filter(Boolean).join("-");
 }
 
 export function encodeSessionKeyPart(value: string): string {

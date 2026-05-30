@@ -17,9 +17,9 @@ describe("macOS launchd restart helper", () => {
       tempDirs.splice(0).map((directory) =>
         fs.rm(directory, {
           force: true,
-          recursive: true
-        })
-      )
+          recursive: true,
+        }),
+      ),
     );
   });
 
@@ -33,47 +33,19 @@ describe("macOS launchd restart helper", () => {
     const plistPath = path.join(tempRoot, "admin.plist");
     await fs.mkdir(fakeBin, { recursive: true });
     await fs.writeFile(plistPath, "<plist/>", "utf8");
-    await fs.writeFile(
-      path.join(fakeBin, "launchctl"),
-      [
-        "#!/bin/sh",
-        "printf '%s\\n' \"$*\" >> \"$COMMAND_LOG\"",
-        "exit 0",
-        ""
-      ].join("\n"),
-      "utf8"
-    );
+    await fs.writeFile(path.join(fakeBin, "launchctl"), ["#!/bin/sh", 'printf \'%s\\n\' "$*" >> "$COMMAND_LOG"', "exit 0", ""].join("\n"), "utf8");
     await fs.chmod(path.join(fakeBin, "launchctl"), 0o755);
 
     const scriptPath = fileURLToPath(new URL("../scripts/ops/macos-launchd-restart.mjs", import.meta.url));
-    await execFileAsync(process.execPath, [
-      scriptPath,
-      "--domain",
-      "system",
-      "--plist",
-      plistPath,
-      "--label",
-      "test.admin",
-      "--delay-ms",
-      "0",
-      "--log-file",
-      helperLog,
-      "--reason",
-      "test restart"
-    ], {
+    await execFileAsync(process.execPath, [scriptPath, "--domain", "system", "--plist", plistPath, "--label", "test.admin", "--delay-ms", "0", "--log-file", helperLog, "--reason", "test restart"], {
       env: {
         ...process.env,
         COMMAND_LOG: commandLog,
-        PATH: `${fakeBin}:${process.env.PATH ?? ""}`
-      }
+        PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
+      },
     });
 
-    await expect(fs.readFile(commandLog, "utf8")).resolves.toBe([
-      `bootout system ${plistPath}`,
-      `bootstrap system ${plistPath}`,
-      "kickstart -k system/test.admin",
-      ""
-    ].join("\n"));
+    await expect(fs.readFile(commandLog, "utf8")).resolves.toBe([`bootout system ${plistPath}`, `bootstrap system ${plistPath}`, "kickstart -k system/test.admin", ""].join("\n"));
     await expect(fs.readFile(helperLog, "utf8")).resolves.toContain("kickstart code=0");
   });
 });

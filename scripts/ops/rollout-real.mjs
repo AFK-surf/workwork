@@ -3,21 +3,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import {
-  checkContainer,
-  createTempEnvFile,
-  getRunArgumentsFromInspect,
-  inspectContainer,
-  readSessionStatsFromHost,
-  repoRoot,
-  runCommand,
-  sanitizeOpsDockerLogsForEvidence,
-  shouldRunFeishuPreflight,
-  writeRolloutMetadata,
-  getEnvObjectFromInspect,
-  getDataRootSource,
-  summarizeOpsEvidencePath
-} from "./lib.mjs";
+import { checkContainer, createTempEnvFile, getRunArgumentsFromInspect, inspectContainer, readSessionStatsFromHost, repoRoot, runCommand, sanitizeOpsDockerLogsForEvidence, shouldRunFeishuPreflight, writeRolloutMetadata, getEnvObjectFromInspect, getDataRootSource, summarizeOpsEvidencePath } from "./lib.mjs";
 
 function parseArgs(argv) {
   const options = {
@@ -27,7 +13,7 @@ function parseArgs(argv) {
     skipTests: false,
     skipChecks: false,
     skipFeishuPreflight: false,
-    allowActive: false
+    allowActive: false,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -62,9 +48,7 @@ function parseArgs(argv) {
         break;
       case "--help":
       case "-h":
-        console.log(
-          "Usage: node scripts/ops/rollout-real.mjs [--container <name>] [--image <name>] [--skip-build] [--skip-tests] [--skip-checks] [--skip-feishu-preflight] [--allow-active]"
-        );
+        console.log("Usage: node scripts/ops/rollout-real.mjs [--container <name>] [--image <name>] [--skip-build] [--skip-tests] [--skip-checks] [--skip-feishu-preflight] [--allow-active]");
         process.exit(0);
       default:
         throw new Error(`Unknown argument: ${argument}`);
@@ -78,9 +62,7 @@ async function assertNoActiveSessions(containerName, allowActive) {
   const inspect = inspectContainer(containerName);
   const sessionStats = await readSessionStatsFromHost(getDataRootSource(inspect));
   if (!allowActive && sessionStats.activeCount > 0) {
-    throw new Error(
-      `Refusing rollout while active sessions exist (activeCount=${sessionStats.activeCount}). Re-run with --allow-active if you really want to interrupt them.`
-    );
+    throw new Error(`Refusing rollout while active sessions exist (activeCount=${sessionStats.activeCount}). Re-run with --allow-active if you really want to interrupt them.`);
   }
 
   return sessionStats;
@@ -90,39 +72,27 @@ async function runFeishuPreflightIfEnabled(inspect, rolloutDir, skipFeishuPrefli
   if (skipFeishuPreflight) {
     return {
       skipped: true,
-      reason: "skip_feishu_preflight"
+      reason: "skip_feishu_preflight",
     };
   }
 
   if (!shouldRunFeishuPreflight(inspect)) {
     return {
       skipped: true,
-      reason: "feishu_disabled"
+      reason: "feishu_disabled",
     };
   }
 
   const outputDir = path.join(rolloutDir, "feishu-preflight");
-  const stdout = runCommand(
-    "pnpm",
-    [
-      "exec",
-      "tsx",
-      "test/manual/run-real-feishu-smoke.ts",
-      "--preflight",
-      "--output-dir",
-      outputDir,
-      "--json"
-    ],
-    {
-      capture: true,
-      env: getEnvObjectFromInspect(inspect)
-    }
-  );
+  const stdout = runCommand("pnpm", ["exec", "tsx", "test/manual/run-real-feishu-smoke.ts", "--preflight", "--output-dir", outputDir, "--json"], {
+    capture: true,
+    env: getEnvObjectFromInspect(inspect),
+  });
 
   return {
     skipped: false,
     outputDir: summarizeOpsEvidencePath(outputDir),
-    report: JSON.parse(stdout)
+    report: JSON.parse(stdout),
   };
 }
 
@@ -146,11 +116,7 @@ const { mountArgs, portArgs, restartPolicy } = getRunArgumentsFromInspect(inspec
 const rolloutStamp = new Date().toISOString().replace(/[:.]/g, "-");
 const rolloutDir = path.join(repoRoot, ".backups", "rollouts", rolloutStamp);
 const rolloutDirSummary = summarizeOpsEvidencePath(rolloutDir);
-const feishuPreflight = await runFeishuPreflightIfEnabled(
-  inspect,
-  rolloutDir,
-  options.skipFeishuPreflight
-);
+const feishuPreflight = await runFeishuPreflightIfEnabled(inspect, rolloutDir, options.skipFeishuPreflight);
 await writeRolloutMetadata(rolloutDir, {
   containerName: options.containerName,
   imageName: options.imageName,
@@ -158,14 +124,9 @@ await writeRolloutMetadata(rolloutDir, {
   beforeStats,
   restartPolicy,
   feishuPreflight,
-  startedAt: new Date().toISOString()
+  startedAt: new Date().toISOString(),
 });
-await fs.writeFile(
-  path.join(rolloutDir, "logs-before.txt"),
-  sanitizeOpsDockerLogsForEvidence(
-    runCommand("docker", ["logs", "--tail", "200", options.containerName], { capture: true })
-  )
-);
+await fs.writeFile(path.join(rolloutDir, "logs-before.txt"), sanitizeOpsDockerLogsForEvidence(runCommand("docker", ["logs", "--tail", "200", options.containerName], { capture: true })));
 
 try {
   const latestStats = await assertNoActiveSessions(options.containerName, options.allowActive);
@@ -176,24 +137,12 @@ try {
     beforeStats: latestStats,
     restartPolicy,
     feishuPreflight,
-    startedAt: new Date().toISOString()
+    startedAt: new Date().toISOString(),
   });
 
   runCommand("docker", ["rm", "-f", options.containerName]);
 
-  const dockerArgs = [
-    "run",
-    "-d",
-    "--name",
-    options.containerName,
-    "--restart",
-    restartPolicy,
-    "--env-file",
-    envFile,
-    ...portArgs,
-    ...mountArgs,
-    options.imageName
-  ];
+  const dockerArgs = ["run", "-d", "--name", options.containerName, "--restart", restartPolicy, "--env-file", envFile, ...portArgs, ...mountArgs, options.imageName];
   const containerId = runCommand("docker", dockerArgs, { capture: true });
 
   let summary = undefined;
@@ -208,7 +157,7 @@ try {
       startedAt: new Date().toISOString(),
       containerId,
       feishuPreflight,
-      checkSummary: summary
+      checkSummary: summary,
     });
   }
 
@@ -218,11 +167,11 @@ try {
         containerId,
         rolloutDir: rolloutDirSummary,
         feishuPreflight,
-        checkSummary: summary
+        checkSummary: summary,
       },
       null,
-      2
-    )
+      2,
+    ),
   );
 } finally {
   await cleanup();

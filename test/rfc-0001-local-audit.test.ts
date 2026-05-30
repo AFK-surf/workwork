@@ -4,15 +4,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import {
-  collectRfc0001LocalAudit,
-  createRfc0001AuditCliReport,
-  parseRfc0001AuditArgs,
-  RFC0001_REQUIRED_LOCAL_EVIDENCE_PATTERNS,
-  RFC0001_REQUIRED_LOCAL_FIXTURE_FILES,
-  RFC0001_REQUIRED_LOCAL_IMPLEMENTATION_FILES,
-  RFC0001_REQUIRED_LOCAL_TEST_FILES
-} from "./manual/run-rfc-0001-local-audit.js";
+import { collectRfc0001LocalAudit, createRfc0001AuditCliReport, parseRfc0001AuditArgs, RFC0001_REQUIRED_LOCAL_EVIDENCE_PATTERNS, RFC0001_REQUIRED_LOCAL_FIXTURE_FILES, RFC0001_REQUIRED_LOCAL_IMPLEMENTATION_FILES, RFC0001_REQUIRED_LOCAL_TEST_FILES } from "./manual/run-rfc-0001-local-audit.js";
 
 const requiredScripts = {
   test: "vitest run",
@@ -25,7 +17,7 @@ const requiredScripts = {
   "ops:ui:real": "node scripts/ops/auth-ui-real.mjs",
   "ops:rollout:real": "node scripts/ops/rollout-real.mjs",
   "ops:check:real": "node scripts/ops/check-real.mjs",
-  "ops:status:real": "node scripts/ops/status-real.mjs"
+  "ops:status:real": "node scripts/ops/status-real.mjs",
 };
 
 describe("RFC 0001 local audit", () => {
@@ -34,7 +26,7 @@ describe("RFC 0001 local audit", () => {
       json: true,
       help: false,
       localOnly: true,
-      evidenceDir: "evidence/feishu-smoke"
+      evidenceDir: "evidence/feishu-smoke",
     });
   });
 
@@ -43,20 +35,14 @@ describe("RFC 0001 local audit", () => {
     const report = await collectRfc0001LocalAudit({
       cwd: repo,
       env: {},
-      evidenceDir: path.join(repo, "evidence", "feishu-smoke")
+      evidenceDir: path.join(repo, "evidence", "feishu-smoke"),
     });
 
     expect(report.ok).toBe(false);
     expect(report.localOk).toBe(true);
     expect(report.realTenantOk).toBe(false);
     expect(report.localChecks.every((check) => check.status === "pass")).toBe(true);
-    expect(report.realTenantChecks).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ id: "real.preflight", status: "missing" }),
-        expect.objectContaining({ id: "real.setup_evidence", status: "missing" }),
-        expect.objectContaining({ id: "real.saved_smoke", status: "missing" })
-      ])
-    );
+    expect(report.realTenantChecks).toEqual(expect.arrayContaining([expect.objectContaining({ id: "real.preflight", status: "missing" }), expect.objectContaining({ id: "real.setup_evidence", status: "missing" }), expect.objectContaining({ id: "real.saved_smoke", status: "missing" })]));
     expect(report.nextActions.join("\n")).toContain("real.preflight");
     expect(report.nextActions.join("\n")).toContain("real.setup_evidence");
     expect(report.nextActions.join("\n")).toContain("real.saved_smoke");
@@ -67,7 +53,7 @@ describe("RFC 0001 local audit", () => {
     const report = await collectRfc0001LocalAudit({
       cwd: repo,
       env: {},
-      evidenceDir: path.join(repo, "evidence", "feishu-smoke")
+      evidenceDir: path.join(repo, "evidence", "feishu-smoke"),
     });
 
     expect(createRfc0001AuditCliReport(report, { localOnly: false })).toMatchObject({
@@ -75,14 +61,14 @@ describe("RFC 0001 local audit", () => {
       ok: false,
       localOk: true,
       realTenantOk: false,
-      exitOk: false
+      exitOk: false,
     });
     expect(createRfc0001AuditCliReport(report, { localOnly: true })).toMatchObject({
       mode: "local",
       ok: false,
       localOk: true,
       realTenantOk: false,
-      exitOk: true
+      exitOk: true,
     });
   });
 
@@ -91,13 +77,13 @@ describe("RFC 0001 local audit", () => {
       omitDeepDive: "observability.md",
       scripts: {
         ...requiredScripts,
-        "rfc:feishu-audit": "tsx test/manual/something-else.ts"
-      }
+        "rfc:feishu-audit": "tsx test/manual/something-else.ts",
+      },
     });
     const report = await collectRfc0001LocalAudit({
       cwd: repo,
       env: {},
-      evidenceDir: path.join(repo, "evidence", "feishu-smoke")
+      evidenceDir: path.join(repo, "evidence", "feishu-smoke"),
     });
 
     expect(report.localOk).toBe(false);
@@ -106,25 +92,25 @@ describe("RFC 0001 local audit", () => {
         expect.objectContaining({
           id: "local.rfc_deep_dives",
           status: "missing",
-          evidence: expect.arrayContaining(["missing=observability.md"])
+          evidence: expect.arrayContaining(["missing=observability.md"]),
         }),
         expect.objectContaining({
           id: "local.package_scripts",
           status: "missing",
-          evidence: expect.arrayContaining(["rfc:feishu-audit=missing_or_unexpected"])
-        })
-      ])
+          evidence: expect.arrayContaining(["rfc:feishu-audit=missing_or_unexpected"]),
+        }),
+      ]),
     );
   });
 
   it("fails local readiness when the Feishu permission request packet is missing", async () => {
     const repo = await createFixtureRepo({
-      omitFiles: ["docs/feishu-permission-request.md"]
+      omitFiles: ["docs/feishu-permission-request.md"],
     });
     const report = await collectRfc0001LocalAudit({
       cwd: repo,
       env: {},
-      evidenceDir: path.join(repo, "evidence", "feishu-smoke")
+      evidenceDir: path.join(repo, "evidence", "feishu-smoke"),
     });
 
     expect(report.localOk).toBe(false);
@@ -133,27 +119,25 @@ describe("RFC 0001 local audit", () => {
         expect.objectContaining({
           id: "local.permission_request_packet",
           status: "missing",
-          evidence: ["missing=docs/feishu-permission-request.md"]
+          evidence: ["missing=docs/feishu-permission-request.md"],
         }),
         expect.objectContaining({
           id: "local.behavior_evidence",
           status: "missing",
-          evidence: expect.arrayContaining([
-            "docs.permission_request_packet:docs/feishu-permission-request.md:missing_file"
-          ])
-        })
-      ])
+          evidence: expect.arrayContaining(["docs.permission_request_packet:docs/feishu-permission-request.md:missing_file"]),
+        }),
+      ]),
     );
   });
 
   it("fails local readiness when the Feishu setup runbook loses rollout steps", async () => {
     const repo = await createFixtureRepo({
-      omitEvidenceProbe: "docs.feishu_setup_runbook"
+      omitEvidenceProbe: "docs.feishu_setup_runbook",
     });
     const report = await collectRfc0001LocalAudit({
       cwd: repo,
       env: {},
-      evidenceDir: path.join(repo, "evidence", "feishu-smoke")
+      evidenceDir: path.join(repo, "evidence", "feishu-smoke"),
     });
 
     expect(report.localOk).toBe(false);
@@ -161,27 +145,25 @@ describe("RFC 0001 local audit", () => {
       expect.arrayContaining([
         expect.objectContaining({
           id: "local.feishu_setup_doc",
-          status: "pass"
+          status: "pass",
         }),
         expect.objectContaining({
           id: "local.behavior_evidence",
           status: "missing",
-          evidence: expect.arrayContaining([
-            expect.stringContaining("docs.feishu_setup_runbook:docs/feishu-setup.md:missing_snippet=")
-          ])
-        })
-      ])
+          evidence: expect.arrayContaining([expect.stringContaining("docs.feishu_setup_runbook:docs/feishu-setup.md:missing_snippet=")]),
+        }),
+      ]),
     );
   });
 
   it("fails local readiness when the README loses the user-facing Feishu surface", async () => {
     const repo = await createFixtureRepo({
-      omitEvidenceProbe: "docs.readme_user_surface"
+      omitEvidenceProbe: "docs.readme_user_surface",
     });
     const report = await collectRfc0001LocalAudit({
       cwd: repo,
       env: {},
-      evidenceDir: path.join(repo, "evidence", "feishu-smoke")
+      evidenceDir: path.join(repo, "evidence", "feishu-smoke"),
     });
 
     expect(report.localOk).toBe(false);
@@ -190,22 +172,20 @@ describe("RFC 0001 local audit", () => {
         expect.objectContaining({
           id: "local.behavior_evidence",
           status: "missing",
-          evidence: expect.arrayContaining([
-            expect.stringContaining("docs.readme_user_surface:README.md:missing_snippet=")
-          ])
-        })
-      ])
+          evidence: expect.arrayContaining([expect.stringContaining("docs.readme_user_surface:README.md:missing_snippet=")]),
+        }),
+      ]),
     );
   });
 
   it("fails local readiness when the Feishu permission request packet loses approval rationale", async () => {
     const repo = await createFixtureRepo({
-      omitEvidenceProbe: "docs.permission_request_packet"
+      omitEvidenceProbe: "docs.permission_request_packet",
     });
     const report = await collectRfc0001LocalAudit({
       cwd: repo,
       env: {},
-      evidenceDir: path.join(repo, "evidence", "feishu-smoke")
+      evidenceDir: path.join(repo, "evidence", "feishu-smoke"),
     });
 
     expect(report.localOk).toBe(false);
@@ -213,27 +193,25 @@ describe("RFC 0001 local audit", () => {
       expect.arrayContaining([
         expect.objectContaining({
           id: "local.permission_request_packet",
-          status: "pass"
+          status: "pass",
         }),
         expect.objectContaining({
           id: "local.behavior_evidence",
           status: "missing",
-          evidence: expect.arrayContaining([
-            expect.stringContaining("docs.permission_request_packet:docs/feishu-permission-request.md:missing_snippet=")
-          ])
-        })
-      ])
+          evidence: expect.arrayContaining([expect.stringContaining("docs.permission_request_packet:docs/feishu-permission-request.md:missing_snippet=")]),
+        }),
+      ]),
     );
   });
 
   it("fails local readiness when the setup evidence template stops being a safe placeholder", async () => {
     const repo = await createFixtureRepo({
-      setupEvidenceTemplateContent: "{}\n"
+      setupEvidenceTemplateContent: "{}\n",
     });
     const report = await collectRfc0001LocalAudit({
       cwd: repo,
       env: {},
-      evidenceDir: path.join(repo, "evidence", "feishu-smoke")
+      evidenceDir: path.join(repo, "evidence", "feishu-smoke"),
     });
 
     expect(report.localOk).toBe(false);
@@ -242,28 +220,20 @@ describe("RFC 0001 local audit", () => {
         expect.objectContaining({
           id: "local.setup_evidence_template",
           status: "missing",
-          evidence: expect.arrayContaining([
-            "template_evaluator_status=fail",
-            "target=missing",
-            "consoleLabels=0/9",
-            "missing labels: appType, botCapability, eventDelivery, receiveMessageEvent, groupMessagePermission, sendMessagePermission, cardCallback, resourcePermission, botIdentitySource"
-          ])
-        })
-      ])
+          evidence: expect.arrayContaining(["template_evaluator_status=fail", "target=missing", "consoleLabels=0/9", "missing labels: appType, botCapability, eventDelivery, receiveMessageEvent, groupMessagePermission, sendMessagePermission, cardCallback, resourcePermission, botIdentitySource"]),
+        }),
+      ]),
     );
   });
 
   it("fails local readiness when the RFC PR template traceability prompt drifts", async () => {
     const repo = await createFixtureRepo({
-      omitFiles: [
-        ".github/pull_request_template.md",
-        "test/rfc-pr-template.test.ts"
-      ]
+      omitFiles: [".github/pull_request_template.md", "test/rfc-pr-template.test.ts"],
     });
     const report = await collectRfc0001LocalAudit({
       cwd: repo,
       env: {},
-      evidenceDir: path.join(repo, "evidence", "feishu-smoke")
+      evidenceDir: path.join(repo, "evidence", "feishu-smoke"),
     });
 
     expect(report.localOk).toBe(false);
@@ -272,35 +242,30 @@ describe("RFC 0001 local audit", () => {
         expect.objectContaining({
           id: "local.pr_template",
           status: "missing",
-          evidence: ["missing=.github/pull_request_template.md"]
+          evidence: ["missing=.github/pull_request_template.md"],
         }),
         expect.objectContaining({
           id: "local.test_slices",
           status: "missing",
-          evidence: expect.arrayContaining(["missing=test/rfc-pr-template.test.ts"])
+          evidence: expect.arrayContaining(["missing=test/rfc-pr-template.test.ts"]),
         }),
         expect.objectContaining({
           id: "local.behavior_evidence",
           status: "missing",
-          evidence: expect.arrayContaining([
-            "docs.pr_template_traceability:.github/pull_request_template.md:missing_file"
-          ])
-        })
-      ])
+          evidence: expect.arrayContaining(["docs.pr_template_traceability:.github/pull_request_template.md:missing_file"]),
+        }),
+      ]),
     );
   });
 
   it("fails local readiness when implementation or test slices drift", async () => {
     const repo = await createFixtureRepo({
-      omitFiles: [
-        "src/services/feishu/feishu-event-parser.ts",
-        "test/dual-platform-runtime.test.ts"
-      ]
+      omitFiles: ["src/services/feishu/feishu-event-parser.ts", "test/dual-platform-runtime.test.ts"],
     });
     const report = await collectRfc0001LocalAudit({
       cwd: repo,
       env: {},
-      evidenceDir: path.join(repo, "evidence", "feishu-smoke")
+      evidenceDir: path.join(repo, "evidence", "feishu-smoke"),
     });
 
     expect(report.localOk).toBe(false);
@@ -309,29 +274,26 @@ describe("RFC 0001 local audit", () => {
         expect.objectContaining({
           id: "local.implementation_surfaces",
           status: "missing",
-          evidence: expect.arrayContaining(["missing=src/services/feishu/feishu-event-parser.ts"])
+          evidence: expect.arrayContaining(["missing=src/services/feishu/feishu-event-parser.ts"]),
         }),
         expect.objectContaining({
           id: "local.test_slices",
           status: "missing",
-          evidence: expect.arrayContaining(["missing=test/dual-platform-runtime.test.ts"])
-        })
-      ])
+          evidence: expect.arrayContaining(["missing=test/dual-platform-runtime.test.ts"]),
+        }),
+      ]),
     );
   });
 
   it("fails local readiness when Feishu config or startup assets drift", async () => {
     const repo = await createFixtureRepo({
       omitEvidenceProbe: "config.feishu_flags",
-      omitFiles: [
-        ".env.example",
-        "test/config.test.ts"
-      ]
+      omitFiles: [".env.example", "test/config.test.ts"],
     });
     const report = await collectRfc0001LocalAudit({
       cwd: repo,
       env: {},
-      evidenceDir: path.join(repo, "evidence", "feishu-smoke")
+      evidenceDir: path.join(repo, "evidence", "feishu-smoke"),
     });
 
     expect(report.localOk).toBe(false);
@@ -340,37 +302,31 @@ describe("RFC 0001 local audit", () => {
         expect.objectContaining({
           id: "local.implementation_surfaces",
           status: "missing",
-          evidence: expect.arrayContaining(["missing=.env.example"])
+          evidence: expect.arrayContaining(["missing=.env.example"]),
         }),
         expect.objectContaining({
           id: "local.test_slices",
           status: "missing",
-          evidence: expect.arrayContaining(["missing=test/config.test.ts"])
+          evidence: expect.arrayContaining(["missing=test/config.test.ts"]),
         }),
         expect.objectContaining({
           id: "local.behavior_evidence",
           status: "missing",
-          evidence: expect.arrayContaining([
-            "env.feishu_rollout_flags:.env.example:missing_file",
-            expect.stringContaining("config.feishu_flags:src/config.ts:missing_snippet=")
-          ])
-        })
-      ])
+          evidence: expect.arrayContaining(["env.feishu_rollout_flags:.env.example:missing_file", expect.stringContaining("config.feishu_flags:src/config.ts:missing_snippet=")]),
+        }),
+      ]),
     );
   });
 
   it("fails local readiness when Phase 1 Slack compatibility slices drift", async () => {
     const repo = await createFixtureRepo({
       omitEvidenceProbe: "http.slack_compat_wrappers",
-      omitFiles: [
-        "src/http/slack-routes.ts",
-        "test/e2e-broker.test.ts"
-      ]
+      omitFiles: ["src/http/slack-routes.ts", "test/e2e-broker.test.ts"],
     });
     const report = await collectRfc0001LocalAudit({
       cwd: repo,
       env: {},
-      evidenceDir: path.join(repo, "evidence", "feishu-smoke")
+      evidenceDir: path.join(repo, "evidence", "feishu-smoke"),
     });
 
     expect(report.localOk).toBe(false);
@@ -379,35 +335,30 @@ describe("RFC 0001 local audit", () => {
         expect.objectContaining({
           id: "local.implementation_surfaces",
           status: "missing",
-          evidence: expect.arrayContaining(["missing=src/http/slack-routes.ts"])
+          evidence: expect.arrayContaining(["missing=src/http/slack-routes.ts"]),
         }),
         expect.objectContaining({
           id: "local.test_slices",
           status: "missing",
-          evidence: expect.arrayContaining(["missing=test/e2e-broker.test.ts"])
+          evidence: expect.arrayContaining(["missing=test/e2e-broker.test.ts"]),
         }),
         expect.objectContaining({
           id: "local.behavior_evidence",
           status: "missing",
-          evidence: expect.arrayContaining([
-            "http.slack_compat_wrappers:src/http/slack-routes.ts:missing_file"
-          ])
-        })
-      ])
+          evidence: expect.arrayContaining(["http.slack_compat_wrappers:src/http/slack-routes.ts:missing_file"]),
+        }),
+      ]),
     );
   });
 
   it("fails local readiness when RFC Feishu replay fixtures drift", async () => {
     const repo = await createFixtureRepo({
-      omitFiles: [
-        "test/fixtures/feishu/group-followup-parent-only.json",
-        "test/fixtures/feishu/history-page.json"
-      ]
+      omitFiles: ["test/fixtures/feishu/group-followup-parent-only.json", "test/fixtures/feishu/history-page.json"],
     });
     const report = await collectRfc0001LocalAudit({
       cwd: repo,
       env: {},
-      evidenceDir: path.join(repo, "evidence", "feishu-smoke")
+      evidenceDir: path.join(repo, "evidence", "feishu-smoke"),
     });
 
     expect(report.localOk).toBe(false);
@@ -416,27 +367,21 @@ describe("RFC 0001 local audit", () => {
         expect.objectContaining({
           id: "local.feishu_fixtures",
           status: "missing",
-          evidence: expect.arrayContaining([
-            "missing=test/fixtures/feishu/group-followup-parent-only.json",
-            "missing=test/fixtures/feishu/history-page.json"
-          ])
-        })
-      ])
+          evidence: expect.arrayContaining(["missing=test/fixtures/feishu/group-followup-parent-only.json", "missing=test/fixtures/feishu/history-page.json"]),
+        }),
+      ]),
     );
   });
 
   it("fails local readiness when Phase 4 HTTP or integration contract slices drift", async () => {
     const repo = await createFixtureRepo({
       omitEvidenceProbe: "api.feishu_resource_transfer",
-      omitFiles: [
-        "src/http/integration-routes.ts",
-        "test/integration-routes.test.ts"
-      ]
+      omitFiles: ["src/http/integration-routes.ts", "test/integration-routes.test.ts"],
     });
     const report = await collectRfc0001LocalAudit({
       cwd: repo,
       env: {},
-      evidenceDir: path.join(repo, "evidence", "feishu-smoke")
+      evidenceDir: path.join(repo, "evidence", "feishu-smoke"),
     });
 
     expect(report.localOk).toBe(false);
@@ -445,33 +390,30 @@ describe("RFC 0001 local audit", () => {
         expect.objectContaining({
           id: "local.implementation_surfaces",
           status: "missing",
-          evidence: expect.arrayContaining(["missing=src/http/integration-routes.ts"])
+          evidence: expect.arrayContaining(["missing=src/http/integration-routes.ts"]),
         }),
         expect.objectContaining({
           id: "local.test_slices",
           status: "missing",
-          evidence: expect.arrayContaining(["missing=test/integration-routes.test.ts"])
+          evidence: expect.arrayContaining(["missing=test/integration-routes.test.ts"]),
         }),
         expect.objectContaining({
           id: "local.behavior_evidence",
           status: "missing",
-          evidence: expect.arrayContaining([
-            expect.stringContaining("api.feishu_resource_transfer:test/feishu-api.test.ts:missing_snippet="),
-            "http.integration_mcp_arguments:test/integration-routes.test.ts:missing_file"
-          ])
-        })
-      ])
+          evidence: expect.arrayContaining([expect.stringContaining("api.feishu_resource_transfer:test/feishu-api.test.ts:missing_snippet="), "http.integration_mcp_arguments:test/integration-routes.test.ts:missing_file"]),
+        }),
+      ]),
     );
   });
 
   it("fails local readiness when Feishu prompt instructions drift back to Slack-only routing", async () => {
     const repo = await createFixtureRepo({
-      omitEvidenceProbe: "prompt.feishu_platform_runtime_instructions"
+      omitEvidenceProbe: "prompt.feishu_platform_runtime_instructions",
     });
     const report = await collectRfc0001LocalAudit({
       cwd: repo,
       env: {},
-      evidenceDir: path.join(repo, "evidence", "feishu-smoke")
+      evidenceDir: path.join(repo, "evidence", "feishu-smoke"),
     });
 
     expect(report.localOk).toBe(false);
@@ -480,26 +422,21 @@ describe("RFC 0001 local audit", () => {
         expect.objectContaining({
           id: "local.behavior_evidence",
           status: "missing",
-          evidence: expect.arrayContaining([
-            expect.stringContaining("prompt.feishu_platform_runtime_instructions:src/services/codex/prompts/slack-thread-base-instructions.md:missing_snippet=")
-          ])
-        })
-      ])
+          evidence: expect.arrayContaining([expect.stringContaining("prompt.feishu_platform_runtime_instructions:src/services/codex/prompts/slack-thread-base-instructions.md:missing_snippet=")]),
+        }),
+      ]),
     );
   });
 
   it("fails local readiness when Phase 5 admin, co-author, or job slices drift", async () => {
     const repo = await createFixtureRepo({
       omitEvidenceProbe: "admin.platform_health",
-      omitFiles: [
-        "src/services/github-author-mapping-service.ts",
-        "test/job-routes.test.ts"
-      ]
+      omitFiles: ["src/services/github-author-mapping-service.ts", "test/job-routes.test.ts"],
     });
     const report = await collectRfc0001LocalAudit({
       cwd: repo,
       env: {},
-      evidenceDir: path.join(repo, "evidence", "feishu-smoke")
+      evidenceDir: path.join(repo, "evidence", "feishu-smoke"),
     });
 
     expect(report.localOk).toBe(false);
@@ -508,40 +445,35 @@ describe("RFC 0001 local audit", () => {
         expect.objectContaining({
           id: "local.implementation_surfaces",
           status: "missing",
-          evidence: expect.arrayContaining(["missing=src/services/github-author-mapping-service.ts"])
+          evidence: expect.arrayContaining(["missing=src/services/github-author-mapping-service.ts"]),
         }),
         expect.objectContaining({
           id: "local.test_slices",
           status: "missing",
-          evidence: expect.arrayContaining(["missing=test/job-routes.test.ts"])
+          evidence: expect.arrayContaining(["missing=test/job-routes.test.ts"]),
         }),
         expect.objectContaining({
           id: "local.behavior_evidence",
           status: "missing",
-          evidence: expect.arrayContaining([
-            expect.stringContaining("admin.platform_health:test/admin-service.test.ts:missing_snippet=")
-          ])
-        })
-      ])
+          evidence: expect.arrayContaining([expect.stringContaining("admin.platform_health:test/admin-service.test.ts:missing_snippet=")]),
+        }),
+      ]),
     );
   });
 
   it("fails local readiness when ops auth path-safety slices drift", async () => {
     const repo = await createFixtureRepo({
       omitEvidenceProbe: "ops.auth_real_path_summarization",
-      omitFiles: [
-        "scripts/ops/auth-profiles.mjs",
-        "scripts/ops/auth-ui-real.mjs"
-      ],
+      omitFiles: ["scripts/ops/auth-profiles.mjs", "scripts/ops/auth-ui-real.mjs"],
       scripts: {
         ...requiredScripts,
-        "ops:ui:real": "node scripts/ops/auth-ui-legacy.mjs"
-      }
+        "ops:ui:real": "node scripts/ops/auth-ui-legacy.mjs",
+      },
     });
     const report = await collectRfc0001LocalAudit({
       cwd: repo,
       env: {},
-      evidenceDir: path.join(repo, "evidence", "feishu-smoke")
+      evidenceDir: path.join(repo, "evidence", "feishu-smoke"),
     });
 
     expect(report.localOk).toBe(false);
@@ -550,37 +482,30 @@ describe("RFC 0001 local audit", () => {
         expect.objectContaining({
           id: "local.implementation_surfaces",
           status: "missing",
-          evidence: expect.arrayContaining([
-            "missing=scripts/ops/auth-profiles.mjs",
-            "missing=scripts/ops/auth-ui-real.mjs"
-          ])
+          evidence: expect.arrayContaining(["missing=scripts/ops/auth-profiles.mjs", "missing=scripts/ops/auth-ui-real.mjs"]),
         }),
         expect.objectContaining({
           id: "local.behavior_evidence",
           status: "missing",
-          evidence: expect.arrayContaining([
-            expect.stringContaining("ops.auth_real_path_summarization:scripts/ops/auth-real-lib.mjs:missing_snippet="),
-            "ops.auth_profiles_path_summarization:scripts/ops/auth-profiles.mjs:missing_file",
-            "ops.auth_ui_reuses_sanitized_status:scripts/ops/auth-ui-real.mjs:missing_file"
-          ])
+          evidence: expect.arrayContaining([expect.stringContaining("ops.auth_real_path_summarization:scripts/ops/auth-real-lib.mjs:missing_snippet="), "ops.auth_profiles_path_summarization:scripts/ops/auth-profiles.mjs:missing_file", "ops.auth_ui_reuses_sanitized_status:scripts/ops/auth-ui-real.mjs:missing_file"]),
         }),
         expect.objectContaining({
           id: "local.package_scripts",
           status: "missing",
-          evidence: expect.arrayContaining(["ops:ui:real=missing_or_unexpected"])
-        })
-      ])
+          evidence: expect.arrayContaining(["ops:ui:real=missing_or_unexpected"]),
+        }),
+      ]),
     );
   });
 
   it("fails local readiness when ops status/check redaction evidence drifts", async () => {
     const repo = await createFixtureRepo({
-      omitEvidenceProbe: "ops.status_check_real_sanitization"
+      omitEvidenceProbe: "ops.status_check_real_sanitization",
     });
     const report = await collectRfc0001LocalAudit({
       cwd: repo,
       env: {},
-      evidenceDir: path.join(repo, "evidence", "feishu-smoke")
+      evidenceDir: path.join(repo, "evidence", "feishu-smoke"),
     });
 
     expect(report.localOk).toBe(false);
@@ -589,22 +514,20 @@ describe("RFC 0001 local audit", () => {
         expect.objectContaining({
           id: "local.behavior_evidence",
           status: "missing",
-          evidence: expect.arrayContaining([
-            expect.stringContaining("ops.status_check_real_sanitization:test/ops-feishu-preflight.test.ts:missing_snippet=")
-          ])
-        })
-      ])
+          evidence: expect.arrayContaining([expect.stringContaining("ops.status_check_real_sanitization:test/ops-feishu-preflight.test.ts:missing_snippet=")]),
+        }),
+      ]),
     );
   });
 
   it("fails local readiness when required behavior evidence content drifts", async () => {
     const repo = await createFixtureRepo({
-      omitEvidenceProbe: "bridge.non_at_followup"
+      omitEvidenceProbe: "bridge.non_at_followup",
     });
     const report = await collectRfc0001LocalAudit({
       cwd: repo,
       env: {},
-      evidenceDir: path.join(repo, "evidence", "feishu-smoke")
+      evidenceDir: path.join(repo, "evidence", "feishu-smoke"),
     });
 
     expect(report.localOk).toBe(false);
@@ -613,22 +536,20 @@ describe("RFC 0001 local audit", () => {
         expect.objectContaining({
           id: "local.behavior_evidence",
           status: "missing",
-          evidence: expect.arrayContaining([
-            expect.stringContaining("bridge.non_at_followup:test/feishu-codex-bridge.test.ts:missing_snippet=")
-          ])
-        })
-      ])
+          evidence: expect.arrayContaining([expect.stringContaining("bridge.non_at_followup:test/feishu-codex-bridge.test.ts:missing_snippet=")]),
+        }),
+      ]),
     );
   });
 
   it("fails local behavior evidence when a probed file is missing", async () => {
     const repo = await createFixtureRepo({
-      omitFiles: ["test/feishu-real-smoke.test.ts"]
+      omitFiles: ["test/feishu-real-smoke.test.ts"],
     });
     const report = await collectRfc0001LocalAudit({
       cwd: repo,
       env: {},
-      evidenceDir: path.join(repo, "evidence", "feishu-smoke")
+      evidenceDir: path.join(repo, "evidence", "feishu-smoke"),
     });
 
     expect(report.localChecks).toEqual(
@@ -636,22 +557,20 @@ describe("RFC 0001 local audit", () => {
         expect.objectContaining({
           id: "local.behavior_evidence",
           status: "missing",
-          evidence: expect.arrayContaining([
-            "smoke.final_evidence_gates:test/feishu-real-smoke.test.ts:missing_file"
-          ])
-        })
-      ])
+          evidence: expect.arrayContaining(["smoke.final_evidence_gates:test/feishu-real-smoke.test.ts:missing_file"]),
+        }),
+      ]),
     );
   });
 
   it("fails local readiness when saved smoke replay no longer requires setup evidence", async () => {
     const repo = await createFixtureRepo({
-      omitEvidenceProbe: "smoke.saved_evidence_requires_setup"
+      omitEvidenceProbe: "smoke.saved_evidence_requires_setup",
     });
     const report = await collectRfc0001LocalAudit({
       cwd: repo,
       env: {},
-      evidenceDir: path.join(repo, "evidence", "feishu-smoke")
+      evidenceDir: path.join(repo, "evidence", "feishu-smoke"),
     });
 
     expect(report.localOk).toBe(false);
@@ -660,11 +579,9 @@ describe("RFC 0001 local audit", () => {
         expect.objectContaining({
           id: "local.behavior_evidence",
           status: "missing",
-          evidence: expect.arrayContaining([
-            expect.stringContaining("smoke.saved_evidence_requires_setup:test/feishu-real-smoke.test.ts:missing_snippet=")
-          ])
-        })
-      ])
+          evidence: expect.arrayContaining([expect.stringContaining("smoke.saved_evidence_requires_setup:test/feishu-real-smoke.test.ts:missing_snippet=")]),
+        }),
+      ]),
     );
   });
 
@@ -685,86 +602,64 @@ describe("RFC 0001 local audit", () => {
         FEISHU_STARTUP_REQUIRED: "true",
         FEISHU_ALL_MESSAGE_DELIVERY_VERIFIED: "false",
         LOG_RAW_FEISHU_EVENTS: "false",
-        BROKER_ADMIN_TOKEN: "admin-test"
+        BROKER_ADMIN_TOKEN: "admin-test",
       },
-      evidenceDir: path.join(repo, "evidence", "feishu-smoke")
+      evidenceDir: path.join(repo, "evidence", "feishu-smoke"),
     });
 
     expect(report.realTenantOk).toBe(false);
-    expect(report.realTenantChecks).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ id: "real.preflight", status: "pass" }),
-        expect.objectContaining({ id: "real.setup_evidence", status: "missing" }),
-        expect.objectContaining({ id: "real.saved_smoke", status: "missing" })
-      ])
-    );
+    expect(report.realTenantChecks).toEqual(expect.arrayContaining([expect.objectContaining({ id: "real.preflight", status: "pass" }), expect.objectContaining({ id: "real.setup_evidence", status: "missing" }), expect.objectContaining({ id: "real.saved_smoke", status: "missing" })]));
   });
 });
 
-async function createFixtureRepo(options: {
-  readonly omitDeepDive?: string | undefined;
-  readonly omitEvidenceProbe?: string | undefined;
-  readonly omitFiles?: readonly string[] | undefined;
-  readonly scripts?: Record<string, string> | undefined;
-  readonly setupEvidenceTemplateContent?: string | undefined;
-} = {}): Promise<string> {
+async function createFixtureRepo(
+  options: {
+    readonly omitDeepDive?: string | undefined;
+    readonly omitEvidenceProbe?: string | undefined;
+    readonly omitFiles?: readonly string[] | undefined;
+    readonly scripts?: Record<string, string> | undefined;
+    readonly setupEvidenceTemplateContent?: string | undefined;
+  } = {},
+): Promise<string> {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "rfc-0001-audit-"));
   const rfcRoot = path.join(root, "docs", "rfcs");
   const deepDiveRoot = path.join(rfcRoot, "0001-slack-feishu-dual-platform");
   await fs.mkdir(deepDiveRoot, { recursive: true });
   await fs.mkdir(path.join(root, "test", "manual"), { recursive: true });
 
-  await writeFile(path.join(root, "package.json"), JSON.stringify({
-    scripts: options.scripts ?? requiredScripts
-  }, null, 2));
   await writeFile(
-    path.join(rfcRoot, "0001-slack-feishu-dual-platform.md"),
-    "# RFC 0001\n\nThis is the 2-minute entry point.\n"
+    path.join(root, "package.json"),
+    JSON.stringify(
+      {
+        scripts: options.scripts ?? requiredScripts,
+      },
+      null,
+      2,
+    ),
   );
+  await writeFile(path.join(rfcRoot, "0001-slack-feishu-dual-platform.md"), "# RFC 0001\n\nThis is the 2-minute entry point.\n");
   if (!options.omitFiles?.includes("README.md")) {
     await writeFile(path.join(root, "README.md"), fixtureContentForFile("README.md", options.omitEvidenceProbe));
   }
-  for (const file of [
-    "architecture.md",
-    "implementation.md",
-    "observability.md",
-    "permissions.md",
-    "review-gates.md"
-  ]) {
+  for (const file of ["architecture.md", "implementation.md", "observability.md", "permissions.md", "review-gates.md"]) {
     if (file !== options.omitDeepDive) {
       await writeFile(path.join(deepDiveRoot, file), `# ${file}\n`);
     }
   }
   if (!options.omitFiles?.includes("docs/feishu-setup.md")) {
-    await writeFile(
-      path.join(root, "docs", "feishu-setup.md"),
-      fixtureContentForFile("docs/feishu-setup.md", options.omitEvidenceProbe)
-    );
+    await writeFile(path.join(root, "docs", "feishu-setup.md"), fixtureContentForFile("docs/feishu-setup.md", options.omitEvidenceProbe));
   }
   if (!options.omitFiles?.includes("docs/feishu-permission-request.md")) {
-    await writeFile(
-      path.join(root, "docs", "feishu-permission-request.md"),
-      fixtureContentForFile("docs/feishu-permission-request.md", options.omitEvidenceProbe)
-    );
+    await writeFile(path.join(root, "docs", "feishu-permission-request.md"), fixtureContentForFile("docs/feishu-permission-request.md", options.omitEvidenceProbe));
   }
   if (!options.omitFiles?.includes("docs/feishu-setup-evidence.example.json")) {
-    await writeFile(
-      path.join(root, "docs", "feishu-setup-evidence.example.json"),
-      options.setupEvidenceTemplateContent ?? fixtureSetupEvidenceTemplateContent()
-    );
+    await writeFile(path.join(root, "docs", "feishu-setup-evidence.example.json"), options.setupEvidenceTemplateContent ?? fixtureSetupEvidenceTemplateContent());
   }
   await writeFile(path.join(root, "test", "manual", "run-real-feishu-smoke.ts"), "export {};\n");
   if (!options.omitFiles?.includes(".github/pull_request_template.md")) {
-    await writeFile(
-      path.join(root, ".github", "pull_request_template.md"),
-      fixtureContentForFile(".github/pull_request_template.md", options.omitEvidenceProbe)
-    );
+    await writeFile(path.join(root, ".github", "pull_request_template.md"), fixtureContentForFile(".github/pull_request_template.md", options.omitEvidenceProbe));
   }
-  for (const file of [
-    ...RFC0001_REQUIRED_LOCAL_IMPLEMENTATION_FILES,
-    ...RFC0001_REQUIRED_LOCAL_TEST_FILES,
-    ...RFC0001_REQUIRED_LOCAL_FIXTURE_FILES
-  ]) {
+  for (const file of [...RFC0001_REQUIRED_LOCAL_IMPLEMENTATION_FILES, ...RFC0001_REQUIRED_LOCAL_TEST_FILES, ...RFC0001_REQUIRED_LOCAL_FIXTURE_FILES]) {
     if (!options.omitFiles?.includes(file)) {
       await writeFile(path.join(root, file), fixtureContentForFile(file, options.omitEvidenceProbe));
     }
@@ -774,9 +669,7 @@ async function createFixtureRepo(options: {
 }
 
 function fixtureContentForFile(file: string, omitEvidenceProbe: string | undefined): string {
-  const snippets = RFC0001_REQUIRED_LOCAL_EVIDENCE_PATTERNS
-    .filter((probe) => probe.file === file && probe.id !== omitEvidenceProbe)
-    .flatMap((probe) => probe.snippets);
+  const snippets = RFC0001_REQUIRED_LOCAL_EVIDENCE_PATTERNS.filter((probe) => probe.file === file && probe.id !== omitEvidenceProbe).flatMap((probe) => probe.snippets);
   return ["export {};", ...snippets].join("\n");
 }
 
@@ -786,45 +679,49 @@ async function writeFile(filePath: string, content: string): Promise<void> {
 }
 
 function fixtureSetupEvidenceTemplateContent(): string {
-  return `${JSON.stringify({
-    target: "china_feishu",
-    consoleLabels: {
-      appType: "China Feishu self-built/custom app",
-      botCapability: "机器人能力",
-      eventDelivery: "使用长连接接收事件",
-      receiveMessageEvent: "接收消息",
-      groupMessagePermission: "获取群组中所有消息",
-      sendMessagePermission: "以应用的身份发消息",
-      cardCallback: "卡片回传交互",
-      resourcePermission: "获取与上传图片或文件资源",
-      botIdentitySource: "Bot/app information page showing open_id/user_id/union_id"
+  return `${JSON.stringify(
+    {
+      target: "china_feishu",
+      consoleLabels: {
+        appType: "China Feishu self-built/custom app",
+        botCapability: "机器人能力",
+        eventDelivery: "使用长连接接收事件",
+        receiveMessageEvent: "接收消息",
+        groupMessagePermission: "获取群组中所有消息",
+        sendMessagePermission: "以应用的身份发消息",
+        cardCallback: "卡片回传交互",
+        resourcePermission: "获取与上传图片或文件资源",
+        botIdentitySource: "Bot/app information page showing open_id/user_id/union_id",
+      },
+      permissions: {
+        imMessageGroupMsg: {
+          apiName: "im:message.group_msg",
+          status: "pending",
+          approvalEvidence: "replace with a redacted real approval ticket or console screenshot reference",
+        },
+        sendMessage: {
+          apiName: "im:message:send_as_bot",
+          status: "pending",
+          evidence: "replace with redacted send/reply permission evidence",
+        },
+        cardCallback: {
+          eventName: "card.action.trigger",
+          status: "pending",
+          evidence: "replace with redacted card callback subscription evidence",
+        },
+        resourceTransfer: {
+          scopeName: "获取与上传图片或文件资源",
+          status: "pending",
+          evidence: "replace with redacted image/file resource permission evidence",
+        },
+      },
+      notes: [
+        "Copy this file into the rollout evidence directory and replace labels with the exact text shown in the real tenant.",
+        "Do not paste raw App Secret, access tokens, message bodies, user emails, or raw bot IDs into PR evidence.",
+        "Record bot identity and credential posture as set/missing only; keep ticket and screenshot references redacted.",
+      ],
     },
-    permissions: {
-      imMessageGroupMsg: {
-        apiName: "im:message.group_msg",
-        status: "pending",
-        approvalEvidence: "replace with a redacted real approval ticket or console screenshot reference"
-      },
-      sendMessage: {
-        apiName: "im:message:send_as_bot",
-        status: "pending",
-        evidence: "replace with redacted send/reply permission evidence"
-      },
-      cardCallback: {
-        eventName: "card.action.trigger",
-        status: "pending",
-        evidence: "replace with redacted card callback subscription evidence"
-      },
-      resourceTransfer: {
-        scopeName: "获取与上传图片或文件资源",
-        status: "pending",
-        evidence: "replace with redacted image/file resource permission evidence"
-      }
-    },
-    notes: [
-      "Copy this file into the rollout evidence directory and replace labels with the exact text shown in the real tenant.",
-      "Do not paste raw App Secret, access tokens, message bodies, user emails, or raw bot IDs into PR evidence.",
-      "Record bot identity and credential posture as set/missing only; keep ticket and screenshot references redacted."
-    ]
-  }, null, 2)}\n`;
+    null,
+    2,
+  )}\n`;
 }

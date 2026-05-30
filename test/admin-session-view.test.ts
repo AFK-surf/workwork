@@ -1,13 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  activeBackgroundJobCount,
-  renderSessionMeta,
-  sessionActivityAt,
-  sessionQueueState,
-  shouldShowSessionState
-} from "../src/admin-ui/session-row-display.js";
+import { activeBackgroundJobCount, renderSessionMeta, sessionActivityAt, sessionQueueState, shouldShowSessionState } from "../src/admin-ui/session-row-display.js";
+
 import { requestCancelSessionJob } from "../src/admin-ui/session-job-actions.js";
+
 import { filterVisibleTimelineEvents, getTimelineEventDisplay, isTimelineEventVisible } from "../src/admin-ui/timeline-display.js";
 
 describe("admin session timeline display", () => {
@@ -18,21 +14,24 @@ describe("admin session timeline display", () => {
     globalThis.fetch = (async (input, init) => {
       capturedInput = input;
       capturedInit = init;
-      return new Response(JSON.stringify({
-        ok: true,
-        session: {
-          key: "C123:111.222"
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          session: {
+            key: "C123:111.222",
+          },
+          job: {
+            id: "job-1",
+            status: "cancelled",
+          },
+        }),
+        {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+          },
         },
-        job: {
-          id: "job-1",
-          status: "cancelled"
-        }
-      }), {
-        status: 200,
-        headers: {
-          "content-type": "application/json"
-        }
-      });
+      );
     }) as typeof fetch;
 
     try {
@@ -43,177 +42,201 @@ describe("admin session timeline display", () => {
 
     expect(String(capturedInput)).toBe("/admin/api/sessions/C123%3A111.222/jobs/job-1/cancel");
     expect(capturedInit).toMatchObject({
-      method: "POST"
+      method: "POST",
     });
   });
 
   it("uses category badges instead of duplicating the event title", () => {
-    expect(getTimelineEventDisplay({
-      type: "agent_turn_started",
-      title: "回合开始",
-      summary: "开始处理输入"
-    })).toEqual({
+    expect(
+      getTimelineEventDisplay({
+        type: "agent_turn_started",
+        title: "回合开始",
+        summary: "开始处理输入",
+      }),
+    ).toEqual({
       badgeLabel: "回合",
       title: "开始处理输入",
-      summary: ""
+      summary: "",
     });
 
-    expect(getTimelineEventDisplay({
-      type: "inbound_message",
-      title: "Slack 消息",
-      summary: "<@U0ALY77RMJL> 你好"
-    })).toEqual({
+    expect(
+      getTimelineEventDisplay({
+        type: "inbound_message",
+        title: "Slack 消息",
+        summary: "<@U0ALY77RMJL> 你好",
+      }),
+    ).toEqual({
       badgeLabel: "Slack",
       title: "<@U0ALY77RMJL> 你好",
-      summary: ""
+      summary: "",
     });
   });
 
   it("keeps distinct titles and summaries when they carry different information", () => {
-    expect(getTimelineEventDisplay({
-      type: "agent_input_received",
-      title: "用户消息",
-      summary: "A new message arrived"
-    })).toEqual({
+    expect(
+      getTimelineEventDisplay({
+        type: "agent_input_received",
+        title: "用户消息",
+        summary: "A new message arrived",
+      }),
+    ).toEqual({
       badgeLabel: "输入",
       title: "用户消息",
-      summary: "A new message arrived"
+      summary: "A new message arrived",
     });
 
-    expect(getTimelineEventDisplay({
-      type: "agent_tool_call",
-      title: "工具调用",
-      summary: "exec_command",
-      status: "running",
-      toolName: "exec_command",
-      detail: JSON.stringify({
-        command: "/bin/zsh -lc \"cd /tmp/workspace/cueboard && pnpm test\"",
-        cwd: "/tmp/workspace",
-        commandActions: [
-          {
-            type: "test",
-            name: "unit"
-          }
-        ]
-      })
-    })).toEqual({
+    expect(
+      getTimelineEventDisplay({
+        type: "agent_tool_call",
+        title: "工具调用",
+        summary: "exec_command",
+        status: "running",
+        toolName: "exec_command",
+        detail: JSON.stringify({
+          command: '/bin/zsh -lc "cd /tmp/workspace/cueboard && pnpm test"',
+          cwd: "/tmp/workspace",
+          commandActions: [
+            {
+              type: "test",
+              name: "unit",
+            },
+          ],
+        }),
+      }),
+    ).toEqual({
       badgeLabel: "命令",
       title: "pnpm test",
-      summary: "测试 unit · cwd cueboard · 运行中"
+      summary: "测试 unit · cwd cueboard · 运行中",
     });
   });
 
   it("shows the Slack payload instead of the broker input wrapper", () => {
-    expect(getTimelineEventDisplay({
-      type: "agent_input_received",
-      title: "用户消息",
-      summary: "A newer Slack message arrived while the current turn is still active. Treat it as the latest instruction...",
-      metadata: {
-        source: "slack_user"
-      },
-      detail: [
-        "A newer Slack message arrived while the current turn is still active.",
-        "Treat it as the latest instruction and adjust the ongoing work accordingly.",
-        "",
-        "Current Slack message requiring a response:",
-        "A new message arrived in the active Slack thread. Carefully judge whether it requires a reply or action from you.",
-        "structured_message_json:",
-        "```json",
-        JSON.stringify({
-          source: "app_mention",
-          message_ts: "1778316208.809479",
-          sender: {
-            kind: "user",
-            user_id: "U123",
-            mention: "<@U123>",
-            display_name: "Jc"
-          },
-          text: "<@U0ALY77RMJL> 结合 willow repo，分析图中问题",
-          text_with_resolved_mentions: "@codex-3720 结合 willow repo，分析图中问题",
-          images: []
-        }, null, 2),
-        "```"
-      ].join("\n")
-    })).toEqual({
+    expect(
+      getTimelineEventDisplay({
+        type: "agent_input_received",
+        title: "用户消息",
+        summary: "A newer Slack message arrived while the current turn is still active. Treat it as the latest instruction...",
+        metadata: {
+          source: "slack_user",
+        },
+        detail: [
+          "A newer Slack message arrived while the current turn is still active.",
+          "Treat it as the latest instruction and adjust the ongoing work accordingly.",
+          "",
+          "Current Slack message requiring a response:",
+          "A new message arrived in the active Slack thread. Carefully judge whether it requires a reply or action from you.",
+          "structured_message_json:",
+          "```json",
+          JSON.stringify(
+            {
+              source: "app_mention",
+              message_ts: "1778316208.809479",
+              sender: {
+                kind: "user",
+                user_id: "U123",
+                mention: "<@U123>",
+                display_name: "Jc",
+              },
+              text: "<@U0ALY77RMJL> 结合 willow repo，分析图中问题",
+              text_with_resolved_mentions: "@codex-3720 结合 willow repo，分析图中问题",
+              images: [],
+            },
+            null,
+            2,
+          ),
+          "```",
+        ].join("\n"),
+      }),
+    ).toEqual({
       badgeLabel: "Slack",
       title: "@codex-3720 结合 willow repo，分析图中问题",
-      summary: "Jc · 提及"
+      summary: "Jc · 提及",
     });
   });
 
   it("shows assistant reply content instead of generic Slack delivery text", () => {
-    expect(getTimelineEventDisplay({
-      type: "agent_assistant_message",
-      title: "Assistant 消息",
-      summary: "Replied in Slack.",
-      detail: "已经合并并部署，线上健康检查正常。"
-    })).toEqual({
+    expect(
+      getTimelineEventDisplay({
+        type: "agent_assistant_message",
+        title: "Assistant 消息",
+        summary: "Replied in Slack.",
+        detail: "已经合并并部署，线上健康检查正常。",
+      }),
+    ).toEqual({
       badgeLabel: "Assistant",
       title: "已经合并并部署，线上健康检查正常。",
-      summary: ""
+      summary: "",
     });
   });
 
   it("shows Slack post-message tool calls as bot messages", () => {
-    const command = "/bin/zsh -lc \"curl -sS -X POST http://127.0.0.1:3001/slack/post-message -H 'content-type: application/json' -d '{\\\"channel_id\\\":\\\"C123\\\",\\\"thread_ts\\\":\\\"111.222\\\",\\\"text\\\":\\\"已经合并并部署。\\\",\\\"kind\\\":\\\"final\\\"}'\"";
-    expect(getTimelineEventDisplay({
-      type: "agent_tool_result",
-      title: "工具结果",
-      summary: "exec_command",
-      status: "completed",
-      toolName: "exec_command",
-      detail: JSON.stringify({
-        command,
-        exitCode: 0,
-        durationMs: 810,
-        aggregatedOutput: "{\"ok\":true}"
-      })
-    })).toEqual({
+    const command = '/bin/zsh -lc "curl -sS -X POST http://127.0.0.1:3001/slack/post-message -H \'content-type: application/json\' -d \'{\\"channel_id\\":\\"C123\\",\\"thread_ts\\":\\"111.222\\",\\"text\\":\\"已经合并并部署。\\",\\"kind\\":\\"final\\"}\'"';
+    expect(
+      getTimelineEventDisplay({
+        type: "agent_tool_result",
+        title: "工具结果",
+        summary: "exec_command",
+        status: "completed",
+        toolName: "exec_command",
+        detail: JSON.stringify({
+          command,
+          exitCode: 0,
+          durationMs: 810,
+          aggregatedOutput: '{"ok":true}',
+        }),
+      }),
+    ).toEqual({
       badgeLabel: "Bot",
       title: "已经合并并部署。",
-      summary: "Slack final · 已发送"
+      summary: "Slack final · 已发送",
     });
   });
 
   it("shows Slack post-message text from deeply escaped curl payloads", () => {
-    const command = "/bin/zsh -lc \"curl -sS -X POST http://127.0.0.1:3001/slack/post-message -H 'content-type: application/json' -d '{\\\\\\\"channel_id\\\\\\\":\\\\\\\"C123\\\\\\\",\\\\\\\"thread_ts\\\\\\\":\\\\\\\"111.222\\\\\\\",\\\\\\\"text\\\\\\\":\\\\\\\"我会 re-review PR #246 latest head，然后把结果提交到 GitHub。\\\\\\\",\\\\\\\"kind\\\\\\\":\\\\\\\"progress\\\\\\\"}'\"";
-    expect(getTimelineEventDisplay({
-      type: "agent_tool_result",
-      title: "工具结果",
-      summary: "exec_command",
-      status: "completed",
-      toolName: "exec_command",
-      detail: JSON.stringify({
-        command,
-        exitCode: 0,
-        durationMs: 810,
-        aggregatedOutput: "{\"ok\":true}"
-      })
-    })).toEqual({
+    const command =
+      '/bin/zsh -lc "curl -sS -X POST http://127.0.0.1:3001/slack/post-message -H \'content-type: application/json\' -d \'{\\\\\\"channel_id\\\\\\":\\\\\\"C123\\\\\\",\\\\\\"thread_ts\\\\\\":\\\\\\"111.222\\\\\\",\\\\\\"text\\\\\\":\\\\\\"我会 re-review PR #246 latest head，然后把结果提交到 GitHub。\\\\\\",\\\\\\"kind\\\\\\":\\\\\\"progress\\\\\\"}\'"';
+    expect(
+      getTimelineEventDisplay({
+        type: "agent_tool_result",
+        title: "工具结果",
+        summary: "exec_command",
+        status: "completed",
+        toolName: "exec_command",
+        detail: JSON.stringify({
+          command,
+          exitCode: 0,
+          durationMs: 810,
+          aggregatedOutput: '{"ok":true}',
+        }),
+      }),
+    ).toEqual({
       badgeLabel: "Bot",
       title: "我会 re-review PR #246 latest head，然后把结果提交到 GitHub。",
-      summary: "Slack progress · 已发送"
+      summary: "Slack progress · 已发送",
     });
   });
 
   it("shows Slack post-message text from shell-concatenated JSON strings", () => {
-    const command = "/bin/zsh -lc \"curl -sS -X POST http://127.0.0.1:3001/slack/post-message -H 'content-type: application/json' -d '{\\\"channel_id\\\":\\\"D123\\\",\\\"thread_ts\\\":\\\"111.222\\\",\\\"text\\\":\\\"已确认 PR #248 latest head 仍是 \"'`b93812ce`，base 是 #247 分支；接下来提交 GitHub review。\",\\\"kind\\\":\\\"progress\\\"}'\"'\"";
-    expect(getTimelineEventDisplay({
-      type: "agent_tool_result",
-      title: "工具结果",
-      summary: "exec_command",
-      status: "completed",
-      toolName: "exec_command",
-      detail: JSON.stringify({
-        command,
-        exitCode: 0,
-        durationMs: 277,
-        aggregatedOutput: "{\"ok\":true}"
-      })
-    })).toEqual({
+    const command =
+      '/bin/zsh -lc "curl -sS -X POST http://127.0.0.1:3001/slack/post-message -H \'content-type: application/json\' -d \'{\\"channel_id\\":\\"D123\\",\\"thread_ts\\":\\"111.222\\",\\"text\\":\\"已确认 PR #248 latest head 仍是 "\'`b93812ce`，base 是 #247 分支；接下来提交 GitHub review。",\\"kind\\":\\"progress\\"}\'"\'"';
+    expect(
+      getTimelineEventDisplay({
+        type: "agent_tool_result",
+        title: "工具结果",
+        summary: "exec_command",
+        status: "completed",
+        toolName: "exec_command",
+        detail: JSON.stringify({
+          command,
+          exitCode: 0,
+          durationMs: 277,
+          aggregatedOutput: '{"ok":true}',
+        }),
+      }),
+    ).toEqual({
       badgeLabel: "Bot",
       title: "已确认 PR #248 latest head 仍是 `b93812ce`，base 是 #247 分支；接下来提交 GitHub review。",
-      summary: "Slack progress · 已发送"
+      summary: "Slack progress · 已发送",
     });
   });
 
@@ -221,29 +244,31 @@ describe("admin session timeline display", () => {
     const command = [
       "/bin/zsh -lc \"curl -sS -X POST http://127.0.0.1:3001/slack/post-message -H 'content-type: application/json' -d @- <<'JSON'",
       "{",
-      "  \\\"channel_id\\\": \\\"D123\\\",",
-      "  \\\"thread_ts\\\": \\\"111.222\\\",",
-      "  \\\"kind\\\": \\\"wait\\\",",
-      "  \\\"text\\\": \\\"已在 GitHub PR 提交 review：latest head \"'`b93812ce` 无 blocker。'\"\\\\n\\\\n已注册 watcher。\\\"",
+      '  \\"channel_id\\": \\"D123\\",',
+      '  \\"thread_ts\\": \\"111.222\\",',
+      '  \\"kind\\": \\"wait\\",',
+      '  \\"text\\": \\"已在 GitHub PR 提交 review：latest head "\'`b93812ce` 无 blocker。\'"\\\\n\\\\n已注册 watcher。\\"',
       "}",
-      "JSON'"
+      "JSON'",
     ].join("\n");
-    expect(getTimelineEventDisplay({
-      type: "agent_tool_result",
-      title: "工具结果",
-      summary: "exec_command",
-      status: "completed",
-      toolName: "exec_command",
-      detail: JSON.stringify({
-        command,
-        exitCode: 0,
-        durationMs: 283,
-        aggregatedOutput: "{\"ok\":true}"
-      })
-    })).toEqual({
+    expect(
+      getTimelineEventDisplay({
+        type: "agent_tool_result",
+        title: "工具结果",
+        summary: "exec_command",
+        status: "completed",
+        toolName: "exec_command",
+        detail: JSON.stringify({
+          command,
+          exitCode: 0,
+          durationMs: 283,
+          aggregatedOutput: '{"ok":true}',
+        }),
+      }),
+    ).toEqual({
       badgeLabel: "Bot",
       title: "已在 GitHub PR 提交 review：latest head `b93812ce` 无 blocker。\n\n已注册 watcher。",
-      summary: "Slack wait · 已发送"
+      summary: "Slack wait · 已发送",
     });
   });
 
@@ -251,504 +276,297 @@ describe("admin session timeline display", () => {
     const longMessage = "这是一段需要靠布局省略而不是按字符硬切的消息正文。".repeat(32);
     expect(longMessage.length).toBeGreaterThan(320);
 
-    expect(getTimelineEventDisplay({
-      type: "agent_assistant_message",
-      title: "Assistant 消息",
-      summary: "Replied in Slack.",
-      detail: longMessage
-    }).title).toBe(longMessage);
+    expect(
+      getTimelineEventDisplay({
+        type: "agent_assistant_message",
+        title: "Assistant 消息",
+        summary: "Replied in Slack.",
+        detail: longMessage,
+      }).title,
+    ).toBe(longMessage);
 
-    expect(getTimelineEventDisplay({
-      type: "agent_input_received",
-      title: "用户消息",
-      metadata: {
-        source: "slack_user"
-      },
-      detail: [
-        "structured_message_json:",
-        "```json",
-        JSON.stringify({
-          source: "app_mention",
-          sender: {
-            display_name: "User"
-          },
-          text_with_resolved_mentions: longMessage
-        }),
-        "```"
-      ].join("\n")
-    }).title).toBe(longMessage);
+    expect(
+      getTimelineEventDisplay({
+        type: "agent_input_received",
+        title: "用户消息",
+        metadata: {
+          source: "slack_user",
+        },
+        detail: [
+          "structured_message_json:",
+          "```json",
+          JSON.stringify({
+            source: "app_mention",
+            sender: {
+              display_name: "User",
+            },
+            text_with_resolved_mentions: longMessage,
+          }),
+          "```",
+        ].join("\n"),
+      }).title,
+    ).toBe(longMessage);
 
-    const command = "/bin/zsh -lc \"curl -sS -X POST http://127.0.0.1:3001/slack/post-message -H 'content-type: application/json' -d '" +
+    const command =
+      "/bin/zsh -lc \"curl -sS -X POST http://127.0.0.1:3001/slack/post-message -H 'content-type: application/json' -d '" +
       JSON.stringify({
         channel_id: "C123",
         thread_ts: "111.222",
         text: longMessage,
-        kind: "progress"
-      }).replace(/"/g, "\\\"") +
+        kind: "progress",
+      }).replace(/"/g, '\\"') +
       "'\"";
-    expect(getTimelineEventDisplay({
-      type: "agent_tool_result",
-      title: "工具结果",
-      summary: "exec_command",
-      status: "completed",
-      toolName: "exec_command",
-      detail: JSON.stringify({
-        command,
-        exitCode: 0
-      })
-    }).title).toBe(longMessage);
+    expect(
+      getTimelineEventDisplay({
+        type: "agent_tool_result",
+        title: "工具结果",
+        summary: "exec_command",
+        status: "completed",
+        toolName: "exec_command",
+        detail: JSON.stringify({
+          command,
+          exitCode: 0,
+        }),
+      }).title,
+    ).toBe(longMessage);
   });
 
   it("shows Slack post-state tool calls as session state instead of bot messages", () => {
-    const command = "curl -sS -X POST http://127.0.0.1:3001/slack/post-state -H 'content-type: application/json' -d '{\"channel_id\":\"C123\",\"thread_ts\":\"111.222\",\"kind\":\"wait\",\"reason\":\"等待 CI\"}'";
-    expect(getTimelineEventDisplay({
-      type: "agent_tool_result",
-      status: "completed",
-      toolName: "exec_command",
-      detail: JSON.stringify({
-        command,
-        exitCode: 0
-      })
-    })).toEqual({
+    const command = 'curl -sS -X POST http://127.0.0.1:3001/slack/post-state -H \'content-type: application/json\' -d \'{"channel_id":"C123","thread_ts":"111.222","kind":"wait","reason":"等待 CI"}\'';
+    expect(
+      getTimelineEventDisplay({
+        type: "agent_tool_result",
+        status: "completed",
+        toolName: "exec_command",
+        detail: JSON.stringify({
+          command,
+          exitCode: 0,
+        }),
+      }),
+    ).toEqual({
       badgeLabel: "状态",
       title: "记录 wait 状态",
-      summary: "等待 CI"
+      summary: "等待 CI",
     });
   });
 
   it("does not surface broker English wrappers when no structured payload can be extracted", () => {
-    expect(getTimelineEventDisplay({
-      type: "agent_input_received",
-      title: "用户消息",
-      summary: "A newer Slack message arrived while the current turn is still active. Treat it as the latest instruction..."
-    })).toEqual({
+    expect(
+      getTimelineEventDisplay({
+        type: "agent_input_received",
+        title: "用户消息",
+        summary: "A newer Slack message arrived while the current turn is still active. Treat it as the latest instruction...",
+      }),
+    ).toEqual({
       badgeLabel: "输入",
       title: "用户消息",
-      summary: ""
+      summary: "",
     });
   });
 
   it("hides low-value protocol rows that duplicate surrounding activity", () => {
-    expect(isTimelineEventVisible({
-      type: "agent_input_delivered",
-      status: "joined_active_turn",
-      title: "输入已送达",
-      summary: "进入当前回合"
-    })).toBe(false);
+    expect(
+      isTimelineEventVisible({
+        type: "agent_input_delivered",
+        status: "joined_active_turn",
+        title: "输入已送达",
+        summary: "进入当前回合",
+      }),
+    ).toBe(false);
 
-    expect(isTimelineEventVisible({
-      type: "agent_input_delivered",
-      status: "started_turn",
-      title: "输入已送达",
-      summary: "启动新回合"
-    })).toBe(false);
+    expect(
+      isTimelineEventVisible({
+        type: "agent_input_delivered",
+        status: "started_turn",
+        title: "输入已送达",
+        summary: "启动新回合",
+      }),
+    ).toBe(false);
 
-    expect(isTimelineEventVisible({
-      type: "agent_turn_started",
-      status: "running",
-      title: "回合开始",
-      summary: "开始处理输入"
-    })).toBe(false);
+    expect(
+      isTimelineEventVisible({
+        type: "agent_turn_started",
+        status: "running",
+        title: "回合开始",
+        summary: "开始处理输入",
+      }),
+    ).toBe(false);
 
-    expect(isTimelineEventVisible({
-      type: "agent_turn_completed",
-      status: "completed",
-      title: "回合结束",
-      summary: "回合已完成"
-    })).toBe(false);
+    expect(
+      isTimelineEventVisible({
+        type: "agent_turn_completed",
+        status: "completed",
+        title: "回合结束",
+        summary: "回合已完成",
+      }),
+    ).toBe(false);
 
-    expect(isTimelineEventVisible({
-      type: "inbound_message",
-      status: "done",
-      summary: "已交给 agent 的 Slack 消息"
-    })).toBe(false);
+    expect(
+      isTimelineEventVisible({
+        type: "inbound_message",
+        status: "done",
+        summary: "已交给 agent 的 Slack 消息",
+      }),
+    ).toBe(false);
 
-    expect(isTimelineEventVisible({
-      type: "background_job",
-      status: "completed",
-      summary: "watch_ci"
-    })).toBe(false);
+    expect(
+      isTimelineEventVisible({
+        type: "background_job",
+        status: "completed",
+        summary: "watch_ci",
+      }),
+    ).toBe(false);
   });
 
   it("summarizes broker-managed background job input events", () => {
-    expect(getTimelineEventDisplay({
-      type: "agent_input_received",
-      title: "后台任务事件",
-      summary: "A broker-managed background job reported a new asynchronous event for this session.",
-      metadata: {
-        source: "background_job"
-      },
-      detail: [
-        "A broker-managed background job reported a new asynchronous event for this session.",
-        "background_job_event_json:",
-        "```json",
-        JSON.stringify({
-          source: "background_job_event",
-          message_ts: "1778316208.809479",
-          job: {
-            job_id: "job-1",
-            job_kind: "watch_ci",
-            event_kind: "state_changed"
-          },
-          summary: "CI turned green."
-        }, null, 2),
-        "```"
-      ].join("\n")
-    })).toEqual({
+    expect(
+      getTimelineEventDisplay({
+        type: "agent_input_received",
+        title: "后台任务事件",
+        summary: "A broker-managed background job reported a new asynchronous event for this session.",
+        metadata: {
+          source: "background_job",
+        },
+        detail: [
+          "A broker-managed background job reported a new asynchronous event for this session.",
+          "background_job_event_json:",
+          "```json",
+          JSON.stringify(
+            {
+              source: "background_job_event",
+              message_ts: "1778316208.809479",
+              job: {
+                job_id: "job-1",
+                job_kind: "watch_ci",
+                event_kind: "state_changed",
+              },
+              summary: "CI turned green.",
+            },
+            null,
+            2,
+          ),
+          "```",
+        ].join("\n"),
+      }),
+    ).toEqual({
       badgeLabel: "后台任务",
       title: "CI turned green.",
-      summary: "watch_ci · state_changed · Job job-1"
+      summary: "watch_ci · state_changed · Job job-1",
     });
   });
 
   it("summarizes unexpected turn stop reminders instead of broker instructions", () => {
-    expect(getTimelineEventDisplay({
-      type: "agent_input_received",
-      title: "Runtime 提醒",
-      summary: "The previous run for this Slack thread appears to have stopped unexpectedly.",
-      metadata: {
-        source: "runtime_reminder"
-      },
-      detail: [
-        "The previous run for this Slack thread appears to have stopped unexpectedly.",
-        "unexpected_turn_stop_json:",
-        "```json",
-        JSON.stringify({
-          source: "unexpected_turn_stop",
-          message_ts: "1778316208.809479",
-          previous_turn: {
-            turn_id: "turn-1"
-          },
-          reason: "The previous run ended without an explicit final, block, or wait state."
-        }, null, 2),
-        "```"
-      ].join("\n")
-    })).toEqual({
+    expect(
+      getTimelineEventDisplay({
+        type: "agent_input_received",
+        title: "Runtime 提醒",
+        summary: "The previous run for this Slack thread appears to have stopped unexpectedly.",
+        metadata: {
+          source: "runtime_reminder",
+        },
+        detail: [
+          "The previous run for this Slack thread appears to have stopped unexpectedly.",
+          "unexpected_turn_stop_json:",
+          "```json",
+          JSON.stringify(
+            {
+              source: "unexpected_turn_stop",
+              message_ts: "1778316208.809479",
+              previous_turn: {
+                turn_id: "turn-1",
+              },
+              reason: "The previous run ended without an explicit final, block, or wait state.",
+            },
+            null,
+            2,
+          ),
+          "```",
+        ].join("\n"),
+      }),
+    ).toEqual({
       badgeLabel: "提醒",
       title: "回合异常停止",
-      summary: "The previous run ended without an explicit final, block, or wait state."
+      summary: "The previous run ended without an explicit final, block, or wait state.",
     });
   });
 
   it("shows command result output instead of repeating exec_command", () => {
-    expect(getTimelineEventDisplay({
-      type: "agent_tool_result",
-      title: "工具结果",
-      summary: "exec_command",
-      status: "completed",
-      toolName: "exec_command",
-      detail: JSON.stringify({
-        command: "/bin/zsh -lc \"cd /tmp/workspace/cueboard && rg -n \\\"bridge\\\" src | sed -n '1,20p'\"",
-        cwd: "/tmp/workspace",
-        exitCode: 0,
-        durationMs: 1240,
-        aggregatedOutput: "src/index.ts:12: bridge config\nsrc/app.ts:5: bridge app"
-      })
-    })).toEqual({
+    expect(
+      getTimelineEventDisplay({
+        type: "agent_tool_result",
+        title: "工具结果",
+        summary: "exec_command",
+        status: "completed",
+        toolName: "exec_command",
+        detail: JSON.stringify({
+          command: '/bin/zsh -lc "cd /tmp/workspace/cueboard && rg -n \\"bridge\\" src | sed -n \'1,20p\'"',
+          cwd: "/tmp/workspace",
+          exitCode: 0,
+          durationMs: 1240,
+          aggregatedOutput: "src/index.ts:12: bridge config\nsrc/app.ts:5: bridge app",
+        }),
+      }),
+    ).toEqual({
       badgeLabel: "命令",
       title: "rg -n \"bridge\" src | sed -n '1,20p'",
-      summary: "exit 0 · 1.2s · 输出 src/index.ts:12: bridge config"
+      summary: "exit 0 · 1.2s · 输出 src/index.ts:12: bridge config",
     });
   });
 
   it("can recover command summaries from truncated detail text", () => {
-    expect(getTimelineEventDisplay({
-      type: "agent_tool_result",
-      title: "工具结果",
-      summary: "exec_command",
-      status: "completed",
-      toolName: "exec_command",
-      detailTruncated: true,
-      detail: [
-        "{",
-        "  \"command\": \"/bin/zsh -lc \\\"cd /tmp/workspace/cueboard && pnpm build\\\"\",",
-        "  \"cwd\": \"/tmp/workspace\",",
-        "  \"exitCode\": 0,",
-        "  \"durationMs\": 980,",
-        "  \"aggregatedOutput\": \"dist/admin-ui/assets/admin-ui.js 250 kB\""
-      ].join("\n")
-    })).toEqual({
+    expect(
+      getTimelineEventDisplay({
+        type: "agent_tool_result",
+        title: "工具结果",
+        summary: "exec_command",
+        status: "completed",
+        toolName: "exec_command",
+        detailTruncated: true,
+        detail: ["{", '  "command": "/bin/zsh -lc \\"cd /tmp/workspace/cueboard && pnpm build\\"",', '  "cwd": "/tmp/workspace",', '  "exitCode": 0,', '  "durationMs": 980,', '  "aggregatedOutput": "dist/admin-ui/assets/admin-ui.js 250 kB"'].join("\n"),
+      }),
+    ).toEqual({
       badgeLabel: "命令",
       title: "pnpm build",
-      summary: "exit 0 · 980ms · 输出 dist/admin-ui/assets/admin-ui.js 250 kB"
+      summary: "exit 0 · 980ms · 输出 dist/admin-ui/assets/admin-ui.js 250 kB",
     });
   });
 
   it("does not treat token usage records as visible timeline activity", () => {
-    expect(isTimelineEventVisible({
-      type: "agent_token_count",
-      title: "Token 用量",
-      summary: "14784 tokens"
-    })).toBe(false);
+    expect(
+      isTimelineEventVisible({
+        type: "agent_token_count",
+        title: "Token 用量",
+        summary: "14784 tokens",
+      }),
+    ).toBe(false);
 
-    expect(isTimelineEventVisible({
-      type: "agent_tool_call",
-      title: "工具调用",
-      summary: "exec_command"
-    })).toBe(true);
+    expect(
+      isTimelineEventVisible({
+        type: "agent_tool_call",
+        title: "工具调用",
+        summary: "exec_command",
+      }),
+    ).toBe(true);
   });
 
   it("collapses completed tool call rows when the matching tool result is loaded", () => {
-    expect(filterVisibleTimelineEvents([
-      {
-        id: "call-1",
-        type: "agent_tool_call",
-        callId: "call-a",
-        turnId: "turn-1",
-        toolName: "exec_command"
-      },
-      {
-        id: "result-1",
-        type: "agent_tool_result",
-        callId: "call-a",
-        turnId: "turn-1",
-        toolName: "exec_command"
-      }
-    ]).map((event) => event.id)).toEqual(["result-1"]);
-  });
-});
-
-describe("admin session row display", () => {
-  it("keeps common session list metadata out of the row", () => {
-    const authProfiles = new Map<string, Record<string, any>>([
-      ["profile-a", {
-        name: "profile-a",
-        account: {
-          ok: true,
-          account: {
-            email: "operator@example.com",
-            planType: "prolite"
-          }
-        },
-        rateLimits: {
-          ok: true,
-          rateLimits: {
-            primary: {
-              usedPercent: 4
-            },
-            secondary: {
-              usedPercent: 36
-            }
-          }
-        }
-      }]
-    ]);
-    const meta = renderSessionMeta({
-      key: "C123:111.222",
-      channelId: "C123",
-      channelLabel: "C123",
-      authProfileName: "profile-a",
-      firstUserMessage: {
-        textPreview: "@codex-3720 你好"
-      },
-      lastUserMessage: {
-        textPreview: "后面 GPT 改了点"
-      },
-      usage: {
-        turnCount: 3,
-        totalTokens: 5120
-      },
-      backgroundJobCount: 0,
-      updatedAt: new Date().toISOString()
-    }, authProfiles, new Map([["C123", "#ops"]]));
-    const labels = meta.map((item) => item.label);
-
-    expect(labels).toEqual(["#ops", "7d 64% / 0.64", "Token 5.1K"]);
-    expect(labels.join(" ")).not.toContain("Pro Lite");
-    expect(shouldShowSessionState({ rank: 10 })).toBe(false);
-  });
-
-  it("only shows active job count and keeps distinct states visible", () => {
-    const meta = renderSessionMeta({
-      key: "C123:111.222",
-      channelId: "C123",
-      channelName: "deep-review",
-      firstUserMessage: {
-        textPreview: "看一下"
-      },
-      lastUserMessage: {
-        textPreview: "看一下"
-      },
-      openHumanInboundCount: 1,
-      openInboundCount: 1,
-      usage: {
-        turnCount: 1,
-        totalTokens: 1725
-      },
-      backgroundJobCount: 2,
-      runningBackgroundJobCount: 1,
-      updatedAt: new Date().toISOString()
-    }, new Map());
-    const labels = meta.map((item) => item.label);
-
-    expect(labels).toContain("#deep-review");
-    expect(labels).toContain("Jobs 1");
-    expect(labels).not.toContain("Jobs 2");
-    expect(shouldShowSessionState({ rank: 50 })).toBe(true);
-  });
-
-  it("does not promote historical jobs to current session state", () => {
-    const session = {
-      failedBackgroundJobCount: 2,
-      backgroundJobCount: 2,
-      runningBackgroundJobCount: 2,
-      backgroundJobs: [
+    expect(
+      filterVisibleTimelineEvents([
         {
-          id: "completed-job",
-          kind: "watch_ci",
-          status: "completed"
-        }
-      ],
-      failedBackgroundJobs: [
-        {
-          id: "failed-job",
-          kind: "watch_ci",
-          status: "failed",
-          error: "PR #349 failed: CI Check failed",
-          updatedAt: "2026-05-13T05:47:45.765Z"
-        }
-      ]
-    };
-    const state = sessionQueueState(session);
-    const meta = renderSessionMeta(session, new Map());
-
-    expect(activeBackgroundJobCount(session)).toBe(0);
-    expect(state).toMatchObject({
-      label: "空闲",
-      tone: "",
-      rank: 0
-    });
-    expect(shouldShowSessionState(state)).toBe(false);
-    expect(meta.find((item) => item.key === "jobs")).toBeUndefined();
-    expect(meta.map((item) => item.label)).not.toContain("Jobs 2");
-    expect(meta.map((item) => item.label)).not.toContain("失败 2");
-  });
-
-  it("treats registered and running jobs as active work", () => {
-    const session = {
-      backgroundJobCount: 3,
-      runningBackgroundJobCount: 0,
-      backgroundJobs: [
-        {
-          id: "registered-job",
-          kind: "watch_ci",
-          status: "registered"
+          id: "call-1",
+          type: "agent_tool_call",
+          callId: "call-a",
+          turnId: "turn-1",
+          toolName: "exec_command",
         },
         {
-          id: "completed-job",
-          kind: "watch_ci",
-          status: "completed"
-        }
-      ]
-    };
-    const state = sessionQueueState(session);
-    const meta = renderSessionMeta(session, new Map());
-
-    expect(activeBackgroundJobCount(session)).toBe(1);
-    expect(state).toMatchObject({
-      label: "后台任务",
-      tone: "good",
-      detail: "1 个运行任务"
-    });
-    expect(meta.find((item) => item.key === "jobs")).toMatchObject({
-      label: "Jobs 1",
-      tone: "good"
-    });
-  });
-
-  it("uses plain pending labels for human Slack input", () => {
-    const state = sessionQueueState({
-      openInboundCount: 1,
-      openHumanInboundCount: 1
-    });
-
-    expect(state).toMatchObject({
-      label: "待处理",
-      tone: "warn",
-      detail: "1 条用户消息"
-    });
-    expect(state.label).not.toContain("待人处理");
-  });
-
-  it("does not show account-switch state when the bound profile quota has recovered", () => {
-    const profile = {
-      name: "profile-a",
-      account: {
-        ok: true
-      },
-      rateLimits: {
-        ok: true,
-        rateLimits: {
-          primary: {
-            usedPercent: 10,
-            resetsAt: 1_779_000_000
-          },
-          secondary: {
-            usedPercent: 20,
-            resetsAt: 1_780_000_000
-          }
-        }
-      }
-    };
-    const session = {
-      key: "C123:111.222",
-      channelId: "C123",
-      authProfileName: "profile-a",
-      authBlockedAt: "2026-05-09T01:00:00.000Z",
-      authBlockReason: "primary_quota_exhausted",
-      openInboundCount: 1,
-      openSystemInboundCount: 1
-    };
-
-    const state = sessionQueueState(session, profile);
-    const meta = renderSessionMeta(session, new Map([["profile-a", profile]]));
-
-    expect(state.label).toBe("待处理");
-    expect(state.detail).toBe("1 条系统消息");
-    expect(meta.map((item) => item.key)).not.toContain("auth-blocked");
-    expect(meta.map((item) => item.label)).not.toContain("账号待切换");
-  });
-
-  it("does not show account-switch state for probe-failure-only auth blocks", () => {
-    const profile = {
-      name: "profile-a",
-      account: {
-        ok: false,
-        error: "account status read failed"
-      },
-      rateLimits: {
-        ok: false,
-        error: "rate limits read failed"
-      }
-    };
-    const session = {
-      key: "C123:111.222",
-      channelId: "C123",
-      authProfileName: "profile-a",
-      authBlockedAt: "2026-05-09T01:00:00.000Z",
-      authBlockReason: "account_probe_failed",
-      openInboundCount: 1,
-      openHumanInboundCount: 1
-    };
-
-    const state = sessionQueueState(session, profile);
-    const meta = renderSessionMeta(session, new Map([["profile-a", profile]]));
-
-    expect(state.label).toBe("待处理");
-    expect(state.detail).toBe("1 条用户消息");
-    expect(meta.map((item) => item.key)).not.toContain("auth-blocked");
-    expect(meta.map((item) => item.label)).not.toContain("账号待切换");
-  });
-
-  it("uses semantic session activity time instead of metadata updatedAt", () => {
-    expect(sessionActivityAt({
-      key: "C123:111.222",
-      createdAt: "2026-03-18T00:00:00.000Z",
-      updatedAt: "2026-05-10T00:00:00.000Z",
-      lastActivityAt: "2026-03-19T00:00:00.000Z",
-      usage: {
-        lastTurnAt: "2026-03-19T00:00:00.000Z"
-      }
-    })).toBe("2026-03-19T00:00:00.000Z");
+          id: "result-1",
+          type: "agent_tool_result",
+          callId: "call-a",
+          turnId: "turn-1",
+          toolName: "exec_command",
+        },
+      ]).map((event) => event.id),
+    ).toEqual(["result-1"]);
   });
 });

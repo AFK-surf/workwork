@@ -4,22 +4,22 @@ This file contains the logging, health, and debugging contract for [RFC 0001](..
 
 ## One-Screen Summary
 
-| Contract | Required outcome |
-| --- | --- |
+| Contract         | Required outcome                                                                                                      |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------- |
 | Evidence quality | Logs explain accepted, ignored, deduped, degraded, failed, and recovered Feishu outcomes with replayable coordinates. |
-| Safety | Info/warn/admin/smoke evidence must not become a message archive or credential dump. |
-| Required matrix | Feishu RFC evidence is checked against the event/field matrix below and the smoke checker. |
-| Admin health | Slack and Feishu states stay independent, with connection and permission posture exposed safely. |
-| Debug loop | Production surprises become sanitized fixtures, failing tests, code fixes, and RFC updates when contracts change. |
+| Safety           | Info/warn/admin/smoke evidence must not become a message archive or credential dump.                                  |
+| Required matrix  | Feishu RFC evidence is checked against the event/field matrix below and the smoke checker.                            |
+| Admin health     | Slack and Feishu states stay independent, with connection and permission posture exposed safely.                      |
+| Debug loop       | Production surprises become sanitized fixtures, failing tests, code fixes, and RFC updates when contracts change.     |
 
 ## Read Layers
 
-| Layer | Use when | Expand |
-| --- | --- | --- |
-| 1 | You need observability intent. | Read this summary and [Principle](#principle). |
-| 2 | You are adding or changing log events. | Expand "Log event and field contract". |
-| 3 | You are checking leak safety or admin status. | Expand "Safety, retention, and admin health". |
-| 4 | You are debugging production behavior. | Expand "Debugging and self-iteration". |
+| Layer | Use when                                      | Expand                                         |
+| ----- | --------------------------------------------- | ---------------------------------------------- |
+| 1     | You need observability intent.                | Read this summary and [Principle](#principle). |
+| 2     | You are adding or changing log events.        | Expand "Log event and field contract".         |
+| 3     | You are checking leak safety or admin status. | Expand "Safety, retention, and admin health".  |
+| 4     | You are debugging production behavior.        | Expand "Debugging and self-iteration".         |
 
 <details>
 <summary>Layer 1: Principle</summary>
@@ -98,53 +98,53 @@ Rules:
 
 ## Required Log Events
 
-| Event | Level | Purpose |
-| --- | --- | --- |
-| `chat.platform.starting` | info | Platform startup intent and config mode. |
-| `chat.platform.ready` | info | Adapter started and handlers registered. |
-| `chat.platform.degraded` | warn | Missing permission, connection, or smoke capability. |
-| `chat.message.ignored` | debug/info | Private chat, self/bot message, duplicate, or no matching session. |
-| `chat.message.accepted` | info | Accepted inbound event coordinates without body text. |
-| `chat.message.deduped` | debug | Idempotency evidence tied to a previously accepted `messageId` in the same conversation. |
-| `chat.session.created` | info | Platform-specific root mapping. |
-| `chat.session.resumed` | info | Existing session follow-up route. |
-| `chat.history.recovered` | info | Count, cursor range, and degradation status; recovered coverage also needs a `history_recovery` turn log. |
-| `chat.turn.started` | info | Session and Codex turn correlation. |
-| `chat.turn.steered` | info | Active turn and follow-up correlation. |
-| `chat.turn.stopped` | info | Stop command interrupted or checked a platform session. |
-| `chat.turn.completed` | info | Final state, batch count, and duration. |
-| `chat.outbound.posted` | info | Posted message ID and format. |
-| `chat.outbound.failed` | warn/error | Platform send failure without hiding other platform health. |
-| `chat.handler.failed` | warn | Detached Feishu event handler failed after the long-connection handler returned. |
-| `chat.card.callback.received` | info | Callback to card message/session correlation. |
-| `chat.attachment.download_failed` | warn | Attachment/resource download failed without hiding the inbound message. |
-| `chat.coauthor.confirmed` | info | Co-author candidate revision was confirmed through a same-session card callback. |
+| Event                             | Level      | Purpose                                                                                                   |
+| --------------------------------- | ---------- | --------------------------------------------------------------------------------------------------------- |
+| `chat.platform.starting`          | info       | Platform startup intent and config mode.                                                                  |
+| `chat.platform.ready`             | info       | Adapter started and handlers registered.                                                                  |
+| `chat.platform.degraded`          | warn       | Missing permission, connection, or smoke capability.                                                      |
+| `chat.message.ignored`            | debug/info | Private chat, self/bot message, duplicate, or no matching session.                                        |
+| `chat.message.accepted`           | info       | Accepted inbound event coordinates without body text.                                                     |
+| `chat.message.deduped`            | debug      | Idempotency evidence tied to a previously accepted `messageId` in the same conversation.                  |
+| `chat.session.created`            | info       | Platform-specific root mapping.                                                                           |
+| `chat.session.resumed`            | info       | Existing session follow-up route.                                                                         |
+| `chat.history.recovered`          | info       | Count, cursor range, and degradation status; recovered coverage also needs a `history_recovery` turn log. |
+| `chat.turn.started`               | info       | Session and Codex turn correlation.                                                                       |
+| `chat.turn.steered`               | info       | Active turn and follow-up correlation.                                                                    |
+| `chat.turn.stopped`               | info       | Stop command interrupted or checked a platform session.                                                   |
+| `chat.turn.completed`             | info       | Final state, batch count, and duration.                                                                   |
+| `chat.outbound.posted`            | info       | Posted message ID and format.                                                                             |
+| `chat.outbound.failed`            | warn/error | Platform send failure without hiding other platform health.                                               |
+| `chat.handler.failed`             | warn       | Detached Feishu event handler failed after the long-connection handler returned.                          |
+| `chat.card.callback.received`     | info       | Callback to card message/session correlation.                                                             |
+| `chat.attachment.download_failed` | warn       | Attachment/resource download failed without hiding the inbound message.                                   |
+| `chat.coauthor.confirmed`         | info       | Co-author candidate revision was confirmed through a same-session card callback.                          |
 
 ## Required Log Field Matrix
 
 This matrix is enforced for Feishu RFC evidence. Slack platform lifecycle logs use the same event names for admin health, but omit Feishu-only fields such as `groupMessageMode` and permission metadata.
 
-| Event | Minimum fields |
-| --- | --- |
-| `chat.platform.starting` | `platform`, `source`, `groupMessageMode`, `startupRequired` |
-| `chat.platform.ready` | `platform`, `source`, `groupMessageMode`, `durationMs` |
-| `chat.platform.degraded` | `platform`, `source`, `groupMessageMode`, `degradedReason`, `permission` when permission-related |
-| `chat.message.ignored` | `platform`, `conversationId`, `conversationKind`, `messageId`, `eventId`, `senderKind`, `ignoredReason`, `route` |
-| `chat.message.accepted` | `platform`, `conversationId`, `conversationKind`, `rootMessageId`, `messageId`, `eventId`, `senderKind`, `msgType`, `route`, `payloadRef` when raw payload is retained, `fileId` when `msgType` is `image` or `file` |
-| `chat.message.deduped` | `platform`, `conversationId`, `messageId`, `eventId`, `route` |
-| `chat.session.created` | `platform`, `sessionKey`, `conversationId`, `rootMessageId`, `messageId`, `groupMessageMode` |
-| `chat.session.resumed` | `platform`, `sessionKey`, `conversationId`, `rootMessageId`, `messageId`, `turnId` when active |
-| `chat.history.recovered` | `platform`, `sessionKey`, `conversationId`, `rootMessageId`, `messageCursor`, `recoveredCount`, `degradedReason` when partial, `durationMs` |
-| `chat.turn.started` | `platform`, `sessionKey`, `turnId`, `codexThreadId`, `messageId`, `batchId` |
-| `chat.turn.steered` | `platform`, `sessionKey`, `turnId`, `messageId`, `batchId` |
-| `chat.turn.stopped` | `platform`, `sessionKey`, `conversationId`, `rootMessageId`, `messageId`, `turnId` active if `hadActiveTurn=true`, `hadActiveTurn` |
-| `chat.turn.completed` | `platform`, `sessionKey`, `turnId`, `codexThreadId`, `durationMs`, `batchId` |
-| `chat.outbound.posted` | `platform`, `sessionKey`, `conversationId`, `rootMessageId`, `messageId` or `fileId`, `fileId` when `format` is `file` or `image`, `format`, `durationMs` |
-| `chat.outbound.failed` | `platform`, `sessionKey`, `conversationId`, `rootMessageId`, `format`, `errorClass`, `statusCode`, `attempt` |
-| `chat.handler.failed` | `platform`, `handler` (`message` or `interactive`), `errorClass` |
-| `chat.card.callback.received` | `platform`, `sessionKey`, `conversationId`, `rootMessageId`, `eventId`, `messageId`, `payloadRef`, `ackDurationMs`, `kind` and `candidateRevision` when co-author action |
-| `chat.attachment.download_failed` | `platform`, `sessionKey`, `conversationId`, `rootMessageId`, `messageId`, `attachmentId`, `kind`, `errorClass` |
-| `chat.coauthor.confirmed` | `platform`, `sessionKey`, `conversationId`, `rootMessageId`, `candidateRevision`, `confirmedCount` |
+| Event                             | Minimum fields                                                                                                                                                                                                       |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `chat.platform.starting`          | `platform`, `source`, `groupMessageMode`, `startupRequired`                                                                                                                                                          |
+| `chat.platform.ready`             | `platform`, `source`, `groupMessageMode`, `durationMs`                                                                                                                                                               |
+| `chat.platform.degraded`          | `platform`, `source`, `groupMessageMode`, `degradedReason`, `permission` when permission-related                                                                                                                     |
+| `chat.message.ignored`            | `platform`, `conversationId`, `conversationKind`, `messageId`, `eventId`, `senderKind`, `ignoredReason`, `route`                                                                                                     |
+| `chat.message.accepted`           | `platform`, `conversationId`, `conversationKind`, `rootMessageId`, `messageId`, `eventId`, `senderKind`, `msgType`, `route`, `payloadRef` when raw payload is retained, `fileId` when `msgType` is `image` or `file` |
+| `chat.message.deduped`            | `platform`, `conversationId`, `messageId`, `eventId`, `route`                                                                                                                                                        |
+| `chat.session.created`            | `platform`, `sessionKey`, `conversationId`, `rootMessageId`, `messageId`, `groupMessageMode`                                                                                                                         |
+| `chat.session.resumed`            | `platform`, `sessionKey`, `conversationId`, `rootMessageId`, `messageId`, `turnId` when active                                                                                                                       |
+| `chat.history.recovered`          | `platform`, `sessionKey`, `conversationId`, `rootMessageId`, `messageCursor`, `recoveredCount`, `degradedReason` when partial, `durationMs`                                                                          |
+| `chat.turn.started`               | `platform`, `sessionKey`, `turnId`, `codexThreadId`, `messageId`, `batchId`                                                                                                                                          |
+| `chat.turn.steered`               | `platform`, `sessionKey`, `turnId`, `messageId`, `batchId`                                                                                                                                                           |
+| `chat.turn.stopped`               | `platform`, `sessionKey`, `conversationId`, `rootMessageId`, `messageId`, `turnId` active if `hadActiveTurn=true`, `hadActiveTurn`                                                                                   |
+| `chat.turn.completed`             | `platform`, `sessionKey`, `turnId`, `codexThreadId`, `durationMs`, `batchId`                                                                                                                                         |
+| `chat.outbound.posted`            | `platform`, `sessionKey`, `conversationId`, `rootMessageId`, `messageId` or `fileId`, `fileId` when `format` is `file` or `image`, `format`, `durationMs`                                                            |
+| `chat.outbound.failed`            | `platform`, `sessionKey`, `conversationId`, `rootMessageId`, `format`, `errorClass`, `statusCode`, `attempt`                                                                                                         |
+| `chat.handler.failed`             | `platform`, `handler` (`message` or `interactive`), `errorClass`                                                                                                                                                     |
+| `chat.card.callback.received`     | `platform`, `sessionKey`, `conversationId`, `rootMessageId`, `eventId`, `messageId`, `payloadRef`, `ackDurationMs`, `kind` and `candidateRevision` when co-author action                                             |
+| `chat.attachment.download_failed` | `platform`, `sessionKey`, `conversationId`, `rootMessageId`, `messageId`, `attachmentId`, `kind`, `errorClass`                                                                                                       |
+| `chat.coauthor.confirmed`         | `platform`, `sessionKey`, `conversationId`, `rootMessageId`, `candidateRevision`, `confirmedCount`                                                                                                                   |
 
 </details>
 
@@ -246,14 +246,14 @@ Admin requirements:
 
 ## Log-Driven Debugging Playbooks
 
-| Symptom | Required evidence | Next TDD/log iteration |
-| --- | --- | --- |
-| Feishu private chat starts a session | `chat.message.ignored` for `conversationKind=direct` and no session creation | Add/fix a test named `ignores Feishu private chat events`. |
-| Non-@ follow-up missing in `all` mode | `chat.platform.ready`, admin health, and accepted/absent inbound log coordinates | Add a minimized fixture for the missed shape or a permission smoke check. |
-| Duplicate Feishu event creates two turns | two deliveries with same `messageId`; missing `chat.message.deduped` | Add duplicate fixture and dedupe assertion. |
-| Rich/card content is flattened only | `chat.message.accepted` lacks `payloadRef` for `post`/`interactive` | Add raw retention fixture before formatter changes. |
-| Feishu send fails while Slack works | `chat.outbound.failed` with Feishu coordinates; Slack health remains ready | Add send failure route test and admin health assertion. |
-| Operator cannot explain behavior from logs | Missing required fields for affected event | Add log field matrix test before changing business logic. |
+| Symptom                                    | Required evidence                                                                | Next TDD/log iteration                                                    |
+| ------------------------------------------ | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| Feishu private chat starts a session       | `chat.message.ignored` for `conversationKind=direct` and no session creation     | Add/fix a test named `ignores Feishu private chat events`.                |
+| Non-@ follow-up missing in `all` mode      | `chat.platform.ready`, admin health, and accepted/absent inbound log coordinates | Add a minimized fixture for the missed shape or a permission smoke check. |
+| Duplicate Feishu event creates two turns   | two deliveries with same `messageId`; missing `chat.message.deduped`             | Add duplicate fixture and dedupe assertion.                               |
+| Rich/card content is flattened only        | `chat.message.accepted` lacks `payloadRef` for `post`/`interactive`              | Add raw retention fixture before formatter changes.                       |
+| Feishu send fails while Slack works        | `chat.outbound.failed` with Feishu coordinates; Slack health remains ready       | Add send failure route test and admin health assertion.                   |
+| Operator cannot explain behavior from logs | Missing required fields for affected event                                       | Add log field matrix test before changing business logic.                 |
 
 ## Self-Iteration Loop
 

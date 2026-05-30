@@ -5,10 +5,7 @@ import { describe, expect, it } from "vitest";
 
 describe("RFC PR template", () => {
   it("keeps RFC trace, TDD, observability, and verification prompts in every PR", async () => {
-    const content = await fs.readFile(
-      path.join(process.cwd(), ".github", "pull_request_template.md"),
-      "utf8"
-    );
+    const content = await fs.readFile(path.join(process.cwd(), ".github", "pull_request_template.md"), "utf8");
 
     expect(content).toContain("## RFC Trace");
     expect(content).toContain("- RED:");

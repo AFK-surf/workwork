@@ -1,3 +1,4 @@
+/* oxlint-disable max-lines */
 import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
 
@@ -16,7 +17,7 @@ import type {
   PersistedInboundSource,
   PersistedSlackEvent,
   SlackUserIdentity,
-  SlackSessionRecord
+  SlackSessionRecord,
 } from "../types.js";
 import { ensureDir } from "../utils/fs.js";
 
@@ -167,7 +168,7 @@ const STATE_MIGRATIONS: readonly StateMigration[] = [
         CREATE INDEX IF NOT EXISTS idx_slack_events_status ON slack_events(status, created_at);
         CREATE INDEX IF NOT EXISTS idx_slack_events_done_updated ON slack_events(status, updated_at);
       `);
-    }
+    },
   },
   {
     version: 2,
@@ -203,14 +204,14 @@ const STATE_MIGRATIONS: readonly StateMigration[] = [
         CREATE INDEX IF NOT EXISTS idx_admin_audit_created ON admin_audit_events(sequence);
         CREATE INDEX IF NOT EXISTS idx_admin_audit_operation ON admin_audit_events(operation_id, sequence);
       `);
-    }
+    },
   },
   {
     version: 3,
     name: "agent_turn_usage",
     up(database) {
       createAgentTurnUsageSchema(database);
-    }
+    },
   },
   {
     version: 4,
@@ -243,7 +244,7 @@ const STATE_MIGRATIONS: readonly StateMigration[] = [
         CREATE INDEX IF NOT EXISTS idx_agent_trace_events_session_at ON agent_trace_events(session_key, at);
         CREATE INDEX IF NOT EXISTS idx_agent_trace_events_turn ON agent_trace_events(session_key, turn_id);
       `);
-    }
+    },
   },
   {
     version: 5,
@@ -256,9 +257,7 @@ const STATE_MIGRATIONS: readonly StateMigration[] = [
       }
 
       const columns = tableColumns(database, "codex_turn_usage");
-      const agentSessionColumn = columns.has("codex_thread_id")
-        ? "codex_thread_id"
-        : (columns.has("agent_session_id") ? "agent_session_id" : "NULL");
+      const agentSessionColumn = columns.has("codex_thread_id") ? "codex_thread_id" : columns.has("agent_session_id") ? "agent_session_id" : "NULL";
       database.exec(`
         INSERT OR IGNORE INTO agent_turn_usage (
           turn_id, session_key, channel_id, root_thread_ts, agent_session_id,
@@ -275,63 +274,63 @@ const STATE_MIGRATIONS: readonly StateMigration[] = [
 
         DROP TABLE codex_turn_usage;
       `);
-    }
+    },
   },
   {
     version: 6,
     name: "session_agent_schema_repair",
     up(database) {
       repairSessionAgentSchema(database);
-    }
+    },
   },
   {
     version: 7,
     name: "session_channel_metadata",
     up(database) {
       repairSessionChannelMetadataSchema(database);
-    }
+    },
   },
   {
     version: 8,
     name: "inbound_mentioned_users",
     up(database) {
       repairInboundMentionedUsersSchema(database);
-    }
+    },
   },
   {
     version: 9,
     name: "admin_realtime_events",
     up(database) {
       createAdminEventsSchema(database);
-    }
+    },
   },
   {
     version: 10,
     name: "session_page_link_announcement",
     up(database) {
       repairSessionPageLinkAnnouncementSchema(database);
-    }
+    },
   },
   {
     version: 11,
     name: "session_auth_profile_binding",
     up(database) {
       repairSessionAuthProfileSchema(database);
-    }
+    },
   },
   {
     version: 12,
     name: "agent_activity_bindings",
     up(database) {
       createAgentActivityBindingSchema(database);
-    }
+    },
   },
   {
     version: 13,
     name: "session_initiator",
     up(database) {
       repairSessionInitiatorSchema(database);
-    }
+    },
   },
   {
     version: 14,
@@ -340,29 +339,29 @@ const STATE_MIGRATIONS: readonly StateMigration[] = [
       createAgentSessionDerivedSummarySchema(database);
       rebuildAllAgentSessionUsageSummaries(database);
       rebuildAllAgentSessionTraceSummaries(database);
-    }
+    },
   },
   {
     version: 15,
     name: "slack_event_retention_indexes",
     up(database) {
       createSlackEventRetentionIndexes(database);
-    }
+    },
   },
   {
     version: 16,
     name: "inbound_mention_backfill_indexes",
     up(database) {
       createInboundMentionBackfillIndexes(database);
-    }
+    },
   },
   {
     version: 17,
     name: "chat_platform_columns",
     up(database) {
       repairChatPlatformSchema(database);
-    }
-  }
+    },
+  },
 ];
 
 function createAgentSessionDerivedSummarySchema(database: DatabaseSync): void {
@@ -657,16 +656,11 @@ function createAgentTurnUsageSchema(database: DatabaseSync): void {
 }
 
 function tableExists(database: DatabaseSync, tableName: string): boolean {
-  return Boolean(database
-    .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?")
-    .get(tableName));
+  return Boolean(database.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(tableName));
 }
 
 function tableColumns(database: DatabaseSync, tableName: string): Set<string> {
-  return new Set(
-    (database.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{ name: string }>)
-      .map((row) => row.name)
-  );
+  return new Set((database.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{ name: string }>).map((row) => row.name));
 }
 
 export class StateStore {
@@ -705,9 +699,7 @@ export class StateStore {
   }
 
   getSession(key: string): SlackSessionRecord | undefined {
-    const row = this.#databaseRequired()
-      .prepare("SELECT * FROM sessions WHERE key = ?")
-      .get(key) as SqlRow | undefined;
+    const row = this.#databaseRequired().prepare("SELECT * FROM sessions WHERE key = ?").get(key) as SqlRow | undefined;
     return row ? this.#rowToSession(row) : undefined;
   }
 
@@ -721,16 +713,14 @@ export class StateStore {
         sessionKey: normalized.key,
         entityId: normalized.key,
         payload: normalized,
-        createdAt: normalized.updatedAt
+        createdAt: normalized.updatedAt,
       });
     });
   }
 
   async deleteSession(key: string): Promise<boolean> {
     return this.#transaction(() => {
-      const existing = this.#databaseRequired()
-        .prepare("SELECT key FROM sessions WHERE key = ?")
-        .get(key);
+      const existing = this.#databaseRequired().prepare("SELECT key FROM sessions WHERE key = ?").get(key);
       if (!existing) {
         return false;
       }
@@ -742,18 +732,13 @@ export class StateStore {
         sessionKey: key,
         entityId: key,
         payload: { key },
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
       });
       return true;
     });
   }
 
-  async patchSession(
-    key: string,
-    patch:
-      | Partial<SlackSessionRecord>
-      | ((current: SlackSessionRecord) => Partial<SlackSessionRecord>)
-  ): Promise<SlackSessionRecord> {
+  async patchSession(key: string, patch: Partial<SlackSessionRecord> | ((current: SlackSessionRecord) => Partial<SlackSessionRecord>)): Promise<SlackSessionRecord> {
     return this.#transaction(() => {
       const current = this.getSession(key);
       if (!current) {
@@ -761,24 +746,17 @@ export class StateStore {
       }
 
       const resolvedPatch = typeof patch === "function" ? patch(current) : patch;
-      const clearsAgentSession =
-        Object.prototype.hasOwnProperty.call(resolvedPatch, "agentSessionId") &&
-        resolvedPatch.agentSessionId === undefined &&
-        !Object.prototype.hasOwnProperty.call(resolvedPatch, "codexThreadId");
-      const patchedAgentSessionId = Object.prototype.hasOwnProperty.call(resolvedPatch, "agentSessionId")
-        ? resolvedPatch.agentSessionId
-        : undefined;
+      const clearsAgentSession = Object.prototype.hasOwnProperty.call(resolvedPatch, "agentSessionId") && resolvedPatch.agentSessionId === undefined && !Object.prototype.hasOwnProperty.call(resolvedPatch, "codexThreadId");
+      const patchedAgentSessionId = Object.prototype.hasOwnProperty.call(resolvedPatch, "agentSessionId") ? resolvedPatch.agentSessionId : undefined;
       const updated = this.#normalizeSession({
         ...current,
         ...resolvedPatch,
         key: current.key,
         channelId: current.channelId,
         rootThreadTs: current.rootThreadTs,
-        codexThreadId: clearsAgentSession
-          ? undefined
-          : (resolvedPatch.codexThreadId ?? patchedAgentSessionId ?? current.codexThreadId),
+        codexThreadId: clearsAgentSession ? undefined : (resolvedPatch.codexThreadId ?? patchedAgentSessionId ?? current.codexThreadId),
         workspacePath: resolvedPatch.workspacePath ?? current.workspacePath,
-        createdAt: current.createdAt
+        createdAt: current.createdAt,
       });
 
       this.#upsertSession(updated);
@@ -788,19 +766,13 @@ export class StateStore {
         sessionKey: updated.key,
         entityId: updated.key,
         payload: updated,
-        createdAt: updated.updatedAt
+        createdAt: updated.updatedAt,
       });
       return updated;
     });
   }
 
-  async bindAgentSession(record: {
-    readonly sessionKey: string;
-    readonly channelId: string;
-    readonly rootThreadTs: string;
-    readonly agentSessionId: string;
-    readonly at?: string | undefined;
-  }): Promise<void> {
+  async bindAgentSession(record: { readonly sessionKey: string; readonly channelId: string; readonly rootThreadTs: string; readonly agentSessionId: string; readonly at?: string | undefined }): Promise<void> {
     const agentSessionId = record.agentSessionId.trim();
     if (!agentSessionId) {
       return;
@@ -813,19 +785,12 @@ export class StateStore {
         rootThreadTs: record.rootThreadTs,
         agentSessionId,
         createdAt: now,
-        updatedAt: now
+        updatedAt: now,
       });
     });
   }
 
-  async bindAgentTurn(record: {
-    readonly sessionKey: string;
-    readonly channelId: string;
-    readonly rootThreadTs: string;
-    readonly turnId: string;
-    readonly agentSessionId?: string | undefined;
-    readonly at?: string | undefined;
-  }): Promise<void> {
+  async bindAgentTurn(record: { readonly sessionKey: string; readonly channelId: string; readonly rootThreadTs: string; readonly turnId: string; readonly agentSessionId?: string | undefined; readonly at?: string | undefined }): Promise<void> {
     const turnId = record.turnId.trim();
     if (!turnId) {
       return;
@@ -840,20 +805,15 @@ export class StateStore {
         agentSessionId,
         turnId,
         createdAt: now,
-        updatedAt: now
+        updatedAt: now,
       });
     });
   }
 
-  getSessionKeyForAgentActivity(options: {
-    readonly agentSessionId?: string | undefined;
-    readonly turnId?: string | undefined;
-  }): string | undefined {
+  getSessionKeyForAgentActivity(options: { readonly agentSessionId?: string | undefined; readonly turnId?: string | undefined }): string | undefined {
     const turnId = options.turnId?.trim();
     if (turnId) {
-      const row = this.#databaseRequired()
-        .prepare("SELECT session_key FROM agent_turn_bindings WHERE turn_id = ?")
-        .get(turnId) as SqlRow | undefined;
+      const row = this.#databaseRequired().prepare("SELECT session_key FROM agent_turn_bindings WHERE turn_id = ?").get(turnId) as SqlRow | undefined;
       const sessionKey = optionalStringColumn(row ?? {}, "session_key");
       if (sessionKey) {
         return sessionKey;
@@ -862,9 +822,7 @@ export class StateStore {
 
     const agentSessionId = options.agentSessionId?.trim();
     if (agentSessionId) {
-      const row = this.#databaseRequired()
-        .prepare("SELECT session_key FROM agent_session_bindings WHERE agent_session_id = ?")
-        .get(agentSessionId) as SqlRow | undefined;
+      const row = this.#databaseRequired().prepare("SELECT session_key FROM agent_session_bindings WHERE agent_session_id = ?").get(agentSessionId) as SqlRow | undefined;
       return optionalStringColumn(row ?? {}, "session_key");
     }
 
@@ -872,9 +830,7 @@ export class StateStore {
   }
 
   hasProcessedEvent(eventId: string): boolean {
-    return Boolean(this.#databaseRequired()
-      .prepare("SELECT 1 FROM processed_events WHERE event_id = ?")
-      .get(eventId));
+    return Boolean(this.#databaseRequired().prepare("SELECT 1 FROM processed_events WHERE event_id = ?").get(eventId));
   }
 
   async markProcessedEvent(eventId: string): Promise<void> {
@@ -902,7 +858,8 @@ export class StateStore {
         return;
       }
 
-      this.#databaseRequired().prepare(`
+      this.#databaseRequired()
+        .prepare(`
         INSERT INTO slack_events (
           event_id, payload, status, created_at, updated_at
         ) VALUES (?, ?, 'pending', ?, ?)
@@ -916,16 +873,15 @@ export class StateStore {
             ELSE 'pending'
           END,
           updated_at = excluded.updated_at
-      `).run(eventId, JSON.stringify(payload), now, now);
+      `)
+        .run(eventId, JSON.stringify(payload), now, now);
     });
   }
 
   async markSlackEventProcessed(eventId: string): Promise<void> {
     const now = new Date().toISOString();
     this.#transaction(() => {
-      const result = this.#databaseRequired()
-        .prepare("UPDATE slack_events SET status = 'done', updated_at = ? WHERE event_id = ?")
-        .run(now, eventId);
+      const result = this.#databaseRequired().prepare("UPDATE slack_events SET status = 'done', updated_at = ? WHERE event_id = ?").run(now, eventId);
       this.#markProcessedEvent(eventId);
       if (sqlChanges(result) > 0) {
         this.#pruneDoneSlackEvents();
@@ -968,11 +924,7 @@ export class StateStore {
       where.push(`(${mentionedUserCount}) < (${mentionedUserIdCount})`);
     }
 
-    const sql = [
-      "SELECT * FROM inbound_messages",
-      where.length > 0 ? `WHERE ${where.join(" AND ")}` : "",
-      "ORDER BY CAST(message_ts AS REAL) ASC, message_ts ASC"
-    ].filter(Boolean).join(" ");
+    const sql = ["SELECT * FROM inbound_messages", where.length > 0 ? `WHERE ${where.join(" AND ")}` : "", "ORDER BY CAST(message_ts AS REAL) ASC, message_ts ASC"].filter(Boolean).join(" ");
 
     return this.#databaseRequired()
       .prepare(sql)
@@ -982,18 +934,19 @@ export class StateStore {
   }
 
   getInboundMessage(sessionKey: string, messageTs: string): PersistedInboundMessage | undefined {
-    const row = this.#databaseRequired()
-      .prepare("SELECT * FROM inbound_messages WHERE session_key = ? AND message_ts = ?")
-      .get(sessionKey, messageTs) as SqlRow | undefined;
+    const row = this.#databaseRequired().prepare("SELECT * FROM inbound_messages WHERE session_key = ? AND message_ts = ?").get(sessionKey, messageTs) as SqlRow | undefined;
     return row ? this.#rowToInboundMessage(row) : undefined;
   }
 
-  getLatestInboundMessageTs(sessionKey: string, options?: {
-    readonly source?: PersistedInboundSource | readonly PersistedInboundSource[] | undefined;
-  }): string | undefined {
+  getLatestInboundMessageTs(
+    sessionKey: string,
+    options?: {
+      readonly source?: PersistedInboundSource | readonly PersistedInboundSource[] | undefined;
+    },
+  ): string | undefined {
     return this.listInboundMessages({
       sessionKey,
-      source: options?.source
+      source: options?.source,
     }).at(-1)?.messageTs;
   }
 
@@ -1010,7 +963,7 @@ export class StateStore {
         sessionKey: normalized.sessionKey,
         entityId: normalized.key,
         payload: normalized,
-        createdAt: normalized.updatedAt
+        createdAt: normalized.updatedAt,
       });
     });
   }
@@ -1021,7 +974,7 @@ export class StateStore {
     patch: {
       readonly status?: PersistedInboundMessageStatus | undefined;
       readonly batchId?: string | undefined;
-    }
+    },
   ): Promise<PersistedInboundMessage | undefined> {
     return this.#transaction(() => {
       const existing = this.getInboundMessage(sessionKey, messageTs);
@@ -1033,7 +986,7 @@ export class StateStore {
         ...existing,
         status: patch.status ?? existing.status,
         batchId: patch.batchId,
-        updatedAt: new Date().toISOString()
+        updatedAt: new Date().toISOString(),
       };
       this.#upsertInboundMessage(updated);
       this.#appendAdminEvent({
@@ -1042,7 +995,7 @@ export class StateStore {
         sessionKey: updated.sessionKey,
         entityId: updated.key,
         payload: updated,
-        createdAt: updated.updatedAt
+        createdAt: updated.updatedAt,
       });
       return updated;
     });
@@ -1054,7 +1007,7 @@ export class StateStore {
     patch: {
       readonly status?: PersistedInboundMessageStatus | undefined;
       readonly batchId?: string | undefined;
-    }
+    },
   ): Promise<PersistedInboundMessage[]> {
     return this.#transaction(() => {
       const updatedAt = new Date().toISOString();
@@ -1069,7 +1022,7 @@ export class StateStore {
           ...existing,
           status: patch.status ?? existing.status,
           batchId: patch.batchId,
-          updatedAt
+          updatedAt,
         };
         this.#upsertInboundMessage(nextMessage);
         this.#appendAdminEvent({
@@ -1078,7 +1031,7 @@ export class StateStore {
           sessionKey: nextMessage.sessionKey,
           entityId: nextMessage.key,
           payload: nextMessage,
-          createdAt: nextMessage.updatedAt
+          createdAt: nextMessage.updatedAt,
         });
         updated.push(nextMessage);
       }
@@ -1091,7 +1044,7 @@ export class StateStore {
     const inflight = this.listInboundMessages({
       sessionKey,
       status: "inflight",
-      batchId
+      batchId,
     });
 
     return await this.updateInboundMessagesForBatch(
@@ -1099,15 +1052,12 @@ export class StateStore {
       inflight.map((message) => message.messageTs),
       {
         status: "pending",
-        batchId: undefined
-      }
+        batchId: undefined,
+      },
     );
   }
 
-  listBackgroundJobs(options?: {
-    readonly sessionKey?: string | undefined;
-    readonly id?: string | undefined;
-  }): PersistedBackgroundJob[] {
+  listBackgroundJobs(options?: { readonly sessionKey?: string | undefined; readonly id?: string | undefined }): PersistedBackgroundJob[] {
     const where: string[] = [];
     const params: SqlValue[] = [];
     if (options?.sessionKey) {
@@ -1119,11 +1069,7 @@ export class StateStore {
       params.push(options.id);
     }
 
-    const sql = [
-      "SELECT * FROM background_jobs",
-      where.length > 0 ? `WHERE ${where.join(" AND ")}` : "",
-      "ORDER BY created_at ASC"
-    ].filter(Boolean).join(" ");
+    const sql = ["SELECT * FROM background_jobs", where.length > 0 ? `WHERE ${where.join(" AND ")}` : "", "ORDER BY created_at ASC"].filter(Boolean).join(" ");
 
     return this.#databaseRequired()
       .prepare(sql)
@@ -1132,9 +1078,7 @@ export class StateStore {
   }
 
   getBackgroundJob(id: string): PersistedBackgroundJob | undefined {
-    const row = this.#databaseRequired()
-      .prepare("SELECT * FROM background_jobs WHERE id = ?")
-      .get(id) as SqlRow | undefined;
+    const row = this.#databaseRequired().prepare("SELECT * FROM background_jobs WHERE id = ?").get(id) as SqlRow | undefined;
     return row ? this.#rowToBackgroundJob(row) : undefined;
   }
 
@@ -1151,7 +1095,7 @@ export class StateStore {
         sessionKey: normalized.sessionKey,
         entityId: normalized.id,
         payload: normalized,
-        createdAt: normalized.updatedAt
+        createdAt: normalized.updatedAt,
       });
     });
   }
@@ -1168,9 +1112,7 @@ export class StateStore {
   }
 
   getAdminOperation(id: string): PersistedAdminOperation | undefined {
-    const row = this.#databaseRequired()
-      .prepare("SELECT * FROM admin_operations WHERE id = ?")
-      .get(id) as SqlRow | undefined;
+    const row = this.#databaseRequired().prepare("SELECT * FROM admin_operations WHERE id = ?").get(id) as SqlRow | undefined;
     return row ? this.#rowToAdminOperation(row) : undefined;
   }
 
@@ -1183,15 +1125,12 @@ export class StateStore {
         scope: "global",
         entityId: normalized.id,
         payload: normalized,
-        createdAt: normalized.updatedAt
+        createdAt: normalized.updatedAt,
       });
     });
   }
 
-  listAdminAuditEvents(options?: {
-    readonly operationId?: string | undefined;
-    readonly limit?: number | undefined;
-  }): PersistedAdminAuditEvent[] {
+  listAdminAuditEvents(options?: { readonly operationId?: string | undefined; readonly limit?: number | undefined }): PersistedAdminAuditEvent[] {
     const where: string[] = [];
     const params: SqlValue[] = [];
     if (options?.operationId) {
@@ -1200,12 +1139,7 @@ export class StateStore {
     }
     params.push(options?.limit ?? 50);
 
-    const sql = [
-      "SELECT * FROM admin_audit_events",
-      where.length > 0 ? `WHERE ${where.join(" AND ")}` : "",
-      "ORDER BY sequence DESC",
-      "LIMIT ?"
-    ].filter(Boolean).join(" ");
+    const sql = ["SELECT * FROM admin_audit_events", where.length > 0 ? `WHERE ${where.join(" AND ")}` : "", "ORDER BY sequence DESC", "LIMIT ?"].filter(Boolean).join(" ");
 
     return this.#databaseRequired()
       .prepare(sql)
@@ -1216,25 +1150,19 @@ export class StateStore {
   async appendAdminAuditEvent(record: PersistedAdminAuditEvent): Promise<void> {
     const normalized = this.#normalizeAdminAuditEvent(record);
     this.#transaction(() => {
-      this.#databaseRequired().prepare(`
+      this.#databaseRequired()
+        .prepare(`
         INSERT INTO admin_audit_events (
           id, operation_id, action, status, detail, actor, created_at
         ) VALUES (${placeholders(7)})
-      `).run(
-        normalized.id,
-        normalized.operationId ?? null,
-        normalized.action,
-        normalized.status,
-        jsonOrNull(normalized.detail),
-        normalized.actor ?? null,
-        normalized.createdAt
-      );
+      `)
+        .run(normalized.id, normalized.operationId ?? null, normalized.action, normalized.status, jsonOrNull(normalized.detail), normalized.actor ?? null, normalized.createdAt);
       this.#appendAdminEvent({
         kind: "audit.append",
         scope: "global",
         entityId: normalized.id,
         payload: normalized,
-        createdAt: normalized.createdAt
+        createdAt: normalized.createdAt,
       });
     });
   }
@@ -1261,9 +1189,7 @@ export class StateStore {
   }
 
   getAgentSessionUsageSummary(sessionKey: string): PersistedAgentSessionUsageSummary | undefined {
-    const row = this.#databaseRequired()
-      .prepare("SELECT * FROM agent_session_usage_summaries WHERE session_key = ?")
-      .get(sessionKey) as SqlRow | undefined;
+    const row = this.#databaseRequired().prepare("SELECT * FROM agent_session_usage_summaries WHERE session_key = ?").get(sessionKey) as SqlRow | undefined;
     return row ? this.#rowToAgentSessionUsageSummary(row) : undefined;
   }
 
@@ -1278,7 +1204,7 @@ export class StateStore {
         sessionKey: normalized.sessionKey,
         entityId: normalized.turnId,
         payload: normalized,
-        createdAt: normalized.updatedAt
+        createdAt: normalized.updatedAt,
       });
     });
   }
@@ -1296,16 +1222,17 @@ export class StateStore {
   }
 
   getAgentTraceEvent(sessionKey: string, id: string): PersistedAgentTraceEvent | undefined {
-    const row = this.#databaseRequired()
-      .prepare("SELECT * FROM agent_trace_events WHERE session_key = ? AND id = ?")
-      .get(sessionKey, id) as SqlRow | undefined;
+    const row = this.#databaseRequired().prepare("SELECT * FROM agent_trace_events WHERE session_key = ? AND id = ?").get(sessionKey, id) as SqlRow | undefined;
     return row ? this.#rowToAgentTraceEvent(row) : undefined;
   }
 
-  listAgentTraceEventsPage(sessionKey: string, options?: {
-    readonly limit?: number | undefined;
-    readonly beforeSequence?: number | undefined;
-  }): {
+  listAgentTraceEventsPage(
+    sessionKey: string,
+    options?: {
+      readonly limit?: number | undefined;
+      readonly beforeSequence?: number | undefined;
+    },
+  ): {
     readonly events: PersistedAgentTraceEvent[];
     readonly hasMore: boolean;
     readonly nextBeforeSequence: number | null;
@@ -1330,20 +1257,16 @@ export class StateStore {
       .map((row) => this.#rowToAgentTraceEvent(row as SqlRow));
     const pageRows = rows.slice(0, limit);
     const events = pageRows.slice().reverse();
-    const nextBeforeSequence = events.length
-      ? Math.min(...events.map((event) => event.sequence))
-      : null;
+    const nextBeforeSequence = events.length ? Math.min(...events.map((event) => event.sequence)) : null;
     return {
       events,
       hasMore: rows.length > limit,
-      nextBeforeSequence
+      nextBeforeSequence,
     };
   }
 
   getAgentSessionTraceSummary(sessionKey: string): PersistedAgentSessionTraceSummary | undefined {
-    const row = this.#databaseRequired()
-      .prepare("SELECT * FROM agent_session_trace_summaries WHERE session_key = ?")
-      .get(sessionKey) as SqlRow | undefined;
+    const row = this.#databaseRequired().prepare("SELECT * FROM agent_session_trace_summaries WHERE session_key = ?").get(sessionKey) as SqlRow | undefined;
     return row ? this.#rowToAgentSessionTraceSummary(row) : undefined;
   }
 
@@ -1351,18 +1274,9 @@ export class StateStore {
     const normalized = this.#normalizeAgentTraceEvent(record);
     this.#transaction(() => {
       const previous = this.#getAgentTraceEventById(normalized.id);
-      const previousContribution = previous
-        ? traceSummaryContribution(previous, this.#hasCompletedToolResultForToolCall(previous, normalized.id))
-        : emptyTraceSummaryContribution();
-      const toolCallHiddenByNewResult = normalized.type === "agent_tool_result" && previous?.type !== "agent_tool_result"
-        ? this.#getMatchingToolCallForResult(normalized)
-        : undefined;
-      const oldResultStopsHidingToolCall = previous?.type === "agent_tool_result" && (
-        normalized.type !== "agent_tool_result" ||
-        traceToolEventKey(previous) !== traceToolEventKey(normalized)
-      )
-        ? this.#getMatchingToolCallForResult(previous)
-        : undefined;
+      const previousContribution = previous ? traceSummaryContribution(previous, this.#hasCompletedToolResultForToolCall(previous, normalized.id)) : emptyTraceSummaryContribution();
+      const toolCallHiddenByNewResult = normalized.type === "agent_tool_result" && previous?.type !== "agent_tool_result" ? this.#getMatchingToolCallForResult(normalized) : undefined;
+      const oldResultStopsHidingToolCall = previous?.type === "agent_tool_result" && (normalized.type !== "agent_tool_result" || traceToolEventKey(previous) !== traceToolEventKey(normalized)) ? this.#getMatchingToolCallForResult(previous) : undefined;
 
       this.#upsertAgentTraceEvent(normalized);
       const nextContribution = traceSummaryContribution(normalized, this.#hasCompletedToolResultForToolCall(normalized));
@@ -1380,16 +1294,12 @@ export class StateStore {
         sessionKey: normalized.sessionKey,
         entityId: normalized.id,
         payload: normalized,
-        createdAt: normalized.updatedAt
+        createdAt: normalized.updatedAt,
       });
     });
   }
 
-  listAdminEvents(options?: {
-    readonly afterSequence?: number | undefined;
-    readonly sessionKey?: string | undefined;
-    readonly limit?: number | undefined;
-  }): PersistedAdminEvent[] {
+  listAdminEvents(options?: { readonly afterSequence?: number | undefined; readonly sessionKey?: string | undefined; readonly limit?: number | undefined }): PersistedAdminEvent[] {
     const afterSequence = Number(options?.afterSequence ?? 0);
     const limit = Number(options?.limit ?? 100);
     const where: string[] = ["sequence > ?"];
@@ -1412,9 +1322,7 @@ export class StateStore {
   }
 
   getLatestAdminEventSequence(): number {
-    const row = this.#databaseRequired()
-      .prepare("SELECT COALESCE(MAX(sequence), 0) AS sequence FROM admin_events")
-      .get() as { sequence?: number | bigint | null } | undefined;
+    const row = this.#databaseRequired().prepare("SELECT COALESCE(MAX(sequence), 0) AS sequence FROM admin_events").get() as { sequence?: number | bigint | null } | undefined;
     return Number(row?.sequence ?? 0);
   }
 
@@ -1435,31 +1343,23 @@ export class StateStore {
     this.#transaction(() => {
       const database = this.#databaseRequired();
       ensureSchemaMigrationsTable(database);
-      const appliedVersions = new Set(
-        (database
-          .prepare("SELECT version FROM schema_migrations")
-          .all() as Array<{ version: number | bigint }>)
-          .map((row) => Number(row.version))
-      );
+      const appliedVersions = new Set((database.prepare("SELECT version FROM schema_migrations").all() as Array<{ version: number | bigint }>).map((row) => Number(row.version)));
 
       for (const migration of STATE_MIGRATIONS) {
         if (!appliedVersions.has(migration.version)) {
           migration.up(database);
-          database
-            .prepare("INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)")
-            .run(migration.version, migration.name, new Date().toISOString());
+          database.prepare("INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)").run(migration.version, migration.name, new Date().toISOString());
           continue;
         }
 
-        database
-          .prepare("UPDATE schema_migrations SET name = ? WHERE version = ? AND name != ?")
-          .run(migration.name, migration.version, migration.name);
+        database.prepare("UPDATE schema_migrations SET name = ? WHERE version = ? AND name != ?").run(migration.name, migration.version, migration.name);
       }
     });
   }
 
   #upsertSession(record: SlackSessionRecord): void {
-    this.#databaseRequired().prepare(`
+    this.#databaseRequired()
+      .prepare(`
       INSERT INTO sessions (
         key, platform, conversation_id, conversation_kind, root_message_id, platform_thread_id,
         channel_id, channel_name, channel_type, root_thread_ts, workspace_path, created_at, updated_at,
@@ -1511,47 +1411,48 @@ export class StateStore {
         co_author_ignore_missing_revision = excluded.co_author_ignore_missing_revision,
         co_author_prompt_revision = excluded.co_author_prompt_revision,
         co_author_prompted_at = excluded.co_author_prompted_at
-    `).run(
-      record.key,
-      record.platform ?? "slack",
-      record.conversationId ?? record.channelId,
-      record.conversationKind ?? null,
-      record.rootMessageId ?? record.rootThreadTs,
-      record.platformThreadId ?? null,
-      record.channelId,
-      record.channelName ?? null,
-      record.channelType ?? null,
-      record.rootThreadTs,
-      record.workspacePath,
-      record.createdAt,
-      record.updatedAt,
-      record.initiatorUserId ?? null,
-      record.initiatorMessageTs ?? null,
-      record.initiatorCapturedAt ?? null,
-      record.agentSessionId ?? record.codexThreadId ?? null,
-      record.activeTurnId ?? null,
-      record.activeTurnStartedAt ?? null,
-      record.lastObservedMessageTs ?? null,
-      record.lastDeliveredMessageTs ?? null,
-      record.lastSlackReplyAt ?? null,
-      record.sessionPageLinkPostedAt ?? null,
-      record.authProfileName ?? null,
-      record.authProfileBoundAt ?? null,
-      record.authBlockedAt ?? null,
-      record.authBlockReason ?? null,
-      record.authBlockedNoticePostedAt ?? null,
-      record.lastTurnSignalTurnId ?? null,
-      record.lastTurnSignalKind ?? null,
-      record.lastTurnSignalReason ?? null,
-      record.lastTurnSignalAt ?? null,
-      jsonOrNull(record.coAuthorCandidateUserIds),
-      record.coAuthorCandidateRevision ?? null,
-      jsonOrNull(record.coAuthorConfirmedUserIds),
-      record.coAuthorConfirmedRevision ?? null,
-      record.coAuthorIgnoreMissingRevision ?? null,
-      record.coAuthorPromptRevision ?? null,
-      record.coAuthorPromptedAt ?? null
-    );
+    `)
+      .run(
+        record.key,
+        record.platform ?? "slack",
+        record.conversationId ?? record.channelId,
+        record.conversationKind ?? null,
+        record.rootMessageId ?? record.rootThreadTs,
+        record.platformThreadId ?? null,
+        record.channelId,
+        record.channelName ?? null,
+        record.channelType ?? null,
+        record.rootThreadTs,
+        record.workspacePath,
+        record.createdAt,
+        record.updatedAt,
+        record.initiatorUserId ?? null,
+        record.initiatorMessageTs ?? null,
+        record.initiatorCapturedAt ?? null,
+        record.agentSessionId ?? record.codexThreadId ?? null,
+        record.activeTurnId ?? null,
+        record.activeTurnStartedAt ?? null,
+        record.lastObservedMessageTs ?? null,
+        record.lastDeliveredMessageTs ?? null,
+        record.lastSlackReplyAt ?? null,
+        record.sessionPageLinkPostedAt ?? null,
+        record.authProfileName ?? null,
+        record.authProfileBoundAt ?? null,
+        record.authBlockedAt ?? null,
+        record.authBlockReason ?? null,
+        record.authBlockedNoticePostedAt ?? null,
+        record.lastTurnSignalTurnId ?? null,
+        record.lastTurnSignalKind ?? null,
+        record.lastTurnSignalReason ?? null,
+        record.lastTurnSignalAt ?? null,
+        jsonOrNull(record.coAuthorCandidateUserIds),
+        record.coAuthorCandidateRevision ?? null,
+        jsonOrNull(record.coAuthorConfirmedUserIds),
+        record.coAuthorConfirmedRevision ?? null,
+        record.coAuthorIgnoreMissingRevision ?? null,
+        record.coAuthorPromptRevision ?? null,
+        record.coAuthorPromptedAt ?? null,
+      );
     this.#bindAgentActivityFromSession(record);
   }
 
@@ -1563,7 +1464,7 @@ export class StateStore {
         rootThreadTs: record.rootThreadTs,
         agentSessionId: record.agentSessionId,
         createdAt: record.updatedAt,
-        updatedAt: record.updatedAt
+        updatedAt: record.updatedAt,
       });
     }
     if (record.activeTurnId) {
@@ -1574,20 +1475,14 @@ export class StateStore {
         agentSessionId: record.agentSessionId,
         turnId: record.activeTurnId,
         createdAt: record.updatedAt,
-        updatedAt: record.updatedAt
+        updatedAt: record.updatedAt,
       });
     }
   }
 
-  #upsertAgentSessionBinding(record: {
-    readonly sessionKey: string;
-    readonly channelId: string;
-    readonly rootThreadTs: string;
-    readonly agentSessionId: string;
-    readonly createdAt: string;
-    readonly updatedAt: string;
-  }): void {
-    this.#databaseRequired().prepare(`
+  #upsertAgentSessionBinding(record: { readonly sessionKey: string; readonly channelId: string; readonly rootThreadTs: string; readonly agentSessionId: string; readonly createdAt: string; readonly updatedAt: string }): void {
+    this.#databaseRequired()
+      .prepare(`
       INSERT INTO agent_session_bindings (
         agent_session_id, session_key, channel_id, root_thread_ts, created_at, updated_at
       ) VALUES (${placeholders(6)})
@@ -1596,26 +1491,13 @@ export class StateStore {
         channel_id = excluded.channel_id,
         root_thread_ts = excluded.root_thread_ts,
         updated_at = excluded.updated_at
-    `).run(
-      record.agentSessionId,
-      record.sessionKey,
-      record.channelId,
-      record.rootThreadTs,
-      record.createdAt,
-      record.updatedAt
-    );
+    `)
+      .run(record.agentSessionId, record.sessionKey, record.channelId, record.rootThreadTs, record.createdAt, record.updatedAt);
   }
 
-  #upsertAgentTurnBinding(record: {
-    readonly sessionKey: string;
-    readonly channelId: string;
-    readonly rootThreadTs: string;
-    readonly agentSessionId?: string | undefined;
-    readonly turnId: string;
-    readonly createdAt: string;
-    readonly updatedAt: string;
-  }): void {
-    this.#databaseRequired().prepare(`
+  #upsertAgentTurnBinding(record: { readonly sessionKey: string; readonly channelId: string; readonly rootThreadTs: string; readonly agentSessionId?: string | undefined; readonly turnId: string; readonly createdAt: string; readonly updatedAt: string }): void {
+    this.#databaseRequired()
+      .prepare(`
       INSERT INTO agent_turn_bindings (
         turn_id, session_key, channel_id, root_thread_ts, agent_session_id, created_at, updated_at
       ) VALUES (${placeholders(7)})
@@ -1625,19 +1507,13 @@ export class StateStore {
         root_thread_ts = excluded.root_thread_ts,
         agent_session_id = excluded.agent_session_id,
         updated_at = excluded.updated_at
-    `).run(
-      record.turnId,
-      record.sessionKey,
-      record.channelId,
-      record.rootThreadTs,
-      record.agentSessionId ?? null,
-      record.createdAt,
-      record.updatedAt
-    );
+    `)
+      .run(record.turnId, record.sessionKey, record.channelId, record.rootThreadTs, record.agentSessionId ?? null, record.createdAt, record.updatedAt);
   }
 
   #upsertInboundMessage(record: PersistedInboundMessage): void {
-    this.#databaseRequired().prepare(`
+    this.#databaseRequired()
+      .prepare(`
       INSERT INTO inbound_messages (
         key, session_key, channel_id, channel_type, root_thread_ts, message_ts,
         source, user_id, text, sender_kind, bot_id, app_id, sender_username,
@@ -1669,36 +1545,38 @@ export class StateStore {
         batch_id = excluded.batch_id,
         created_at = excluded.created_at,
         updated_at = excluded.updated_at
-    `).run(
-      record.key,
-      record.sessionKey,
-      record.channelId,
-      record.channelType ?? null,
-      record.rootThreadTs,
-      record.messageTs,
-      record.source,
-      record.userId,
-      record.text,
-      record.senderKind ?? null,
-      record.botId ?? null,
-      record.appId ?? null,
-      record.senderUsername ?? null,
-      jsonOrNull(record.mentionedUserIds ?? []),
-      jsonOrNull(record.mentionedUsers ?? []),
-      record.contextText ?? null,
-      jsonOrNull(record.images ?? []),
-      jsonOrNull(record.slackMessage),
-      jsonOrNull(record.backgroundJob),
-      jsonOrNull(record.unexpectedTurnStop),
-      record.status,
-      record.batchId ?? null,
-      record.createdAt,
-      record.updatedAt
-    );
+    `)
+      .run(
+        record.key,
+        record.sessionKey,
+        record.channelId,
+        record.channelType ?? null,
+        record.rootThreadTs,
+        record.messageTs,
+        record.source,
+        record.userId,
+        record.text,
+        record.senderKind ?? null,
+        record.botId ?? null,
+        record.appId ?? null,
+        record.senderUsername ?? null,
+        jsonOrNull(record.mentionedUserIds ?? []),
+        jsonOrNull(record.mentionedUsers ?? []),
+        record.contextText ?? null,
+        jsonOrNull(record.images ?? []),
+        jsonOrNull(record.slackMessage),
+        jsonOrNull(record.backgroundJob),
+        jsonOrNull(record.unexpectedTurnStop),
+        record.status,
+        record.batchId ?? null,
+        record.createdAt,
+        record.updatedAt,
+      );
   }
 
   #upsertBackgroundJob(record: PersistedBackgroundJob): void {
-    this.#databaseRequired().prepare(`
+    this.#databaseRequired()
+      .prepare(`
       INSERT INTO background_jobs (
         id, token, session_key, platform, conversation_id, root_message_id,
         channel_id, root_thread_ts, kind, shell, cwd,
@@ -1731,37 +1609,39 @@ export class StateStore {
         last_event_at = excluded.last_event_at,
         last_event_kind = excluded.last_event_kind,
         last_event_summary = excluded.last_event_summary
-    `).run(
-      record.id,
-      record.token,
-      record.sessionKey,
-      record.platform ?? "slack",
-      record.conversationId ?? record.channelId,
-      record.rootMessageId ?? record.rootThreadTs,
-      record.channelId,
-      record.rootThreadTs,
-      record.kind,
-      record.shell,
-      record.cwd,
-      record.scriptPath,
-      record.restartOnBoot ? 1 : 0,
-      record.status,
-      record.createdAt,
-      record.updatedAt,
-      record.startedAt ?? null,
-      record.heartbeatAt ?? null,
-      record.completedAt ?? null,
-      record.cancelledAt ?? null,
-      record.exitCode ?? null,
-      record.error ?? null,
-      record.lastEventAt ?? null,
-      record.lastEventKind ?? null,
-      record.lastEventSummary ?? null
-    );
+    `)
+      .run(
+        record.id,
+        record.token,
+        record.sessionKey,
+        record.platform ?? "slack",
+        record.conversationId ?? record.channelId,
+        record.rootMessageId ?? record.rootThreadTs,
+        record.channelId,
+        record.rootThreadTs,
+        record.kind,
+        record.shell,
+        record.cwd,
+        record.scriptPath,
+        record.restartOnBoot ? 1 : 0,
+        record.status,
+        record.createdAt,
+        record.updatedAt,
+        record.startedAt ?? null,
+        record.heartbeatAt ?? null,
+        record.completedAt ?? null,
+        record.cancelledAt ?? null,
+        record.exitCode ?? null,
+        record.error ?? null,
+        record.lastEventAt ?? null,
+        record.lastEventKind ?? null,
+        record.lastEventSummary ?? null,
+      );
   }
 
   #upsertAdminOperation(record: PersistedAdminOperation): void {
-    this.#databaseRequired().prepare(`
+    this.#databaseRequired()
+      .prepare(`
       INSERT INTO admin_operations (
         id, kind, status, request, result, error, actor,
         created_at, updated_at, started_at, completed_at
@@ -1777,23 +1657,13 @@ export class StateStore {
         updated_at = excluded.updated_at,
         started_at = excluded.started_at,
         completed_at = excluded.completed_at
-    `).run(
-      record.id,
-      record.kind,
-      record.status,
-      JSON.stringify(record.request),
-      jsonOrNull(record.result),
-      record.error ?? null,
-      record.actor ?? null,
-      record.createdAt,
-      record.updatedAt,
-      record.startedAt ?? null,
-      record.completedAt ?? null
-    );
+    `)
+      .run(record.id, record.kind, record.status, JSON.stringify(record.request), jsonOrNull(record.result), record.error ?? null, record.actor ?? null, record.createdAt, record.updatedAt, record.startedAt ?? null, record.completedAt ?? null);
   }
 
   #upsertAgentTurnUsage(record: PersistedAgentTurnUsage): void {
-    this.#databaseRequired().prepare(`
+    this.#databaseRequired()
+      .prepare(`
       INSERT INTO agent_turn_usage (
         turn_id, session_key, channel_id, root_thread_ts, agent_session_id,
         status, source, model, effort, input_tokens, cached_input_tokens,
@@ -1819,31 +1689,33 @@ export class StateStore {
         completed_at = excluded.completed_at,
         created_at = excluded.created_at,
         updated_at = excluded.updated_at
-    `).run(
-      record.turnId,
-      record.sessionKey,
-      record.channelId,
-      record.rootThreadTs,
-      record.agentSessionId ?? null,
-      record.status,
-      record.source,
-      record.model ?? null,
-      record.effort ?? null,
-      record.inputTokens,
-      record.cachedInputTokens,
-      record.outputTokens,
-      record.reasoningTokens,
-      record.totalTokens,
-      jsonOrNull(record.rawUsage),
-      record.startedAt ?? null,
-      record.completedAt ?? null,
-      record.createdAt,
-      record.updatedAt
-    );
+    `)
+      .run(
+        record.turnId,
+        record.sessionKey,
+        record.channelId,
+        record.rootThreadTs,
+        record.agentSessionId ?? null,
+        record.status,
+        record.source,
+        record.model ?? null,
+        record.effort ?? null,
+        record.inputTokens,
+        record.cachedInputTokens,
+        record.outputTokens,
+        record.reasoningTokens,
+        record.totalTokens,
+        jsonOrNull(record.rawUsage),
+        record.startedAt ?? null,
+        record.completedAt ?? null,
+        record.createdAt,
+        record.updatedAt,
+      );
   }
 
   #upsertAgentTraceEvent(record: PersistedAgentTraceEvent): void {
-    this.#databaseRequired().prepare(`
+    this.#databaseRequired()
+      .prepare(`
       INSERT INTO agent_trace_events (
         id, session_key, source, type, at, sequence, title, summary, detail,
         status, role, tool_name, call_id, turn_id, detail_truncated,
@@ -1867,33 +1739,32 @@ export class StateStore {
         detail_original_chars = excluded.detail_original_chars,
         metadata = excluded.metadata,
         updated_at = excluded.updated_at
-    `).run(
-      record.id,
-      record.sessionKey,
-      record.source,
-      record.type,
-      record.at,
-      record.sequence,
-      record.title,
-      record.summary,
-      record.detail ?? null,
-      record.status ?? null,
-      record.role ?? null,
-      record.toolName ?? null,
-      record.callId ?? null,
-      record.turnId ?? null,
-      record.detailTruncated ? 1 : 0,
-      record.detailOriginalChars ?? null,
-      jsonOrNull(record.metadata),
-      record.createdAt,
-      record.updatedAt
-    );
+    `)
+      .run(
+        record.id,
+        record.sessionKey,
+        record.source,
+        record.type,
+        record.at,
+        record.sequence,
+        record.title,
+        record.summary,
+        record.detail ?? null,
+        record.status ?? null,
+        record.role ?? null,
+        record.toolName ?? null,
+        record.callId ?? null,
+        record.turnId ?? null,
+        record.detailTruncated ? 1 : 0,
+        record.detailOriginalChars ?? null,
+        jsonOrNull(record.metadata),
+        record.createdAt,
+        record.updatedAt,
+      );
   }
 
   #getAgentTraceEventById(id: string): PersistedAgentTraceEvent | undefined {
-    const row = this.#databaseRequired()
-      .prepare("SELECT * FROM agent_trace_events WHERE id = ?")
-      .get(id) as SqlRow | undefined;
+    const row = this.#databaseRequired().prepare("SELECT * FROM agent_trace_events WHERE id = ?").get(id) as SqlRow | undefined;
     return row ? this.#rowToAgentTraceEvent(row) : undefined;
   }
 
@@ -1903,8 +1774,8 @@ export class StateStore {
       return undefined;
     }
     const row = key.callId
-      ? this.#databaseRequired()
-        .prepare(`
+      ? (this.#databaseRequired()
+          .prepare(`
           SELECT * FROM agent_trace_events
           WHERE session_key = ?
             AND type = 'agent_tool_call'
@@ -1913,9 +1784,9 @@ export class StateStore {
           ORDER BY sequence DESC, at DESC, id DESC
           LIMIT 1
         `)
-        .get(record.sessionKey, key.turnId, key.callId) as SqlRow | undefined
-      : this.#databaseRequired()
-        .prepare(`
+          .get(record.sessionKey, key.turnId, key.callId) as SqlRow | undefined)
+      : (this.#databaseRequired()
+          .prepare(`
           SELECT * FROM agent_trace_events
           WHERE session_key = ?
             AND type = 'agent_tool_call'
@@ -1924,7 +1795,7 @@ export class StateStore {
           ORDER BY sequence DESC, at DESC, id DESC
           LIMIT 1
         `)
-        .get(record.sessionKey, key.turnId, key.toolName ?? "") as SqlRow | undefined;
+          .get(record.sessionKey, key.turnId, key.toolName ?? "") as SqlRow | undefined);
     return row ? this.#rowToAgentTraceEvent(row) : undefined;
   }
 
@@ -1938,8 +1809,8 @@ export class StateStore {
     }
     const excludeClause = excludeEventId ? "AND id != ?" : "";
     const row = key.callId
-      ? this.#databaseRequired()
-        .prepare(`
+      ? (this.#databaseRequired()
+          .prepare(`
           SELECT 1 FROM agent_trace_events
           WHERE session_key = ?
             AND type = 'agent_tool_result'
@@ -1948,9 +1819,9 @@ export class StateStore {
             ${excludeClause}
           LIMIT 1
         `)
-        .get(record.sessionKey, key.turnId, key.callId, ...(excludeEventId ? [excludeEventId] : [])) as SqlRow | undefined
-      : this.#databaseRequired()
-        .prepare(`
+          .get(record.sessionKey, key.turnId, key.callId, ...(excludeEventId ? [excludeEventId] : [])) as SqlRow | undefined)
+      : (this.#databaseRequired()
+          .prepare(`
           SELECT 1 FROM agent_trace_events
           WHERE session_key = ?
             AND type = 'agent_tool_result'
@@ -1959,7 +1830,7 @@ export class StateStore {
             ${excludeClause}
           LIMIT 1
         `)
-        .get(record.sessionKey, key.turnId, key.toolName ?? "", ...(excludeEventId ? [excludeEventId] : [])) as SqlRow | undefined;
+          .get(record.sessionKey, key.turnId, key.toolName ?? "", ...(excludeEventId ? [excludeEventId] : [])) as SqlRow | undefined);
     return Boolean(row);
   }
 
@@ -1976,7 +1847,8 @@ export class StateStore {
       return;
     }
 
-    this.#databaseRequired().prepare(`
+    this.#databaseRequired()
+      .prepare(`
       INSERT INTO agent_session_trace_summaries (
         session_key, event_count, model_request_count, categories, sources, updated_at
       ) VALUES (${placeholders(6)})
@@ -1986,51 +1858,39 @@ export class StateStore {
         categories = excluded.categories,
         sources = excluded.sources,
         updated_at = excluded.updated_at
-    `).run(
-      sessionKey,
-      eventCount,
-      modelRequestCount,
-      JSON.stringify(categories),
-      JSON.stringify(sources),
-      nextUpdatedAt
-    );
+    `)
+      .run(sessionKey, eventCount, modelRequestCount, JSON.stringify(categories), JSON.stringify(sources), nextUpdatedAt);
   }
 
-  #appendAdminEvent(event: Omit<PersistedAdminEvent, "sequence" | "payload"> & {
-    readonly payload: unknown;
-  }): void {
-    const result = this.#databaseRequired().prepare(`
+  #appendAdminEvent(
+    event: Omit<PersistedAdminEvent, "sequence" | "payload"> & {
+      readonly payload: unknown;
+    },
+  ): void {
+    const result = this.#databaseRequired()
+      .prepare(`
       INSERT INTO admin_events (
         kind, scope, session_key, entity_id, payload, created_at
       ) VALUES (${placeholders(6)})
-    `).run(
-      event.kind,
-      event.scope,
-      event.sessionKey ?? null,
-      event.entityId ?? null,
-      JSON.stringify(event.payload),
-      event.createdAt
-    );
+    `)
+      .run(event.kind, event.scope, event.sessionKey ?? null, event.entityId ?? null, JSON.stringify(event.payload), event.createdAt);
     this.#pruneAdminEvents(Number(result.lastInsertRowid ?? 0));
   }
 
   #pruneAdminEvents(latestSequence: number): void {
-    if (
-      latestSequence <= ADMIN_EVENT_RETENTION_LIMIT ||
-      latestSequence % ADMIN_EVENT_PRUNE_INTERVAL !== 0
-    ) {
+    if (latestSequence <= ADMIN_EVENT_RETENTION_LIMIT || latestSequence % ADMIN_EVENT_PRUNE_INTERVAL !== 0) {
       return;
     }
-    this.#databaseRequired().prepare(`
+    this.#databaseRequired()
+      .prepare(`
       DELETE FROM admin_events
       WHERE sequence <= ?
-    `).run(latestSequence - ADMIN_EVENT_RETENTION_LIMIT);
+    `)
+      .run(latestSequence - ADMIN_EVENT_RETENTION_LIMIT);
   }
 
   #markProcessedEvent(eventId: string): void {
-    const result = this.#databaseRequired()
-      .prepare("INSERT OR IGNORE INTO processed_events (event_id) VALUES (?)")
-      .run(eventId);
+    const result = this.#databaseRequired().prepare("INSERT OR IGNORE INTO processed_events (event_id) VALUES (?)").run(eventId);
     if (sqlChanges(result) === 0) {
       return;
     }
@@ -2038,16 +1898,15 @@ export class StateStore {
   }
 
   #pruneProcessedEvents(latestSequence: number): void {
-    if (
-      latestSequence <= PROCESSED_EVENT_RETENTION_LIMIT ||
-      latestSequence % PROCESSED_EVENT_PRUNE_INTERVAL !== 0
-    ) {
+    if (latestSequence <= PROCESSED_EVENT_RETENTION_LIMIT || latestSequence % PROCESSED_EVENT_PRUNE_INTERVAL !== 0) {
       return;
     }
-    this.#databaseRequired().prepare(`
+    this.#databaseRequired()
+      .prepare(`
       DELETE FROM processed_events
       WHERE sequence <= ?
-    `).run(latestSequence - PROCESSED_EVENT_RETENTION_LIMIT);
+    `)
+      .run(latestSequence - PROCESSED_EVENT_RETENTION_LIMIT);
   }
 
   #pruneDoneSlackEvents(): void {
@@ -2072,14 +1931,16 @@ export class StateStore {
       return;
     }
 
-    this.#databaseRequired().prepare(`
+    this.#databaseRequired()
+      .prepare(`
       DELETE FROM slack_events
       WHERE status = 'done'
         AND (
           updated_at < ?
           OR (updated_at = ? AND rowid < ?)
         )
-    `).run(cutoffUpdatedAt, cutoffUpdatedAt, cutoffRowid);
+    `)
+      .run(cutoffUpdatedAt, cutoffUpdatedAt, cutoffRowid);
   }
 
   #rowToSession(row: SqlRow): SlackSessionRecord {
@@ -2123,7 +1984,7 @@ export class StateStore {
       coAuthorConfirmedRevision: optionalNumberColumn(row, "co_author_confirmed_revision"),
       coAuthorIgnoreMissingRevision: optionalNumberColumn(row, "co_author_ignore_missing_revision"),
       coAuthorPromptRevision: optionalNumberColumn(row, "co_author_prompt_revision"),
-      coAuthorPromptedAt: optionalStringColumn(row, "co_author_prompted_at")
+      coAuthorPromptedAt: optionalStringColumn(row, "co_author_prompted_at"),
     });
   }
 
@@ -2133,7 +1994,7 @@ export class StateStore {
       payload: readJsonColumn<JsonLike>(row, "payload", null),
       status: stringColumn(row, "status") as PersistedSlackEvent["status"],
       createdAt: stringColumn(row, "created_at"),
-      updatedAt: stringColumn(row, "updated_at")
+      updatedAt: stringColumn(row, "updated_at"),
     };
   }
 
@@ -2162,7 +2023,7 @@ export class StateStore {
       status: stringColumn(row, "status") as PersistedInboundMessageStatus,
       batchId: optionalStringColumn(row, "batch_id"),
       createdAt: stringColumn(row, "created_at"),
-      updatedAt: stringColumn(row, "updated_at")
+      updatedAt: stringColumn(row, "updated_at"),
     })!;
   }
 
@@ -2192,7 +2053,7 @@ export class StateStore {
       error: optionalStringColumn(row, "error"),
       lastEventAt: optionalStringColumn(row, "last_event_at"),
       lastEventKind: optionalStringColumn(row, "last_event_kind"),
-      lastEventSummary: optionalStringColumn(row, "last_event_summary")
+      lastEventSummary: optionalStringColumn(row, "last_event_summary"),
     })!;
   }
 
@@ -2208,7 +2069,7 @@ export class StateStore {
       createdAt: stringColumn(row, "created_at"),
       updatedAt: stringColumn(row, "updated_at"),
       startedAt: optionalStringColumn(row, "started_at"),
-      completedAt: optionalStringColumn(row, "completed_at")
+      completedAt: optionalStringColumn(row, "completed_at"),
     });
   }
 
@@ -2220,7 +2081,7 @@ export class StateStore {
       status: stringColumn(row, "status") as PersistedAdminAuditEvent["status"],
       detail: readJsonColumn<JsonLike | undefined>(row, "detail", undefined),
       actor: optionalStringColumn(row, "actor"),
-      createdAt: stringColumn(row, "created_at")
+      createdAt: stringColumn(row, "created_at"),
     });
   }
 
@@ -2232,7 +2093,7 @@ export class StateStore {
       sessionKey: optionalStringColumn(row, "session_key"),
       entityId: optionalStringColumn(row, "entity_id"),
       payload: readJsonColumn<JsonLike>(row, "payload", {}),
-      createdAt: stringColumn(row, "created_at")
+      createdAt: stringColumn(row, "created_at"),
     };
   }
 
@@ -2256,7 +2117,7 @@ export class StateStore {
       startedAt: optionalStringColumn(row, "started_at"),
       completedAt: optionalStringColumn(row, "completed_at"),
       createdAt: stringColumn(row, "created_at"),
-      updatedAt: stringColumn(row, "updated_at")
+      updatedAt: stringColumn(row, "updated_at"),
     });
   }
 
@@ -2277,7 +2138,7 @@ export class StateStore {
       updatedAt: stringColumn(row, "updated_at"),
       lastTurnAt: optionalStringColumn(row, "last_turn_at"),
       model: optionalStringColumn(row, "model"),
-      effort: optionalStringColumn(row, "effort")
+      effort: optionalStringColumn(row, "effort"),
     };
   }
 
@@ -2301,7 +2162,7 @@ export class StateStore {
       detailOriginalChars: optionalNumberColumn(row, "detail_original_chars"),
       metadata: readJsonColumn<JsonLike | undefined>(row, "metadata", undefined),
       createdAt: stringColumn(row, "created_at"),
-      updatedAt: stringColumn(row, "updated_at")
+      updatedAt: stringColumn(row, "updated_at"),
     });
   }
 
@@ -2312,7 +2173,7 @@ export class StateStore {
       modelRequestCount: optionalNumberColumn(row, "model_request_count") ?? 0,
       categories: readJsonColumn<Record<string, number>>(row, "categories", {}),
       sources: readJsonColumn<Record<string, number>>(row, "sources", {}),
-      updatedAt: stringColumn(row, "updated_at")
+      updatedAt: stringColumn(row, "updated_at"),
     };
   }
 
@@ -2321,13 +2182,7 @@ export class StateStore {
     const channelId = String(session.channelId ?? session.conversationId);
     const rootThreadTs = String(session.rootThreadTs ?? session.rootMessageId);
     const agentSessionId = session.agentSessionId ?? session.codexThreadId;
-    const workspacePath = session.workspacePath
-      ? String(session.workspacePath)
-      : path.join(
-        this.#sessionsRoot,
-        normalizeSessionDirectoryName(channelId, rootThreadTs),
-        "workspace"
-      );
+    const workspacePath = session.workspacePath ? String(session.workspacePath) : path.join(this.#sessionsRoot, normalizeSessionDirectoryName(channelId, rootThreadTs), "workspace");
     return {
       key: String(session.key),
       platform,
@@ -2368,8 +2223,7 @@ export class StateStore {
       coAuthorConfirmedRevision: normalizeFiniteNumber(session.coAuthorConfirmedRevision),
       coAuthorIgnoreMissingRevision: normalizeFiniteNumber(session.coAuthorIgnoreMissingRevision),
       coAuthorPromptRevision: normalizeFiniteNumber(session.coAuthorPromptRevision),
-      coAuthorPromptedAt:
-        typeof session.coAuthorPromptedAt === "string" ? session.coAuthorPromptedAt : undefined
+      coAuthorPromptedAt: typeof session.coAuthorPromptedAt === "string" ? session.coAuthorPromptedAt : undefined,
     };
   }
 
@@ -2402,24 +2256,12 @@ export class StateStore {
       status: raw.status ?? "pending",
       batchId: raw.batchId,
       createdAt: String(raw.createdAt ?? new Date().toISOString()),
-      updatedAt: String(raw.updatedAt ?? raw.createdAt ?? new Date().toISOString())
+      updatedAt: String(raw.updatedAt ?? raw.createdAt ?? new Date().toISOString()),
     };
   }
 
   #normalizeBackgroundJob(raw: Partial<PersistedBackgroundJob>): PersistedBackgroundJob | null {
-    if (
-      !raw.id ||
-      !raw.token ||
-      !raw.sessionKey ||
-      !raw.channelId ||
-      !raw.rootThreadTs ||
-      !raw.kind ||
-      !raw.shell ||
-      !raw.cwd ||
-      !raw.scriptPath ||
-      !raw.status ||
-      !raw.createdAt
-    ) {
+    if (!raw.id || !raw.token || !raw.sessionKey || !raw.channelId || !raw.rootThreadTs || !raw.kind || !raw.shell || !raw.cwd || !raw.scriptPath || !raw.status || !raw.createdAt) {
       return null;
     }
 
@@ -2448,7 +2290,7 @@ export class StateStore {
       error: raw.error,
       lastEventAt: raw.lastEventAt,
       lastEventKind: raw.lastEventKind,
-      lastEventSummary: raw.lastEventSummary
+      lastEventSummary: raw.lastEventSummary,
     };
   }
 
@@ -2468,7 +2310,7 @@ export class StateStore {
       createdAt: String(raw.createdAt),
       updatedAt: String(raw.updatedAt ?? raw.createdAt),
       startedAt: raw.startedAt,
-      completedAt: raw.completedAt
+      completedAt: raw.completedAt,
     };
   }
 
@@ -2484,7 +2326,7 @@ export class StateStore {
       status: raw.status,
       detail: raw.detail,
       actor: raw.actor,
-      createdAt: String(raw.createdAt)
+      createdAt: String(raw.createdAt),
     };
   }
 
@@ -2513,7 +2355,7 @@ export class StateStore {
       startedAt: typeof raw.startedAt === "string" ? raw.startedAt : undefined,
       completedAt: typeof raw.completedAt === "string" ? raw.completedAt : undefined,
       createdAt: String(raw.createdAt ?? now),
-      updatedAt: String(raw.updatedAt ?? raw.createdAt ?? now)
+      updatedAt: String(raw.updatedAt ?? raw.createdAt ?? now),
     };
   }
 
@@ -2542,7 +2384,7 @@ export class StateStore {
       detailOriginalChars: normalizeFiniteNumber(raw.detailOriginalChars),
       metadata: raw.metadata,
       createdAt: String(raw.createdAt ?? now),
-      updatedAt: String(raw.updatedAt ?? raw.createdAt ?? now)
+      updatedAt: String(raw.updatedAt ?? raw.createdAt ?? now),
     };
   }
 
@@ -2576,10 +2418,7 @@ function ensureSchemaMigrationsTable(database: DatabaseSync): void {
     );
   `);
 
-  const columns = new Set(
-    (database.prepare("PRAGMA table_info(schema_migrations)").all() as Array<{ name: string }>)
-      .map((row) => row.name)
-  );
+  const columns = new Set((database.prepare("PRAGMA table_info(schema_migrations)").all() as Array<{ name: string }>).map((row) => row.name));
   if (!columns.has("name")) {
     database.exec("ALTER TABLE schema_migrations ADD COLUMN name TEXT NOT NULL DEFAULT ''");
   }
@@ -2589,9 +2428,7 @@ function rebuildAllAgentSessionUsageSummaries(database: DatabaseSync): void {
   if (!tableExists(database, "agent_turn_usage")) {
     return;
   }
-  const rows = database
-    .prepare("SELECT DISTINCT session_key FROM agent_turn_usage")
-    .all() as SqlRow[];
+  const rows = database.prepare("SELECT DISTINCT session_key FROM agent_turn_usage").all() as SqlRow[];
   for (const row of rows) {
     rebuildAgentSessionUsageSummary(database, stringColumn(row, "session_key"));
   }
@@ -2647,7 +2484,8 @@ function rebuildAgentSessionUsageSummary(database: DatabaseSync, sessionKey: str
     }
   }
 
-  database.prepare(`
+  database
+    .prepare(`
     INSERT INTO agent_session_usage_summaries (
       session_key, channel_id, root_thread_ts, turn_count, exact_turns,
       estimated_turns, missing_turns, input_tokens, cached_input_tokens,
@@ -2670,33 +2508,32 @@ function rebuildAgentSessionUsageSummary(database: DatabaseSync, sessionKey: str
       last_turn_at = excluded.last_turn_at,
       model = excluded.model,
       effort = excluded.effort
-  `).run(
-    sessionKey,
-    stringColumn(latest, "channel_id"),
-    stringColumn(latest, "root_thread_ts"),
-    turnCount,
-    exactTurns,
-    estimatedTurns,
-    missingTurns,
-    inputTokens,
-    cachedInputTokens,
-    outputTokens,
-    reasoningTokens,
-    totalTokens,
-    stringColumn(latest, "updated_at"),
-    optionalStringColumn(latest, "completed_at") ?? stringColumn(latest, "updated_at"),
-    optionalStringColumn(latest, "model") ?? null,
-    optionalStringColumn(latest, "effort") ?? null
-  );
+  `)
+    .run(
+      sessionKey,
+      stringColumn(latest, "channel_id"),
+      stringColumn(latest, "root_thread_ts"),
+      turnCount,
+      exactTurns,
+      estimatedTurns,
+      missingTurns,
+      inputTokens,
+      cachedInputTokens,
+      outputTokens,
+      reasoningTokens,
+      totalTokens,
+      stringColumn(latest, "updated_at"),
+      optionalStringColumn(latest, "completed_at") ?? stringColumn(latest, "updated_at"),
+      optionalStringColumn(latest, "model") ?? null,
+      optionalStringColumn(latest, "effort") ?? null,
+    );
 }
 
 function rebuildAllAgentSessionTraceSummaries(database: DatabaseSync): void {
   if (!tableExists(database, "agent_trace_events")) {
     return;
   }
-  const rows = database
-    .prepare("SELECT DISTINCT session_key FROM agent_trace_events")
-    .all() as SqlRow[];
+  const rows = database.prepare("SELECT DISTINCT session_key FROM agent_trace_events").all() as SqlRow[];
   for (const row of rows) {
     rebuildAgentSessionTraceSummary(database, stringColumn(row, "session_key"));
   }
@@ -2714,22 +2551,16 @@ function emptyTraceSummaryContribution(): TraceSummaryContribution {
     eventCount: 0,
     modelRequestCount: 0,
     categories: {},
-    sources: {}
+    sources: {},
   };
 }
 
-function traceSummaryContribution(
-  event: PersistedAgentTraceEvent,
-  hiddenByCompletedToolResult: boolean
-): TraceSummaryContribution {
+function traceSummaryContribution(event: PersistedAgentTraceEvent, hiddenByCompletedToolResult: boolean): TraceSummaryContribution {
   const contribution = emptyTraceSummaryContribution();
   if (event.type === "agent_token_count") {
     contribution.modelRequestCount = 1;
   }
-  if (
-    isVisibleTraceSummaryRow(event.type, event.status) &&
-    !(event.type === "agent_tool_call" && hiddenByCompletedToolResult)
-  ) {
+  if (isVisibleTraceSummaryRow(event.type, event.status) && !(event.type === "agent_tool_call" && hiddenByCompletedToolResult)) {
     contribution.eventCount = 1;
     contribution.categories[event.type] = 1;
     contribution.sources[event.source] = 1;
@@ -2737,21 +2568,14 @@ function traceSummaryContribution(
   return contribution;
 }
 
-function subtractTraceSummaryContribution(
-  next: TraceSummaryContribution,
-  previous: TraceSummaryContribution
-): TraceSummaryContribution {
+function subtractTraceSummaryContribution(next: TraceSummaryContribution, previous: TraceSummaryContribution): TraceSummaryContribution {
   const delta = emptyTraceSummaryContribution();
   applyTraceSummaryDelta(delta, next, 1);
   applyTraceSummaryDelta(delta, previous, -1);
   return delta;
 }
 
-function applyTraceSummaryDelta(
-  target: TraceSummaryContribution,
-  source: TraceSummaryContribution,
-  multiplier: 1 | -1
-): void {
+function applyTraceSummaryDelta(target: TraceSummaryContribution, source: TraceSummaryContribution, multiplier: 1 | -1): void {
   target.eventCount += source.eventCount * multiplier;
   target.modelRequestCount += source.modelRequestCount * multiplier;
   for (const [key, value] of Object.entries(source.categories)) {
@@ -2762,10 +2586,7 @@ function applyTraceSummaryDelta(
   }
 }
 
-function mergeCountMaps(
-  existing: Record<string, number>,
-  delta: Record<string, number>
-): Record<string, number> {
+function mergeCountMaps(existing: Record<string, number>, delta: Record<string, number>): Record<string, number> {
   const merged: Record<string, number> = { ...existing };
   for (const [key, value] of Object.entries(delta)) {
     const nextValue = (merged[key] ?? 0) + value;
@@ -2803,7 +2624,7 @@ function rebuildAgentSessionTraceSummary(database: DatabaseSync, sessionKey: str
     rows
       .filter((row) => stringColumn(row, "type") === "agent_tool_result")
       .map(traceToolRowKey)
-      .filter(Boolean)
+      .filter(Boolean),
   );
 
   for (const row of rows) {
@@ -2812,10 +2633,7 @@ function rebuildAgentSessionTraceSummary(database: DatabaseSync, sessionKey: str
     if (type === "agent_token_count") {
       modelRequestCount += 1;
     }
-    if (
-      isVisibleTraceSummaryRow(type, optionalStringColumn(row, "status")) &&
-      !(type === "agent_tool_call" && completedToolCallKeys.has(traceToolRowKey(row)))
-    ) {
+    if (isVisibleTraceSummaryRow(type, optionalStringColumn(row, "status")) && !(type === "agent_tool_call" && completedToolCallKeys.has(traceToolRowKey(row)))) {
       eventCount += 1;
       categories[type] = (categories[type] ?? 0) + 1;
       sources[source] = (sources[source] ?? 0) + 1;
@@ -2826,7 +2644,8 @@ function rebuildAgentSessionTraceSummary(database: DatabaseSync, sessionKey: str
     }
   }
 
-  database.prepare(`
+  database
+    .prepare(`
     INSERT INTO agent_session_trace_summaries (
       session_key, event_count, model_request_count, categories, sources, updated_at
     ) VALUES (${placeholders(6)})
@@ -2836,14 +2655,8 @@ function rebuildAgentSessionTraceSummary(database: DatabaseSync, sessionKey: str
       categories = excluded.categories,
       sources = excluded.sources,
       updated_at = excluded.updated_at
-  `).run(
-    sessionKey,
-    eventCount,
-    modelRequestCount,
-    JSON.stringify(categories),
-    JSON.stringify(sources),
-    updatedAt
-  );
+  `)
+    .run(sessionKey, eventCount, modelRequestCount, JSON.stringify(categories), JSON.stringify(sources), updatedAt);
 }
 
 function traceToolRowKey(row: SqlRow): string {
@@ -2859,16 +2672,18 @@ function traceToolRowKey(row: SqlRow): string {
   return [turnId, toolName ?? ""].join("\u001f");
 }
 
-function traceToolEventKeyParts(event: PersistedAgentTraceEvent): {
-  readonly turnId: string;
-  readonly callId?: string | undefined;
-  readonly toolName?: string | undefined;
-} | undefined {
+function traceToolEventKeyParts(event: PersistedAgentTraceEvent):
+  | {
+      readonly turnId: string;
+      readonly callId?: string | undefined;
+      readonly toolName?: string | undefined;
+    }
+  | undefined {
   const turnId = event.turnId ?? "";
   if (event.callId) {
     return {
       turnId,
-      callId: event.callId
+      callId: event.callId,
     };
   }
   if (!turnId && !event.toolName) {
@@ -2876,7 +2691,7 @@ function traceToolEventKeyParts(event: PersistedAgentTraceEvent): {
   }
   return {
     turnId,
-    toolName: event.toolName ?? ""
+    toolName: event.toolName ?? "",
   };
 }
 
@@ -2885,9 +2700,7 @@ function traceToolEventKey(event: PersistedAgentTraceEvent): string {
   if (!key) {
     return "";
   }
-  return key.callId
-    ? [key.turnId, key.callId].join("\u001f")
-    : [key.turnId, key.toolName ?? ""].join("\u001f");
+  return key.callId ? [key.turnId, key.callId].join("\u001f") : [key.turnId, key.toolName ?? ""].join("\u001f");
 }
 
 function isVisibleTraceSummaryRow(type: string, status?: string | undefined): boolean {
@@ -2928,7 +2741,7 @@ function arrayOption<T>(value: T | readonly T[] | undefined): readonly T[] | und
   if (value === undefined) {
     return undefined;
   }
-  return Array.isArray(value) ? value as readonly T[] : [value as T];
+  return Array.isArray(value) ? (value as readonly T[]) : [value as T];
 }
 
 function jsonOrNull(value: unknown): string | null {
@@ -3016,16 +2829,8 @@ function normalizePlatform(value: unknown): "slack" | "feishu" {
   return value === "feishu" ? "feishu" : "slack";
 }
 
-function normalizeConversationKind(
-  value: unknown
-): "channel" | "group" | "direct" | "thread" | "unknown" | undefined {
-  return value === "channel" ||
-    value === "group" ||
-    value === "direct" ||
-    value === "thread" ||
-    value === "unknown"
-    ? value
-    : undefined;
+function normalizeConversationKind(value: unknown): "channel" | "group" | "direct" | "thread" | "unknown" | undefined {
+  return value === "channel" || value === "group" || value === "direct" || value === "thread" || value === "unknown" ? value : undefined;
 }
 
 function normalizeStringArray(value: unknown): readonly string[] | undefined {
@@ -3033,9 +2838,7 @@ function normalizeStringArray(value: unknown): readonly string[] | undefined {
     return undefined;
   }
 
-  const normalized = value
-    .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
-    .filter(Boolean);
+  const normalized = value.map((entry) => (typeof entry === "string" ? entry.trim() : "")).filter(Boolean);
   return normalized.length > 0 ? normalized : undefined;
 }
 

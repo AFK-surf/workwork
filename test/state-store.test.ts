@@ -7,63 +7,66 @@ import type { Readable } from "node:stream";
 
 import { describe, expect, it } from "vitest";
 
-import {
-  CURRENT_STATE_SCHEMA_VERSION,
-  STATE_DATABASE_FILENAME,
-  STATE_STORE_BUSY_TIMEOUT_MS,
-  StateStore
-} from "../src/store/state-store.js";
+import { CURRENT_STATE_SCHEMA_VERSION, STATE_DATABASE_FILENAME, STATE_STORE_BUSY_TIMEOUT_MS, StateStore } from "../src/store/state-store.js";
 
 describe("StateStore", () => {
-  it("does not rerun migrations on repeated load calls", async () => {
-    const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "slack-codex-state-"));
-    const sessionsRoot = path.join(stateDir, "sessions");
-    const store = new StateStore(stateDir, sessionsRoot);
-    await store.load();
-
-    const lockConnection = new DatabaseSync(path.join(stateDir, STATE_DATABASE_FILENAME));
-    lockConnection.exec("BEGIN IMMEDIATE");
-    try {
-      const startedAt = Date.now();
-      await expect(store.load()).resolves.toBeUndefined();
-      expect(Date.now() - startedAt).toBeLessThan(250);
-    } finally {
-      lockConnection.exec("ROLLBACK");
-      lockConnection.close();
-      store.close();
-    }
-  }, STATE_STORE_BUSY_TIMEOUT_MS + 1_000);
-
-  it("waits for short-lived startup write locks before running migrations", async () => {
-    const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "slack-codex-state-"));
-    const sessionsRoot = path.join(stateDir, "sessions");
-    await fs.mkdir(stateDir, { recursive: true });
-
-    const locker = spawn(process.execPath, ["-e", LOCK_DATABASE_SCRIPT], {
-      env: {
-        ...process.env,
-        DB_PATH: path.join(stateDir, STATE_DATABASE_FILENAME)
-      },
-      stdio: ["ignore", "pipe", "pipe"]
-    });
-
-    try {
-      await waitForOutput(locker, "locked");
-
+  it(
+    "does not rerun migrations on repeated load calls",
+    async () => {
+      const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "slack-codex-state-"));
+      const sessionsRoot = path.join(stateDir, "sessions");
       const store = new StateStore(stateDir, sessionsRoot);
+      await store.load();
+
+      const lockConnection = new DatabaseSync(path.join(stateDir, STATE_DATABASE_FILENAME));
+      lockConnection.exec("BEGIN IMMEDIATE");
       try {
         const startedAt = Date.now();
         await expect(store.load()).resolves.toBeUndefined();
-        expect(Date.now() - startedAt).toBeGreaterThanOrEqual(250);
+        expect(Date.now() - startedAt).toBeLessThan(250);
       } finally {
+        lockConnection.exec("ROLLBACK");
+        lockConnection.close();
         store.close();
       }
-    } finally {
-      if (locker.exitCode === null) {
-        locker.kill();
+    },
+    STATE_STORE_BUSY_TIMEOUT_MS + 1_000,
+  );
+
+  it(
+    "waits for short-lived startup write locks before running migrations",
+    async () => {
+      const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "slack-codex-state-"));
+      const sessionsRoot = path.join(stateDir, "sessions");
+      await fs.mkdir(stateDir, { recursive: true });
+
+      const locker = spawn(process.execPath, ["-e", LOCK_DATABASE_SCRIPT], {
+        env: {
+          ...process.env,
+          DB_PATH: path.join(stateDir, STATE_DATABASE_FILENAME),
+        },
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+
+      try {
+        await waitForOutput(locker, "locked");
+
+        const store = new StateStore(stateDir, sessionsRoot);
+        try {
+          const startedAt = Date.now();
+          await expect(store.load()).resolves.toBeUndefined();
+          expect(Date.now() - startedAt).toBeGreaterThanOrEqual(250);
+        } finally {
+          store.close();
+        }
+      } finally {
+        if (locker.exitCode === null) {
+          locker.kill();
+        }
       }
-    }
-  }, STATE_STORE_BUSY_TIMEOUT_MS + 1_000);
+    },
+    STATE_STORE_BUSY_TIMEOUT_MS + 1_000,
+  );
 
   it("persists sessions and processed events in the SQLite database", async () => {
     const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "slack-codex-state-"));
@@ -80,8 +83,8 @@ describe("StateStore", () => {
         rootThreadTs: "111.222",
         workspacePath: "/tmp/sessions/C123-111.222/workspace",
         createdAt: "2026-03-15T00:00:00.000Z",
-        updatedAt: "2026-03-15T00:00:00.000Z"
-      })
+        updatedAt: "2026-03-15T00:00:00.000Z",
+      }),
     ]);
     store.close();
 
@@ -91,9 +94,11 @@ describe("StateStore", () => {
     await reloaded.load();
     expect(reloaded.hasProcessedEvent("EvA")).toBe(true);
     expect(reloaded.hasProcessedEvent("EvB")).toBe(true);
-    expect(reloaded.getSession("C123:111.222")).toEqual(expect.objectContaining({
-      key: "C123:111.222"
-    }));
+    expect(reloaded.getSession("C123:111.222")).toEqual(
+      expect.objectContaining({
+        key: "C123:111.222",
+      }),
+    );
     reloaded.close();
   });
 
@@ -111,8 +116,8 @@ describe("StateStore", () => {
         thread_ts: "111.222",
         ts: "111.223",
         user: "U123",
-        text: "hello"
-      }
+        text: "hello",
+      },
     });
 
     expect(store.listPendingSlackEvents()).toEqual([
@@ -120,9 +125,9 @@ describe("StateStore", () => {
         eventId: "EvA",
         status: "pending",
         payload: expect.objectContaining({
-          event_id: "EvA"
-        })
-      })
+          event_id: "EvA",
+        }),
+      }),
     ]);
 
     store.close();
@@ -147,7 +152,7 @@ describe("StateStore", () => {
       rootThreadTs: "111.222",
       workspacePath: "/tmp/sessions/C123-111.222/workspace",
       createdAt: "2026-03-15T00:00:00.000Z",
-      updatedAt: "2026-03-15T00:00:00.000Z"
+      updatedAt: "2026-03-15T00:00:00.000Z",
     });
     await store.upsertInboundMessage({
       key: "inbound-1",
@@ -160,7 +165,7 @@ describe("StateStore", () => {
       text: "follow up",
       status: "pending",
       createdAt: "2026-03-15T00:00:01.000Z",
-      updatedAt: "2026-03-15T00:00:01.000Z"
+      updatedAt: "2026-03-15T00:00:01.000Z",
     });
     await store.upsertBackgroundJob({
       id: "job-1",
@@ -175,7 +180,7 @@ describe("StateStore", () => {
       restartOnBoot: true,
       status: "running",
       createdAt: "2026-03-15T00:00:02.000Z",
-      updatedAt: "2026-03-15T00:00:02.000Z"
+      updatedAt: "2026-03-15T00:00:02.000Z",
     });
 
     await expect(store.deleteSession("C123:111.222")).resolves.toBe(true);
@@ -197,7 +202,7 @@ describe("StateStore", () => {
       rootThreadTs: "111.222",
       workspacePath: "/tmp/sessions/C123-111.222/workspace",
       createdAt: "2026-03-15T00:00:00.000Z",
-      updatedAt: "2026-03-15T00:00:00.000Z"
+      updatedAt: "2026-03-15T00:00:00.000Z",
     });
 
     await store.upsertAgentTurnUsage({
@@ -216,12 +221,12 @@ describe("StateStore", () => {
       reasoningTokens: 75,
       totalTokens: 1725,
       rawUsage: {
-        total_tokens: 1725
+        total_tokens: 1725,
       },
       startedAt: "2026-03-15T00:00:01.000Z",
       completedAt: "2026-03-15T00:00:09.000Z",
       createdAt: "2026-03-15T00:00:01.000Z",
-      updatedAt: "2026-03-15T00:00:09.000Z"
+      updatedAt: "2026-03-15T00:00:09.000Z",
     });
 
     expect(store.listAgentTurnUsage()).toEqual([
@@ -231,9 +236,9 @@ describe("StateStore", () => {
         source: "exact",
         totalTokens: 1725,
         rawUsage: {
-          total_tokens: 1725
-        }
-      })
+          total_tokens: 1725,
+        },
+      }),
     ]);
 
     await store.deleteSession("C123:111.222");
@@ -252,7 +257,7 @@ describe("StateStore", () => {
       rootThreadTs: "111.222",
       workspacePath: "/tmp/sessions/C123-111.222/workspace",
       createdAt: "2026-03-15T00:00:00.000Z",
-      updatedAt: "2026-03-15T00:00:00.000Z"
+      updatedAt: "2026-03-15T00:00:00.000Z",
     });
 
     await store.upsertAgentTraceEvent({
@@ -269,10 +274,10 @@ describe("StateStore", () => {
       role: "user",
       turnId: "turn-1",
       metadata: {
-        sample: true
+        sample: true,
       },
       createdAt: "2026-03-15T00:00:01.000Z",
-      updatedAt: "2026-03-15T00:00:01.000Z"
+      updatedAt: "2026-03-15T00:00:01.000Z",
     });
 
     expect(store.listAgentTraceEvents("C123:111.222")).toEqual([
@@ -283,9 +288,9 @@ describe("StateStore", () => {
         type: "agent_user_message",
         summary: "hello",
         metadata: {
-          sample: true
-        }
-      })
+          sample: true,
+        },
+      }),
     ]);
 
     await store.deleteSession("C123:111.222");
@@ -312,7 +317,7 @@ describe("StateStore", () => {
       rootThreadTs: "111.222",
       workspacePath: "/tmp/sessions/C123-111.222/workspace",
       createdAt: "2026-03-15T00:00:00.000Z",
-      updatedAt: "2026-03-15T00:00:00.000Z"
+      updatedAt: "2026-03-15T00:00:00.000Z",
     });
 
     await store.upsertAgentTraceEvent({
@@ -330,7 +335,7 @@ describe("StateStore", () => {
       callId: "tool-call-1",
       turnId: "turn-1",
       createdAt: "2026-03-15T00:00:01.000Z",
-      updatedAt: "2026-03-15T00:00:01.000Z"
+      updatedAt: "2026-03-15T00:00:01.000Z",
     });
     await store.upsertAgentTraceEvent({
       id: "usage-1",
@@ -344,7 +349,7 @@ describe("StateStore", () => {
       status: "completed",
       turnId: "turn-1",
       createdAt: "2026-03-15T00:00:02.000Z",
-      updatedAt: "2026-03-15T00:00:02.000Z"
+      updatedAt: "2026-03-15T00:00:02.000Z",
     });
     await store.upsertAgentTraceEvent({
       id: "result-1",
@@ -361,19 +366,21 @@ describe("StateStore", () => {
       callId: "tool-call-1",
       turnId: "turn-1",
       createdAt: "2026-03-15T00:00:03.000Z",
-      updatedAt: "2026-03-15T00:00:03.000Z"
+      updatedAt: "2026-03-15T00:00:03.000Z",
     });
 
-    expect(store.getAgentSessionTraceSummary("C123:111.222")).toEqual(expect.objectContaining({
-      eventCount: 1,
-      modelRequestCount: 1,
-      categories: {
-        agent_tool_result: 1
-      },
-      sources: {
-        agent_runtime: 1
-      }
-    }));
+    expect(store.getAgentSessionTraceSummary("C123:111.222")).toEqual(
+      expect.objectContaining({
+        eventCount: 1,
+        modelRequestCount: 1,
+        categories: {
+          agent_tool_result: 1,
+        },
+        sources: {
+          agent_runtime: 1,
+        },
+      }),
+    );
 
     await store.upsertAgentTraceEvent({
       id: "result-1",
@@ -390,20 +397,22 @@ describe("StateStore", () => {
       callId: "tool-call-1",
       turnId: "turn-1",
       createdAt: "2026-03-15T00:00:03.000Z",
-      updatedAt: "2026-03-15T00:00:04.000Z"
+      updatedAt: "2026-03-15T00:00:04.000Z",
     });
 
-    expect(store.getAgentSessionTraceSummary("C123:111.222")).toEqual(expect.objectContaining({
-      eventCount: 2,
-      modelRequestCount: 1,
-      categories: {
-        agent_assistant_message: 1,
-        agent_tool_call: 1
-      },
-      sources: {
-        agent_runtime: 2
-      }
-    }));
+    expect(store.getAgentSessionTraceSummary("C123:111.222")).toEqual(
+      expect.objectContaining({
+        eventCount: 2,
+        modelRequestCount: 1,
+        categories: {
+          agent_assistant_message: 1,
+          agent_tool_call: 1,
+        },
+        sources: {
+          agent_runtime: 2,
+        },
+      }),
+    );
     store.close();
   });
 
@@ -443,18 +452,20 @@ describe("StateStore", () => {
       createdAt: "2026-03-15T00:00:00.000Z",
       updatedAt: "2026-03-15T00:00:00.000Z",
       agentSessionId: "thread-current",
-      activeTurnId: "turn-current"
+      activeTurnId: "turn-current",
     });
-    expect(store.getSessionKeyForAgentActivity({
-      agentSessionId: "thread-current",
-      turnId: "turn-current"
-    })).toBe("C123:111.222");
+    expect(
+      store.getSessionKeyForAgentActivity({
+        agentSessionId: "thread-current",
+        turnId: "turn-current",
+      }),
+    ).toBe("C123:111.222");
     await store.bindAgentSession({
       sessionKey: "C123:111.222",
       channelId: "C123",
       rootThreadTs: "111.222",
       agentSessionId: "thread-old",
-      at: "2026-03-15T00:00:01.000Z"
+      at: "2026-03-15T00:00:01.000Z",
     });
     await store.bindAgentTurn({
       sessionKey: "C123:111.222",
@@ -462,30 +473,38 @@ describe("StateStore", () => {
       rootThreadTs: "111.222",
       agentSessionId: "thread-old",
       turnId: "turn-old",
-      at: "2026-03-15T00:00:02.000Z"
+      at: "2026-03-15T00:00:02.000Z",
     });
 
-    expect(store.getSessionKeyForAgentActivity({
-      agentSessionId: "thread-old"
-    })).toBe("C123:111.222");
-    expect(store.getSessionKeyForAgentActivity({
-      turnId: "turn-old"
-    })).toBe("C123:111.222");
+    expect(
+      store.getSessionKeyForAgentActivity({
+        agentSessionId: "thread-old",
+      }),
+    ).toBe("C123:111.222");
+    expect(
+      store.getSessionKeyForAgentActivity({
+        turnId: "turn-old",
+      }),
+    ).toBe("C123:111.222");
 
     await store.patchSession("C123:111.222", {
       agentSessionId: "thread-new",
-      activeTurnId: "turn-new"
+      activeTurnId: "turn-new",
     });
-    expect(store.getSessionKeyForAgentActivity({
-      agentSessionId: "thread-old",
-      turnId: "turn-old"
-    })).toBe("C123:111.222");
+    expect(
+      store.getSessionKeyForAgentActivity({
+        agentSessionId: "thread-old",
+        turnId: "turn-old",
+      }),
+    ).toBe("C123:111.222");
 
     await store.deleteSession("C123:111.222");
-    expect(store.getSessionKeyForAgentActivity({
-      agentSessionId: "thread-old",
-      turnId: "turn-old"
-    })).toBeUndefined();
+    expect(
+      store.getSessionKeyForAgentActivity({
+        agentSessionId: "thread-old",
+        turnId: "turn-old",
+      }),
+    ).toBeUndefined();
     store.close();
   });
 
@@ -498,79 +517,77 @@ describe("StateStore", () => {
 
     const database = new DatabaseSync(path.join(stateDir, STATE_DATABASE_FILENAME));
     try {
-      const rows = database
-        .prepare("SELECT version, name FROM schema_migrations ORDER BY version ASC")
-        .all() as Array<{ version: number; name: string }>;
+      const rows = database.prepare("SELECT version, name FROM schema_migrations ORDER BY version ASC").all() as Array<{ version: number; name: string }>;
 
       expect(rows).toEqual([
         {
           version: 1,
-          name: "initial_sqlite_state"
+          name: "initial_sqlite_state",
         },
         {
           version: 2,
-          name: "admin_operations"
+          name: "admin_operations",
         },
         {
           version: 3,
-          name: "agent_turn_usage"
+          name: "agent_turn_usage",
         },
         {
           version: 4,
-          name: "agent_trace_events"
+          name: "agent_trace_events",
         },
         {
           version: 5,
-          name: "agent_schema_repair"
+          name: "agent_schema_repair",
         },
         {
           version: 6,
-          name: "session_agent_schema_repair"
+          name: "session_agent_schema_repair",
         },
         {
           version: 7,
-          name: "session_channel_metadata"
+          name: "session_channel_metadata",
         },
         {
           version: 8,
-          name: "inbound_mentioned_users"
+          name: "inbound_mentioned_users",
         },
         {
           version: 9,
-          name: "admin_realtime_events"
+          name: "admin_realtime_events",
         },
         {
           version: 10,
-          name: "session_page_link_announcement"
+          name: "session_page_link_announcement",
         },
         {
           version: 11,
-          name: "session_auth_profile_binding"
+          name: "session_auth_profile_binding",
         },
         {
           version: 12,
-          name: "agent_activity_bindings"
+          name: "agent_activity_bindings",
         },
         {
           version: 13,
-          name: "session_initiator"
+          name: "session_initiator",
         },
         {
           version: 14,
-          name: "agent_session_derived_summaries"
+          name: "agent_session_derived_summaries",
         },
         {
           version: 15,
-          name: "slack_event_retention_indexes"
+          name: "slack_event_retention_indexes",
         },
         {
           version: 16,
-          name: "inbound_mention_backfill_indexes"
+          name: "inbound_mention_backfill_indexes",
         },
         {
           version: CURRENT_STATE_SCHEMA_VERSION,
-          name: "chat_platform_columns"
-        }
+          name: "chat_platform_columns",
+        },
       ]);
     } finally {
       database.close();
@@ -588,7 +605,7 @@ describe("StateStore", () => {
       rootThreadTs: "111.222",
       workspacePath: "/tmp/sessions/C123-111.222/workspace",
       createdAt: "2026-03-15T00:00:00.000Z",
-      updatedAt: "2026-03-15T00:00:00.000Z"
+      updatedAt: "2026-03-15T00:00:00.000Z",
     });
     await store.upsertInboundMessage({
       key: "inbound-1",
@@ -606,12 +623,12 @@ describe("StateStore", () => {
           mention: "<@U234>",
           username: "mock-user-234",
           displayName: "Mock Display 234",
-          realName: "Mock User 234"
-        }
+          realName: "Mock User 234",
+        },
       ],
       status: "pending",
       createdAt: "2026-03-15T00:00:01.000Z",
-      updatedAt: "2026-03-15T00:00:01.000Z"
+      updatedAt: "2026-03-15T00:00:01.000Z",
     });
 
     expect(store.listInboundMessages({ sessionKey: "C123:111.222" })).toEqual([
@@ -621,10 +638,10 @@ describe("StateStore", () => {
         mentionedUsers: [
           expect.objectContaining({
             userId: "U234",
-            displayName: "Mock Display 234"
-          })
-        ]
-      })
+            displayName: "Mock Display 234",
+          }),
+        ],
+      }),
     ]);
     store.close();
   });
@@ -640,7 +657,7 @@ describe("StateStore", () => {
       rootThreadTs: "111.222",
       workspacePath: "/tmp/sessions/C123-111.222/workspace",
       createdAt: "2026-03-15T00:00:00.000Z",
-      updatedAt: "2026-03-15T00:00:00.000Z"
+      updatedAt: "2026-03-15T00:00:00.000Z",
     });
 
     await store.upsertInboundMessage({
@@ -656,7 +673,7 @@ describe("StateStore", () => {
       mentionedUsers: [],
       status: "pending",
       createdAt: "2026-03-15T00:00:01.000Z",
-      updatedAt: "2026-03-15T00:00:01.000Z"
+      updatedAt: "2026-03-15T00:00:01.000Z",
     });
     await store.upsertInboundMessage({
       key: "already-complete",
@@ -674,12 +691,12 @@ describe("StateStore", () => {
           mention: "<@U234>",
           username: "mock-user-234",
           displayName: "Mock Display 234",
-          realName: "Mock User 234"
-        }
+          realName: "Mock User 234",
+        },
       ],
       status: "pending",
       createdAt: "2026-03-15T00:00:02.000Z",
-      updatedAt: "2026-03-15T00:00:02.000Z"
+      updatedAt: "2026-03-15T00:00:02.000Z",
     });
     await store.upsertInboundMessage({
       key: "no-mentions",
@@ -694,7 +711,7 @@ describe("StateStore", () => {
       mentionedUsers: [],
       status: "pending",
       createdAt: "2026-03-15T00:00:03.000Z",
-      updatedAt: "2026-03-15T00:00:03.000Z"
+      updatedAt: "2026-03-15T00:00:03.000Z",
     });
     await store.upsertInboundMessage({
       key: "wrong-source",
@@ -709,14 +726,16 @@ describe("StateStore", () => {
       mentionedUsers: [],
       status: "pending",
       createdAt: "2026-03-15T00:00:04.000Z",
-      updatedAt: "2026-03-15T00:00:04.000Z"
+      updatedAt: "2026-03-15T00:00:04.000Z",
     });
 
     expect(
-      store.listInboundMessages({
-        source: ["app_mention", "direct_message", "thread_reply"],
-        needsMentionUserBackfill: true
-      }).map((message) => message.key)
+      store
+        .listInboundMessages({
+          source: ["app_mention", "direct_message", "thread_reply"],
+          needsMentionUserBackfill: true,
+        })
+        .map((message) => message.key),
     ).toEqual(["needs-backfill"]);
     store.close();
   });
@@ -781,15 +800,21 @@ describe("StateStore", () => {
 
     const store = new StateStore(stateDir, sessionsRoot);
     await store.load();
-    expect(store.getSession("C123:111.222")).toEqual(expect.objectContaining({
-      agentSessionId: "thread-old"
-    }));
+    expect(store.getSession("C123:111.222")).toEqual(
+      expect.objectContaining({
+        agentSessionId: "thread-old",
+      }),
+    );
 
-    await expect(store.patchSession("C123:111.222", {
-      updatedAt: "2026-03-15T00:00:01.000Z"
-    })).resolves.toEqual(expect.objectContaining({
-      agentSessionId: "thread-old"
-    }));
+    await expect(
+      store.patchSession("C123:111.222", {
+        updatedAt: "2026-03-15T00:00:01.000Z",
+      }),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        agentSessionId: "thread-old",
+      }),
+    );
     store.close();
   });
 
@@ -897,8 +922,8 @@ describe("StateStore", () => {
       expect.objectContaining({
         turnId: "turn-1",
         agentSessionId: "thread-1",
-        totalTokens: 1725
-      })
+        totalTokens: 1725,
+      }),
     ]);
     store.close();
 

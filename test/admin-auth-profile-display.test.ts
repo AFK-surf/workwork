@@ -1,14 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  profileAccountLabel,
-  profileDisplayLabel,
-  profileOptionLabel,
-  profileQuotaLabel,
-  profileSessionActionLabel,
-  profileTitle,
-  profileWeeklyQuotaLabel
-} from "../src/admin-ui/auth-profile-display.js";
+import { profileAccountLabel, profileDisplayLabel, profileOptionLabel, profileQuotaLabel, profileSessionActionLabel, profileTitle, profileWeeklyQuotaLabel } from "../src/admin-ui/auth-profile-display.js";
 
 describe("admin auth profile display", () => {
   it("uses the account identity instead of the internal profile name", () => {
@@ -22,7 +14,7 @@ describe("admin auth profile display", () => {
       primaryUsed: 4,
       primaryResetsAt: fiveHours,
       secondaryUsed: 36,
-      secondaryResetsAt: sevenDays
+      secondaryResetsAt: sevenDays,
     });
 
     expect(profileAccountLabel(profile)).toBe("operator@example.com");
@@ -39,65 +31,95 @@ describe("admin auth profile display", () => {
     const daysFromNow = (days: number) => Math.floor((now.getTime() + days * 24 * 60 * 60 * 1000) / 1000);
     const hoursFromNow = (hours: number) => Math.floor((now.getTime() + hours * 60 * 60 * 1000) / 1000);
 
-    expect(profileWeeklyQuotaLabel(authProfile({
-      name: "full-week",
-      email: "full@example.com",
-      planType: "pro",
-      primaryUsed: 0,
-      primaryResetsAt: hoursFromNow(5),
-      secondaryUsed: 0,
-      secondaryResetsAt: daysFromNow(7)
-    }), { now })).toBe("7d 100% / 1");
+    expect(
+      profileWeeklyQuotaLabel(
+        authProfile({
+          name: "full-week",
+          email: "full@example.com",
+          planType: "pro",
+          primaryUsed: 0,
+          primaryResetsAt: hoursFromNow(5),
+          secondaryUsed: 0,
+          secondaryResetsAt: daysFromNow(7),
+        }),
+        { now },
+      ),
+    ).toBe("7d 100% / 1");
 
-    expect(profileWeeklyQuotaLabel(authProfile({
-      name: "half-half-week",
-      email: "half@example.com",
-      planType: "pro",
-      primaryUsed: 0,
-      primaryResetsAt: hoursFromNow(5),
-      secondaryUsed: 50,
-      secondaryResetsAt: daysFromNow(3.5)
-    }), { now })).toBe("7d 50% / 1");
+    expect(
+      profileWeeklyQuotaLabel(
+        authProfile({
+          name: "half-half-week",
+          email: "half@example.com",
+          planType: "pro",
+          primaryUsed: 0,
+          primaryResetsAt: hoursFromNow(5),
+          secondaryUsed: 50,
+          secondaryResetsAt: daysFromNow(3.5),
+        }),
+        { now },
+      ),
+    ).toBe("7d 50% / 1");
 
-    expect(profileWeeklyQuotaLabel(authProfile({
-      name: "full-half-week",
-      email: "fast@example.com",
-      planType: "pro",
-      primaryUsed: 0,
-      primaryResetsAt: hoursFromNow(5),
-      secondaryUsed: 0,
-      secondaryResetsAt: daysFromNow(3.5)
-    }), { now })).toBe("7d 100% / 2");
+    expect(
+      profileWeeklyQuotaLabel(
+        authProfile({
+          name: "full-half-week",
+          email: "fast@example.com",
+          planType: "pro",
+          primaryUsed: 0,
+          primaryResetsAt: hoursFromNow(5),
+          secondaryUsed: 0,
+          secondaryResetsAt: daysFromNow(3.5),
+        }),
+        { now },
+      ),
+    ).toBe("7d 100% / 2");
 
-    expect(profileWeeklyQuotaLabel(authProfile({
-      name: "slow",
-      email: "slow@example.com",
-      planType: "pro",
-      primaryUsed: 0,
-      primaryResetsAt: hoursFromNow(5),
-      secondaryUsed: 43,
-      secondaryResetsAt: daysFromNow(12)
-    }), { now })).toBe("7d 57% / 0.33");
+    expect(
+      profileWeeklyQuotaLabel(
+        authProfile({
+          name: "slow",
+          email: "slow@example.com",
+          planType: "pro",
+          primaryUsed: 0,
+          primaryResetsAt: hoursFromNow(5),
+          secondaryUsed: 43,
+          secondaryResetsAt: daysFromNow(12),
+        }),
+        { now },
+      ),
+    ).toBe("7d 57% / 0.33");
 
-    expect(profileQuotaLabel(authProfile({
-      name: "short-window-remaining-low-but-reset-soon",
-      email: "short-soon@example.com",
-      planType: "pro",
-      primaryUsed: 70,
-      primaryResetsAt: hoursFromNow(1),
-      secondaryUsed: 50,
-      secondaryResetsAt: daysFromNow(7)
-    }), { now })).toBe("7d 50% / 0.5");
+    expect(
+      profileQuotaLabel(
+        authProfile({
+          name: "short-window-remaining-low-but-reset-soon",
+          email: "short-soon@example.com",
+          planType: "pro",
+          primaryUsed: 70,
+          primaryResetsAt: hoursFromNow(1),
+          secondaryUsed: 50,
+          secondaryResetsAt: daysFromNow(7),
+        }),
+        { now },
+      ),
+    ).toBe("7d 50% / 0.5");
 
-    expect(profileQuotaLabel(authProfile({
-      name: "short-window-pressure",
-      email: "short@example.com",
-      planType: "pro",
-      primaryUsed: 70,
-      primaryResetsAt: hoursFromNow(5),
-      secondaryUsed: 50,
-      secondaryResetsAt: daysFromNow(7)
-    }), { now })).toBe("7d 50% / 0.5 | 5h 30% / 0.3");
+    expect(
+      profileQuotaLabel(
+        authProfile({
+          name: "short-window-pressure",
+          email: "short@example.com",
+          planType: "pro",
+          primaryUsed: 70,
+          primaryResetsAt: hoursFromNow(5),
+          secondaryUsed: 50,
+          secondaryResetsAt: daysFromNow(7),
+        }),
+        { now },
+      ),
+    ).toBe("7d 50% / 0.5 | 5h 30% / 0.3");
   });
 
   it("keeps probe-failed profiles readable without presenting their UUID as the label", () => {
@@ -105,12 +127,12 @@ describe("admin auth profile display", () => {
       name: "39c7bde2-02d0-4cf2-a87e-20374ea71c74",
       account: {
         ok: false,
-        error: "refresh_token_reused"
+        error: "refresh_token_reused",
       },
       rateLimits: {
         ok: false,
-        error: "refresh_token_reused"
-      }
+        error: "refresh_token_reused",
+      },
     };
 
     expect(profileAccountLabel(profile)).toBe("账号状态读取失败");
@@ -119,15 +141,7 @@ describe("admin auth profile display", () => {
   });
 });
 
-function authProfile(options: {
-  readonly name: string;
-  readonly email: string;
-  readonly planType: string;
-  readonly primaryUsed: number;
-  readonly primaryResetsAt?: number | undefined;
-  readonly secondaryUsed: number;
-  readonly secondaryResetsAt?: number | undefined;
-}): Record<string, any> {
+function authProfile(options: { readonly name: string; readonly email: string; readonly planType: string; readonly primaryUsed: number; readonly primaryResetsAt?: number | undefined; readonly secondaryUsed: number; readonly secondaryResetsAt?: number | undefined }): Record<string, any> {
   return {
     name: options.name,
     account: {
@@ -135,9 +149,9 @@ function authProfile(options: {
       account: {
         email: options.email,
         type: "chatgpt",
-        planType: options.planType
+        planType: options.planType,
       },
-      requiresOpenaiAuth: false
+      requiresOpenaiAuth: false,
     },
     rateLimits: {
       ok: true,
@@ -145,15 +159,15 @@ function authProfile(options: {
         primary: {
           usedPercent: options.primaryUsed,
           windowDurationMins: 300,
-          resetsAt: options.primaryResetsAt ?? 1_779_000_000
+          resetsAt: options.primaryResetsAt ?? 1_779_000_000,
         },
         secondary: {
           usedPercent: options.secondaryUsed,
           windowDurationMins: 10_080,
-          resetsAt: options.secondaryResetsAt ?? 1_780_000_000
-        }
+          resetsAt: options.secondaryResetsAt ?? 1_780_000_000,
+        },
       },
-      rateLimitsByLimitId: {}
-    }
+      rateLimitsByLimitId: {},
+    },
   };
 }

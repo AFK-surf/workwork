@@ -4,43 +4,16 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import {
-  routeFeishuReceiveMessageEvent,
-  type FeishuBotIdentity
-} from "../src/services/feishu/feishu-event-parser.js";
+import { routeFeishuReceiveMessageEvent, type FeishuBotIdentity } from "../src/services/feishu/feishu-event-parser.js";
 import { FeishuPlatformAdapter } from "../src/services/feishu/feishu-platform-adapter.js";
 import { configureLogger, flushLogger } from "../src/logger.js";
 
-const receiveMessageFixtures = [
-  "group-at-text",
-  "private-text",
-  "group-app-self-message",
-  "group-followup-text",
-  "group-followup-parent-only",
-  "group-rich-post",
-  "group-interactive-card",
-  "group-image",
-  "group-file",
-  "duplicate-message"
-];
+const receiveMessageFixtures = ["group-at-text", "private-text", "group-app-self-message", "group-followup-text", "group-followup-parent-only", "group-rich-post", "group-interactive-card", "group-image", "group-file", "duplicate-message"];
 
-const cardActionFixtures = [
-  "card-action-trigger",
-  "card-action-skip"
-];
+const cardActionFixtures = ["card-action-trigger", "card-action-skip"];
 
-const rfcFixtureNames = [
-  ...receiveMessageFixtures,
-  ...cardActionFixtures,
-  "history-page"
-];
-const implementationDocPath = path.join(
-  process.cwd(),
-  "docs",
-  "rfcs",
-  "0001-slack-feishu-dual-platform",
-  "implementation.md"
-);
+const rfcFixtureNames = [...receiveMessageFixtures, ...cardActionFixtures, "history-page"];
+const implementationDocPath = path.join(process.cwd(), "docs", "rfcs", "0001-slack-feishu-dual-platform", "implementation.md");
 
 interface FeishuReplayFixture {
   readonly raw: unknown;
@@ -66,7 +39,7 @@ describe("Feishu fixture replay", () => {
 
   it.each(rfcFixtureNames)("keeps the RFC fixture %s present", async (name) => {
     await expect(fs.stat(fixturePath(name))).resolves.toMatchObject({
-      isFile: expect.any(Function)
+      isFile: expect.any(Function),
     });
   });
 
@@ -92,14 +65,14 @@ describe("Feishu fixture replay", () => {
   it.each(receiveMessageFixtures)("replays %s through the public Feishu parser", async (name) => {
     const fixture = await loadFixture(name);
     const routed = routeFeishuReceiveMessageEvent(fixture.raw, {
-      botIdentity: fixture.botIdentity
+      botIdentity: fixture.botIdentity,
     });
 
     if (fixture.expected.route === "ignored") {
       expect(routed).toMatchObject({
         route: "ignored",
         ignoredReason: fixture.expected.ignoredReason,
-        ...fixture.expected.ignored
+        ...fixture.expected.ignored,
       });
       expect(fixture.expected.logEvents).toContain("chat.message.ignored");
       return;
@@ -126,7 +99,7 @@ describe("Feishu fixture replay", () => {
       rawSlackEvents: false,
       rawFeishuEvents: false,
       rawCodexRpc: false,
-      rawHttpRequests: false
+      rawHttpRequests: false,
     });
 
     try {
@@ -134,14 +107,14 @@ describe("Feishu fixture replay", () => {
         appId: "cli-test",
         appSecret: "secret-test",
         api: createHistoryApi({ has_more: false, items: [] }) as never,
-        wsClient
+        wsClient,
       });
 
       await adapter.start({
         onMessage: async () => {},
         onInteractive: async (payload) => {
           callbacks.push(payload);
-        }
+        },
       });
 
       await wsClient.emit("card.action.trigger", fixture.raw);
@@ -161,10 +134,10 @@ describe("Feishu fixture replay", () => {
               conversationId: expectedValue.conversationId,
               rootMessageId: expectedValue.rootMessageId,
               kind: expectedValue.kind,
-              candidateRevision: expectedValue.candidateRevision
-            })
-          })
-        ])
+              candidateRevision: expectedValue.candidateRevision,
+            }),
+          }),
+        ]),
       );
     } finally {
       await flushLogger();
@@ -174,11 +147,11 @@ describe("Feishu fixture replay", () => {
         rawSlackEvents: false,
         rawFeishuEvents: false,
         rawCodexRpc: false,
-        rawHttpRequests: false
+        rawHttpRequests: false,
       });
       await fs.rm(tempRoot, {
         recursive: true,
-        force: true
+        force: true,
       });
     }
   });
@@ -189,7 +162,7 @@ describe("Feishu fixture replay", () => {
       appId: "cli-test",
       appSecret: "secret-test",
       api: createHistoryApi(fixture.raw) as never,
-      wsClient: new FakeWsClient()
+      wsClient: new FakeWsClient(),
     });
 
     const messages = await adapter.listThreadMessages({
@@ -198,15 +171,11 @@ describe("Feishu fixture replay", () => {
       conversationKind: "group",
       rootMessageId: "om_root",
       platformThreadId: "omt_thread",
-      limit: 20
+      limit: 20,
     });
 
     expect(messages).toMatchObject(fixture.expected.messages ?? []);
-    expect(messages).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining(fixture.expected.input ?? {})
-      ])
-    );
+    expect(messages).toEqual(expect.arrayContaining([expect.objectContaining(fixture.expected.input ?? {})]));
     expect(fixture.expected.logEvents).toContain("chat.history.recovered");
   });
 });
@@ -225,9 +194,7 @@ function extractRequiredFixtureNames(content: string): string[] {
     throw new Error("Could not find RFC required fixture table");
   }
 
-  const names = [...section.matchAll(/`feishu\/([^`]+)\.json`/gu)]
-    .map((match) => match[1])
-    .filter((name): name is string => Boolean(name));
+  const names = [...section.matchAll(/`feishu\/([^`]+)\.json`/gu)].map((match) => match[1]).filter((name): name is string => Boolean(name));
   return [...new Set(names)].sort();
 }
 
@@ -240,22 +207,18 @@ function readFixtureCardActionValue(callback: unknown): {
 } {
   const action = readRecord(readRecord(callback).action);
   const rawValue = action.value;
-  const value = typeof rawValue === "string"
-    ? readRecord(JSON.parse(rawValue) as unknown)
-    : readRecord(rawValue);
+  const value = typeof rawValue === "string" ? readRecord(JSON.parse(rawValue) as unknown) : readRecord(rawValue);
   return {
     sessionKey: String(value.sessionKey),
     conversationId: String(value.conversationId),
     rootMessageId: String(value.rootMessageId),
     kind: String(value.kind),
-    candidateRevision: Number(value.candidateRevision)
+    candidateRevision: Number(value.candidateRevision),
   };
 }
 
 function readRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : {};
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
 class FakeWsClient {
@@ -271,9 +234,9 @@ class FakeWsClient {
     await this.dispatcher?.invoke({
       schema: "2.0",
       header: {
-        event_type: eventType
+        event_type: eventType,
       },
-      event: data
+      event: data,
     });
   }
 }
@@ -286,21 +249,25 @@ function flushAsyncHandlers(): Promise<void> {
 
 async function readJsonl(filePath: string): Promise<unknown[]> {
   const raw = await fs.readFile(filePath, "utf8");
-  return raw.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line) as unknown);
+  return raw
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as unknown);
 }
 
 function createHistoryApi(historyPage: unknown) {
   return {
     listMessages: async () => historyPage,
     replyMessage: async () => ({
-      message_id: "om_reply"
+      message_id: "om_reply",
     }),
     uploadMessageImage: async () => ({
-      image_key: "img_uploaded"
+      image_key: "img_uploaded",
     }),
     uploadMessageFile: async () => ({
-      file_key: "file_uploaded"
+      file_key: "file_uploaded",
     }),
-    downloadMessageResourceAsDataUrl: async () => "data:text/plain;base64,"
+    downloadMessageResourceAsDataUrl: async () => "data:text/plain;base64,",
   };
 }

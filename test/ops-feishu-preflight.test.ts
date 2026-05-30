@@ -6,19 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 // @ts-expect-error ops scripts are plain ESM JavaScript without generated declarations.
 const opsLib = await import("../scripts/ops/lib.mjs");
-const {
-  getAdminHeadersFromInspect,
-  getEnvObjectFromInspect,
-  readDetailedStateFromHost,
-  runCommand,
-  sanitizeOpsDockerLogsForEvidence,
-  summarizeOpsDisplayPath,
-  summarizeOpsEvidencePath,
-  summarizeOpsHostPath,
-  summarizePlatformHealth,
-  shouldRunFeishuPreflight,
-  writeRolloutMetadata
-} = opsLib;
+const { getAdminHeadersFromInspect, getEnvObjectFromInspect, readDetailedStateFromHost, runCommand, sanitizeOpsDockerLogsForEvidence, summarizeOpsDisplayPath, summarizeOpsEvidencePath, summarizeOpsHostPath, summarizePlatformHealth, shouldRunFeishuPreflight, writeRolloutMetadata } = opsLib;
 
 const tempDirs: string[] = [];
 
@@ -30,101 +18,109 @@ describe("ops Feishu preflight helpers", () => {
   it("parses docker inspect env entries without losing values containing equals signs", () => {
     const env = getEnvObjectFromInspect({
       Config: {
-        Env: [
-          "FEISHU_ENABLED=true",
-          "BROKER_ADMIN_TOKEN=abc=def",
-          "MALFORMED"
-        ]
-      }
+        Env: ["FEISHU_ENABLED=true", "BROKER_ADMIN_TOKEN=abc=def", "MALFORMED"],
+      },
     });
 
     expect(env).toEqual({
       FEISHU_ENABLED: "true",
-      BROKER_ADMIN_TOKEN: "abc=def"
+      BROKER_ADMIN_TOKEN: "abc=def",
     });
   });
 
   it("runs Feishu preflight only for Feishu-enabled rollout containers", () => {
-    expect(shouldRunFeishuPreflight({
-      Config: {
-        Env: ["FEISHU_ENABLED=true"]
-      }
-    })).toBe(true);
-    expect(shouldRunFeishuPreflight({
-      Config: {
-        Env: ["FEISHU_ENABLED=false"]
-      }
-    })).toBe(false);
-    expect(shouldRunFeishuPreflight({
-      Config: {
-        Env: []
-      }
-    })).toBe(false);
+    expect(
+      shouldRunFeishuPreflight({
+        Config: {
+          Env: ["FEISHU_ENABLED=true"],
+        },
+      }),
+    ).toBe(true);
+    expect(
+      shouldRunFeishuPreflight({
+        Config: {
+          Env: ["FEISHU_ENABLED=false"],
+        },
+      }),
+    ).toBe(false);
+    expect(
+      shouldRunFeishuPreflight({
+        Config: {
+          Env: [],
+        },
+      }),
+    ).toBe(false);
   });
 
   it("builds admin auth headers from the inspected container without exposing them in summaries", () => {
-    expect(getAdminHeadersFromInspect({
-      Config: {
-        Env: ["BROKER_ADMIN_TOKEN=secret-token"]
-      }
-    })).toEqual({
-      "x-admin-token": "secret-token"
+    expect(
+      getAdminHeadersFromInspect({
+        Config: {
+          Env: ["BROKER_ADMIN_TOKEN=secret-token"],
+        },
+      }),
+    ).toEqual({
+      "x-admin-token": "secret-token",
     });
-    expect(getAdminHeadersFromInspect({
-      Config: {
-        Env: []
-      }
-    })).toEqual({});
+    expect(
+      getAdminHeadersFromInspect({
+        Config: {
+          Env: [],
+        },
+      }),
+    ).toEqual({});
   });
 
   it("summarizes platform health from admin status without copying recent logs", () => {
-    expect(summarizePlatformHealth({
-      platforms: {
-        slack: {
-          platform: "slack",
-          enabled: true,
-          state: "ready",
-          startupRequired: true,
-          connection: {
-            mode: "socket_mode",
-            connected: true
+    expect(
+      summarizePlatformHealth({
+        platforms: {
+          slack: {
+            platform: "slack",
+            enabled: true,
+            state: "ready",
+            startupRequired: true,
+            connection: {
+              mode: "socket_mode",
+              connected: true,
+            },
+            lastEvent: {
+              messageId: "slack-message",
+            },
           },
-          lastEvent: {
-            messageId: "slack-message"
-          }
+          feishu: {
+            platform: "feishu",
+            enabled: true,
+            state: "degraded",
+            startupRequired: true,
+            groupMessageMode: "all",
+            allMessageDeliveryVerified: false,
+            degradedReason: "all_message_delivery_unverified",
+            connection: {
+              mode: "long_connection",
+              connected: true,
+            },
+            permissions: [
+              {
+                name: "im:message.group_msg",
+                requiredFor: "non-@ follow-ups",
+                status: "configured",
+              },
+            ],
+            lastError: {
+              message: "do not copy this",
+            },
+          },
         },
-        feishu: {
-          platform: "feishu",
-          enabled: true,
-          state: "degraded",
-          startupRequired: true,
-          groupMessageMode: "all",
-          allMessageDeliveryVerified: false,
-          degradedReason: "all_message_delivery_unverified",
-          connection: {
-            mode: "long_connection",
-            connected: true
-          },
-          permissions: [
+        state: {
+          recentBrokerLogs: [
             {
-              name: "im:message.group_msg",
-              requiredFor: "non-@ follow-ups",
-              status: "configured"
-            }
+              message: "chat.message.accepted",
+            },
           ],
-          lastError: {
-            message: "do not copy this"
-          }
-        }
-      },
-      state: {
-        recentBrokerLogs: [
-          {
-            message: "chat.message.accepted"
-          }
-        ]
-      }
-    })).toEqual({
+        },
+      }),
+    ).toEqual({
       slack: {
         platform: "slack",
         enabled: true,
@@ -135,9 +131,9 @@ describe("ops Feishu preflight helpers", () => {
         degradedReason: undefined,
         connection: {
           mode: "socket_mode",
-          connected: true
+          connected: true,
         },
-        permissions: undefined
+        permissions: undefined,
       },
       feishu: {
         platform: "feishu",
@@ -149,15 +145,15 @@ describe("ops Feishu preflight helpers", () => {
         degradedReason: "all_message_delivery_unverified",
         connection: {
           mode: "long_connection",
-          connected: true
+          connected: true,
         },
         permissions: [
           {
             name: "im:message.group_msg",
-            status: "configured"
-          }
-        ]
-      }
+            status: "configured",
+          },
+        ],
+      },
     });
   });
 
@@ -174,25 +170,25 @@ describe("ops Feishu preflight helpers", () => {
           degradedReason: "FEISHU_OPS_REASON_SECRET",
           connection: {
             mode: "long_connection FEISHU_OPS_CONNECTION_SECRET",
-            connected: true
+            connected: true,
           },
           permissions: [
             {
               name: "im:message.group_msg",
               requiredFor: "FEISHU_OPS_REQUIRED_FOR_SECRET",
-              status: "verified"
+              status: "verified",
             },
             {
               name: "im:message.group_msg FEISHU_OPS_PERMISSION_SECRET",
-              status: "configured"
+              status: "configured",
             },
             {
               name: "bot_identity",
-              status: "configured FEISHU_OPS_PERMISSION_STATUS_SECRET"
-            }
-          ]
-        }
-      }
+              status: "configured FEISHU_OPS_PERMISSION_STATUS_SECRET",
+            },
+          ],
+        },
+      },
     });
 
     expect(summary.feishu).toEqual({
@@ -205,14 +201,14 @@ describe("ops Feishu preflight helpers", () => {
       degradedReason: undefined,
       connection: {
         mode: undefined,
-        connected: true
+        connected: true,
       },
       permissions: [
         {
           name: "im:message.group_msg",
-          status: "verified"
-        }
-      ]
+          status: "verified",
+        },
+      ],
     });
     expect(JSON.stringify(summary)).not.toContain("FEISHU_OPS_PLATFORM_SECRET");
     expect(JSON.stringify(summary)).not.toContain("FEISHU_OPS_STATE_SECRET");
@@ -250,9 +246,9 @@ describe("ops Feishu preflight helpers", () => {
         activeTurnId: "turn_123",
         coAuthorCandidateUserIds: ["ou_secret_user"],
         createdAt: "2026-03-19T00:00:00.000Z",
-        updatedAt: "2026-03-19T00:00:10.000Z"
+        updatedAt: "2026-03-19T00:00:10.000Z",
       }),
-      "utf8"
+      "utf8",
     );
     await fs.writeFile(
       path.join(dataRoot, "state", "inbound-messages", "feishu-session.json"),
@@ -272,23 +268,23 @@ describe("ops Feishu preflight helpers", () => {
           text: "OPS_STATUS_SECRET_BODY",
           contextText: "OPS_STATUS_CONTEXT_SECRET",
           slackMessage: {
-            text: "OPS_STATUS_SLACK_MESSAGE_SECRET"
+            text: "OPS_STATUS_SLACK_MESSAGE_SECRET",
           },
           images: [
             {
-              alt: "OPS_STATUS_IMAGE_SECRET"
-            }
+              alt: "OPS_STATUS_IMAGE_SECRET",
+            },
           ],
           backgroundJob: {
-            summary: "OPS_STATUS_JOB_EVENT_SECRET"
+            summary: "OPS_STATUS_JOB_EVENT_SECRET",
           },
           status: "pending",
           batchId: "batch_123",
           createdAt: "2026-03-19T00:00:01.000Z",
-          updatedAt: "2026-03-19T00:00:02.000Z"
-        }
+          updatedAt: "2026-03-19T00:00:02.000Z",
+        },
       ]),
-      "utf8"
+      "utf8",
     );
     await fs.writeFile(
       path.join(dataRoot, "state", "background-jobs", "job.json"),
@@ -307,9 +303,9 @@ describe("ops Feishu preflight helpers", () => {
         error: "OPS_STATUS_JOB_ERROR_SECRET",
         lastEventSummary: "OPS_STATUS_LAST_EVENT_SECRET",
         createdAt: "2026-03-19T00:00:03.000Z",
-        updatedAt: "2026-03-19T00:00:04.000Z"
+        updatedAt: "2026-03-19T00:00:04.000Z",
       }),
-      "utf8"
+      "utf8",
     );
     await fs.writeFile(
       path.join(dataRoot, "logs", "broker.jsonl"),
@@ -330,18 +326,18 @@ describe("ops Feishu preflight helpers", () => {
             content: "OPS_STATUS_LOG_CONTENT_SECRET",
             rawPayload: {
               text: "OPS_STATUS_LOG_PAYLOAD_SECRET",
-              email: "ops-status@example.com"
-            }
-          }
+              email: "ops-status@example.com",
+            },
+          },
         }),
-        "not json OPS_STATUS_RAW_LINE_SECRET"
+        "not json OPS_STATUS_RAW_LINE_SECRET",
       ].join("\n") + "\n",
-      "utf8"
+      "utf8",
     );
 
     const state = await readDetailedStateFromHost(dataRoot, {
       openInboundLimit: 10,
-      logLineLimit: 10
+      logLineLimit: 10,
     });
     const serialized = JSON.stringify(state);
 
@@ -373,8 +369,8 @@ describe("ops Feishu preflight helpers", () => {
         expect.objectContaining({
           sessionKey: "feishu:oc_group:om_root",
           activeTurnId: "turn_123",
-          workspacePathBasename: "feishu"
-        })
+          workspacePathBasename: "feishu",
+        }),
       ],
       openInbound: [
         expect.objectContaining({
@@ -382,8 +378,8 @@ describe("ops Feishu preflight helpers", () => {
           messageTs: "om_msg",
           textPreview: "message body redacted (22 chars)",
           textLength: 22,
-          textRedacted: true
-        })
+          textRedacted: true,
+        }),
       ],
       backgroundJobs: [
         expect.objectContaining({
@@ -392,8 +388,8 @@ describe("ops Feishu preflight helpers", () => {
           kind: "background_job_event",
           cwdBasename: "example",
           errorLength: "OPS_STATUS_JOB_ERROR_SECRET".length,
-          errorRedacted: true
-        })
+          errorRedacted: true,
+        }),
       ],
       recentBrokerLogs: [
         expect.objectContaining({
@@ -404,14 +400,14 @@ describe("ops Feishu preflight helpers", () => {
             conversationId: "oc_group",
             jobId: "job_123",
             messageId: "om_msg",
-            route: "group_message"
-          })
+            route: "group_message",
+          }),
         }),
         expect.objectContaining({
           type: "log_parse_error",
-          message: "unparseable broker log line"
-        })
-      ]
+          message: "unparseable broker log line",
+        }),
+      ],
     });
     expect(state.openInbound[0]).not.toHaveProperty("text");
     expect(state.openInbound[0]).not.toHaveProperty("contextText");
@@ -428,32 +424,26 @@ describe("ops Feishu preflight helpers", () => {
   it("summarizes ops host paths without exposing full filesystem paths", () => {
     expect(summarizeOpsHostPath("/Users/operator@example.com/OPS_STATUS_PATH_SECRET/.data")).toEqual({
       basename: ".data",
-      redacted: true
+      redacted: true,
     });
     expect(summarizeOpsHostPath("/tmp/OPS_STATUS_PATH_SECRET")).toEqual({
       basename: "[redacted-path]",
-      redacted: true
+      redacted: true,
     });
   });
 
   it("summarizes rollout evidence paths as safe repo-relative coordinates", () => {
-    const rolloutPath = path.join(
-      process.cwd(),
-      ".backups",
-      "rollouts",
-      "2026-05-29T10-00-00-000Z",
-      "feishu-preflight"
-    );
+    const rolloutPath = path.join(process.cwd(), ".backups", "rollouts", "2026-05-29T10-00-00-000Z", "feishu-preflight");
 
     expect(summarizeOpsEvidencePath(rolloutPath)).toEqual({
       relativePath: ".backups/rollouts/2026-05-29T10-00-00-000Z/feishu-preflight",
       basename: "feishu-preflight",
-      redacted: true
+      redacted: true,
     });
     expect(JSON.stringify(summarizeOpsEvidencePath(rolloutPath))).not.toContain(process.cwd());
     expect(summarizeOpsEvidencePath("/tmp/OPS_STATUS_PATH_SECRET/feishu-preflight")).toEqual({
       basename: "feishu-preflight",
-      redacted: true
+      redacted: true,
     });
   });
 
@@ -461,9 +451,7 @@ describe("ops Feishu preflight helpers", () => {
     const repoEvidencePath = path.join(process.cwd(), ".backups", "auth-switches", "stamp", "auth.json");
 
     expect(summarizeOpsDisplayPath(repoEvidencePath)).toBe(".backups/auth-switches/stamp/auth.json");
-    expect(summarizeOpsDisplayPath("/Users/operator@example.com/.codex/auth.json")).toBe(
-      "auth.json (path redacted)"
-    );
+    expect(summarizeOpsDisplayPath("/Users/operator@example.com/.codex/auth.json")).toBe("auth.json (path redacted)");
     expect(summarizeOpsDisplayPath("/tmp/OPS_STATUS_PATH_SECRET")).toBe("[redacted-path] (path redacted)");
     expect(summarizeOpsDisplayPath(repoEvidencePath)).not.toContain(process.cwd());
   });
@@ -473,16 +461,8 @@ describe("ops Feishu preflight helpers", () => {
 
     let message = "";
     try {
-      runCommand(process.execPath, [
-        "-e",
-        [
-          `console.error("repo path ${repoEvidencePath}");`,
-          "console.error(\"host path '/tmp/OPS_STATUS_PATH_SECRET/operator@example.com/setup.json'\");",
-          "console.error('Bearer ops-secret-token xoxb-ops-secret FEISHU_APP_SECRET=missing');",
-          "process.exit(7);"
-        ].join("")
-      ], {
-        capture: true
+      runCommand(process.execPath, ["-e", [`console.error("repo path ${repoEvidencePath}");`, "console.error(\"host path '/tmp/OPS_STATUS_PATH_SECRET/operator@example.com/setup.json'\");", "console.error('Bearer ops-secret-token xoxb-ops-secret FEISHU_APP_SECRET=missing');", "process.exit(7);"].join("")], {
+        capture: true,
       });
     } catch (error) {
       message = error instanceof Error ? error.message : String(error);
@@ -514,16 +494,19 @@ describe("ops Feishu preflight helpers", () => {
           messageId: "om_msg",
           route: "group_message",
           text: "OPS_ROLLOUT_LOG_BODY_SECRET",
-          payloadRef: "Bearer rollout-log-secret"
-        }
+          payloadRef: "Bearer rollout-log-secret",
+        },
       }),
-      "2026-05-29T00:00:01.000Z INFO chat.platform.ready {\"platform\":\"feishu\",\"source\":\"long_connection\",\"groupMessageMode\":\"all\",\"durationMs\":3,\"body\":\"OPS_ROLLOUT_TEXT_LOG_BODY_SECRET\",\"email\":\"operator@example.com\"}",
+      '2026-05-29T00:00:01.000Z INFO chat.platform.ready {"platform":"feishu","source":"long_connection","groupMessageMode":"all","durationMs":3,"body":"OPS_ROLLOUT_TEXT_LOG_BODY_SECRET","email":"operator@example.com"}',
       "Connected to Slack Socket Mode with token xoxb-rollout-secret",
-      "raw line with /tmp/OPS_ROLLOUT_PATH_SECRET/operator@example.com/message-body.txt and OPS_ROLLOUT_BODY_SECRET"
+      "raw line with /tmp/OPS_ROLLOUT_PATH_SECRET/operator@example.com/message-body.txt and OPS_ROLLOUT_BODY_SECRET",
     ].join("\n");
 
     const sanitized = sanitizeOpsDockerLogsForEvidence(rawLogs);
-    const records = (sanitized as string).trim().split("\n").map((line: string) => JSON.parse(line));
+    const records = (sanitized as string)
+      .trim()
+      .split("\n")
+      .map((line: string) => JSON.parse(line));
     const serialized = JSON.stringify(records);
 
     expect(records).toEqual([
@@ -534,8 +517,8 @@ describe("ops Feishu preflight helpers", () => {
           platform: "feishu",
           conversationId: "oc_group",
           messageId: "om_msg",
-          route: "group_message"
-        }
+          route: "group_message",
+        },
       }),
       expect.objectContaining({
         type: "log",
@@ -544,17 +527,17 @@ describe("ops Feishu preflight helpers", () => {
           platform: "feishu",
           source: "long_connection",
           groupMessageMode: "all",
-          durationMs: 3
-        }
+          durationMs: 3,
+        },
       }),
       expect.objectContaining({
         type: "log_text_redacted",
-        message: "Connected to Slack Socket Mode"
+        message: "Connected to Slack Socket Mode",
       }),
       expect.objectContaining({
         type: "log_text_redacted",
-        message: "non-structured docker log line redacted"
-      })
+        message: "non-structured docker log line redacted",
+      }),
     ]);
     expect(serialized).not.toContain("OPS_ROLLOUT_LOG_BODY_SECRET");
     expect(serialized).not.toContain("OPS_ROLLOUT_TEXT_LOG_BODY_SECRET");
@@ -581,15 +564,11 @@ describe("ops Feishu preflight helpers", () => {
           checks: [
             {
               id: "preflight.feishu_app_secret_present",
-              evidence: [
-                "FEISHU_APP_SECRET=missing",
-                "operator@example.com",
-                "/tmp/OPS_METADATA_REPORT_PATH_SECRET/report.json"
-              ]
-            }
-          ]
-        }
-      }
+              evidence: ["FEISHU_APP_SECRET=missing", "operator@example.com", "/tmp/OPS_METADATA_REPORT_PATH_SECRET/report.json"],
+            },
+          ],
+        },
+      },
     });
 
     const metadata = await fs.readFile(path.join(outputDir, "metadata.json"), "utf8");

@@ -30,13 +30,13 @@ describe("dual-platform runtime", () => {
     cleanups.push(async () => {
       await fs.rm(tempRoot, {
         recursive: true,
-        force: true
+        force: true,
       });
     });
 
     const mockSlack = new MockSlackServer("UBOT", {
       botId: "BBOT",
-      appId: "AAPP"
+      appId: "AAPP",
     });
     const slackPort = await mockSlack.start();
     cleanups.push(async () => {
@@ -49,7 +49,7 @@ describe("dual-platform runtime", () => {
       rawSlackEvents: false,
       rawFeishuEvents: false,
       rawCodexRpc: false,
-      rawHttpRequests: false
+      rawHttpRequests: false,
     });
 
     const config = loadConfig({
@@ -67,15 +67,15 @@ describe("dual-platform runtime", () => {
       SESSIONS_ROOT: path.join(tempRoot, "sessions"),
       REPOS_ROOT: path.join(tempRoot, "repos"),
       JOBS_ROOT: path.join(tempRoot, "jobs"),
-      CODEX_HOME: path.join(tempRoot, "codex-home")
+      CODEX_HOME: path.join(tempRoot, "codex-home"),
     } as NodeJS.ProcessEnv);
     const sessions = new SessionManager({
       stateStore: new StateStore(config.stateDir, config.sessionsRoot),
-      sessionsRoot: config.sessionsRoot
+      sessionsRoot: config.sessionsRoot,
     });
     await sessions.load();
     const mappings = new GitHubAuthorMappingService({
-      stateDir: config.stateDir
+      stateDir: config.stateDir,
     });
     await mappings.load();
 
@@ -94,7 +94,7 @@ describe("dual-platform runtime", () => {
         rawEvents: false,
         tokenUsage: "none",
         toolCalls: false,
-        systemPromptEcho: false
+        systemPromptEcho: false,
       })),
       on: vi.fn((event: string, listener: (...args: unknown[]) => void) => {
         codexEvents.on(event, listener);
@@ -107,7 +107,7 @@ describe("dual-platform runtime", () => {
         id: session.agentSessionId ?? session.codexThreadId ?? "codex-thread-slack",
         brokerSessionKey: session.key,
         runtime: "test",
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
       })),
       startTurn: vi.fn(async () => {
         turnCounter += 1;
@@ -117,13 +117,13 @@ describe("dual-platform runtime", () => {
             resolve({
               turnId,
               finalMessage: "",
-              aborted: false
+              aborted: false,
             });
           });
         });
         return {
           turnId,
-          completion
+          completion,
         };
       }),
       submitInput: vi.fn(async (input) => {
@@ -136,7 +136,7 @@ describe("dual-platform runtime", () => {
               agentSessionId,
               turnId,
               finalMessage: "",
-              aborted: false
+              aborted: false,
             });
           });
         });
@@ -146,16 +146,16 @@ describe("dual-platform runtime", () => {
             turnId,
             inputId: input.inputId,
             delivery: "started_turn" as const,
-            deliveredAt: new Date().toISOString()
+            deliveredAt: new Date().toISOString(),
           },
-          completion
+          completion,
         };
       }),
       steer: vi.fn(async () => {}),
       interrupt: vi.fn(async () => {}),
       readSession: vi.fn(async () => null),
       readTurn: vi.fn(async () => null),
-      readTurnResult: vi.fn(async () => null)
+      readTurnResult: vi.fn(async () => null),
     };
     const feishuWsClient = new FakeFeishuWsClient();
     const feishuBridge = new FeishuCodexBridge({
@@ -170,18 +170,18 @@ describe("dual-platform runtime", () => {
         api: createFakeFeishuApi(),
         wsClient: feishuWsClient,
         botIdentity: {
-          openId: config.feishuBotOpenId
+          openId: config.feishuBotOpenId,
         },
         groupMessageMode: config.feishuGroupMessageMode,
-        startupRequired: config.feishuStartupRequired
-      })
+        startupRequired: config.feishuStartupRequired,
+      }),
     });
     const bridge = new SlackAgentBridge({
       config,
       sessions,
       agentRuntime: codex as never,
       githubPrIdentity: createFakeGitHubPrIdentity(),
-      feishuBridge
+      feishuBridge,
     });
     cleanups.push(async () => {
       await bridge.stop();
@@ -195,7 +195,7 @@ describe("dual-platform runtime", () => {
       channel: "C123",
       thread_ts: "220.330",
       ts: "220.331",
-      text: "<@UBOT> dual runtime check"
+      text: "<@UBOT> dual runtime check",
     });
     await waitForCondition(() => codex.submitInput.mock.calls.length === 1, "Slack turn start");
     await bridge.postChatMessage({
@@ -203,18 +203,11 @@ describe("dual-platform runtime", () => {
       conversationId: "C123",
       rootMessageId: "220.330",
       text: "DUAL_SLACK_REPLY_OK",
-      kind: "final"
+      kind: "final",
     });
-    await mockSlack.waitForPostedMessage((message) => (
-      message.channel === "C123" &&
-      message.threadTs === "220.330" &&
-      message.text === "DUAL_SLACK_REPLY_OK"
-    ));
+    await mockSlack.waitForPostedMessage((message) => message.channel === "C123" && message.threadTs === "220.330" && message.text === "DUAL_SLACK_REPLY_OK");
     completeTurns.shift()?.();
-    await waitForCondition(
-      () => sessions.getSession("C123", "220.330")?.activeTurnId === undefined,
-      "Slack turn completion"
-    );
+    await waitForCondition(() => sessions.getSession("C123", "220.330")?.activeTurnId === undefined, "Slack turn completion");
 
     expect(codex.start).toHaveBeenCalledTimes(1);
     expect(codex.setSlackBotIdentity).toHaveBeenCalledTimes(1);
@@ -229,15 +222,15 @@ describe("dual-platform runtime", () => {
           meta: expect.objectContaining({
             platform: "feishu",
             source: "long_connection",
-            groupMessageMode: "all"
-          })
+            groupMessageMode: "all",
+          }),
         }),
         expect.objectContaining({
           message: "chat.platform.ready",
           meta: expect.objectContaining({
             platform: "slack",
-            source: "socket_mode"
-          })
+            source: "socket_mode",
+          }),
         }),
         expect.objectContaining({
           message: "chat.message.accepted",
@@ -246,8 +239,8 @@ describe("dual-platform runtime", () => {
             sessionKey: "C123:220.330",
             conversationId: "C123",
             rootMessageId: "220.330",
-            messageId: "220.331"
-          })
+            messageId: "220.331",
+          }),
         }),
         expect.objectContaining({
           message: "chat.outbound.posted",
@@ -256,8 +249,8 @@ describe("dual-platform runtime", () => {
             sessionKey: "C123:220.330",
             conversationId: "C123",
             rootMessageId: "220.330",
-            format: "text"
-          })
+            format: "text",
+          }),
         }),
         expect.objectContaining({
           message: "chat.platform.degraded",
@@ -265,10 +258,10 @@ describe("dual-platform runtime", () => {
             platform: "feishu",
             groupMessageMode: "all",
             degradedReason: "all_message_delivery_unverified",
-            permission: "im:message.group_msg"
-          })
-        })
-      ])
+            permission: "im:message.group_msg",
+          }),
+        }),
+      ]),
     );
   });
 
@@ -277,13 +270,13 @@ describe("dual-platform runtime", () => {
     cleanups.push(async () => {
       await fs.rm(tempRoot, {
         recursive: true,
-        force: true
+        force: true,
       });
     });
 
     const mockSlack = new MockSlackServer("UBOT", {
       botId: "BBOT",
-      appId: "AAPP"
+      appId: "AAPP",
     });
     const slackPort = await mockSlack.start();
     cleanups.push(async () => {
@@ -296,7 +289,7 @@ describe("dual-platform runtime", () => {
       rawSlackEvents: false,
       rawFeishuEvents: false,
       rawCodexRpc: false,
-      rawHttpRequests: false
+      rawHttpRequests: false,
     });
 
     const config = loadConfig({
@@ -314,15 +307,15 @@ describe("dual-platform runtime", () => {
       SESSIONS_ROOT: path.join(tempRoot, "sessions"),
       REPOS_ROOT: path.join(tempRoot, "repos"),
       JOBS_ROOT: path.join(tempRoot, "jobs"),
-      CODEX_HOME: path.join(tempRoot, "codex-home")
+      CODEX_HOME: path.join(tempRoot, "codex-home"),
     } as NodeJS.ProcessEnv);
     const sessions = new SessionManager({
       stateStore: new StateStore(config.stateDir, config.sessionsRoot),
-      sessionsRoot: config.sessionsRoot
+      sessionsRoot: config.sessionsRoot,
     });
     await sessions.load();
     const mappings = new GitHubAuthorMappingService({
-      stateDir: config.stateDir
+      stateDir: config.stateDir,
     });
     await mappings.load();
 
@@ -331,7 +324,7 @@ describe("dual-platform runtime", () => {
       stop: vi.fn(async () => {}),
       setSlackBotIdentity: vi.fn(),
       on: vi.fn(),
-      off: vi.fn()
+      off: vi.fn(),
     };
     const feishuWsClient = new FailingFeishuWsClient();
     const feishuBridge = new FeishuCodexBridge({
@@ -346,18 +339,18 @@ describe("dual-platform runtime", () => {
         api: createFakeFeishuApi(),
         wsClient: feishuWsClient,
         botIdentity: {
-          openId: config.feishuBotOpenId
+          openId: config.feishuBotOpenId,
         },
         groupMessageMode: config.feishuGroupMessageMode,
-        startupRequired: config.feishuStartupRequired
-      })
+        startupRequired: config.feishuStartupRequired,
+      }),
     });
     const bridge = new SlackAgentBridge({
       config,
       sessions,
       agentRuntime: codex as never,
       githubPrIdentity: createFakeGitHubPrIdentity(),
-      feishuBridge
+      feishuBridge,
     });
     cleanups.push(async () => {
       await bridge.stop();
@@ -380,17 +373,17 @@ describe("dual-platform runtime", () => {
             groupMessageMode: "all",
             startupRequired: false,
             degradedReason: "startup_failed",
-            errorClass: "Error"
-          })
+            errorClass: "Error",
+          }),
         }),
         expect.objectContaining({
           message: "chat.platform.ready",
           meta: expect.objectContaining({
             platform: "slack",
-            source: "socket_mode"
-          })
-        })
-      ])
+            source: "socket_mode",
+          }),
+        }),
+      ]),
     );
   });
 
@@ -399,13 +392,13 @@ describe("dual-platform runtime", () => {
     cleanups.push(async () => {
       await fs.rm(tempRoot, {
         recursive: true,
-        force: true
+        force: true,
       });
     });
 
     const mockSlack = new MockSlackServer("UBOT", {
       botId: "BBOT",
-      appId: "AAPP"
+      appId: "AAPP",
     });
     const slackPort = await mockSlack.start();
     cleanups.push(async () => {
@@ -418,7 +411,7 @@ describe("dual-platform runtime", () => {
       rawSlackEvents: false,
       rawFeishuEvents: false,
       rawCodexRpc: false,
-      rawHttpRequests: false
+      rawHttpRequests: false,
     });
 
     const config = loadConfig({
@@ -436,15 +429,15 @@ describe("dual-platform runtime", () => {
       SESSIONS_ROOT: path.join(tempRoot, "sessions"),
       REPOS_ROOT: path.join(tempRoot, "repos"),
       JOBS_ROOT: path.join(tempRoot, "jobs"),
-      CODEX_HOME: path.join(tempRoot, "codex-home")
+      CODEX_HOME: path.join(tempRoot, "codex-home"),
     } as NodeJS.ProcessEnv);
     const sessions = new SessionManager({
       stateStore: new StateStore(config.stateDir, config.sessionsRoot),
-      sessionsRoot: config.sessionsRoot
+      sessionsRoot: config.sessionsRoot,
     });
     await sessions.load();
     const mappings = new GitHubAuthorMappingService({
-      stateDir: config.stateDir
+      stateDir: config.stateDir,
     });
     await mappings.load();
 
@@ -453,7 +446,7 @@ describe("dual-platform runtime", () => {
       stop: vi.fn(async () => {}),
       setSlackBotIdentity: vi.fn(),
       on: vi.fn(),
-      off: vi.fn()
+      off: vi.fn(),
     };
     const feishuWsClient = new FakeFeishuWsClient();
     const feishuBridge = new FeishuCodexBridge({
@@ -468,18 +461,18 @@ describe("dual-platform runtime", () => {
         api: createFakeFeishuApi(),
         wsClient: feishuWsClient,
         botIdentity: {
-          openId: config.feishuBotOpenId
+          openId: config.feishuBotOpenId,
         },
         groupMessageMode: config.feishuGroupMessageMode,
-        startupRequired: config.feishuStartupRequired
-      })
+        startupRequired: config.feishuStartupRequired,
+      }),
     });
     const bridge = new SlackAgentBridge({
       config,
       sessions,
       agentRuntime: codex as never,
       githubPrIdentity: createFakeGitHubPrIdentity(),
-      feishuBridge
+      feishuBridge,
     });
     cleanups.push(async () => {
       await bridge.stop();
@@ -501,17 +494,17 @@ describe("dual-platform runtime", () => {
             groupMessageMode: "at_only",
             startupRequired: false,
             degradedReason: "group_message_all_unavailable",
-            permission: "im:message.group_msg"
-          })
+            permission: "im:message.group_msg",
+          }),
         }),
         expect.objectContaining({
           message: "chat.platform.ready",
           meta: expect.objectContaining({
             platform: "slack",
-            source: "socket_mode"
-          })
-        })
-      ])
+            source: "socket_mode",
+          }),
+        }),
+      ]),
     );
   });
 
@@ -520,13 +513,13 @@ describe("dual-platform runtime", () => {
     cleanups.push(async () => {
       await fs.rm(tempRoot, {
         recursive: true,
-        force: true
+        force: true,
       });
     });
 
     const mockSlack = new MockSlackServer("UBOT", {
       botId: "BBOT",
-      appId: "AAPP"
+      appId: "AAPP",
     });
     const slackPort = await mockSlack.start();
     cleanups.push(async () => {
@@ -539,7 +532,7 @@ describe("dual-platform runtime", () => {
       rawSlackEvents: false,
       rawFeishuEvents: false,
       rawCodexRpc: false,
-      rawHttpRequests: false
+      rawHttpRequests: false,
     });
 
     const config = loadConfig({
@@ -557,15 +550,15 @@ describe("dual-platform runtime", () => {
       SESSIONS_ROOT: path.join(tempRoot, "sessions"),
       REPOS_ROOT: path.join(tempRoot, "repos"),
       JOBS_ROOT: path.join(tempRoot, "jobs"),
-      CODEX_HOME: path.join(tempRoot, "codex-home")
+      CODEX_HOME: path.join(tempRoot, "codex-home"),
     } as NodeJS.ProcessEnv);
     const sessions = new SessionManager({
       stateStore: new StateStore(config.stateDir, config.sessionsRoot),
-      sessionsRoot: config.sessionsRoot
+      sessionsRoot: config.sessionsRoot,
     });
     await sessions.load();
     const mappings = new GitHubAuthorMappingService({
-      stateDir: config.stateDir
+      stateDir: config.stateDir,
     });
     await mappings.load();
 
@@ -574,7 +567,7 @@ describe("dual-platform runtime", () => {
       stop: vi.fn(async () => {}),
       setSlackBotIdentity: vi.fn(),
       on: vi.fn(),
-      off: vi.fn()
+      off: vi.fn(),
     };
     const feishuWsClient = new FailingFeishuWsClient();
     const feishuBridge = new FeishuCodexBridge({
@@ -589,18 +582,18 @@ describe("dual-platform runtime", () => {
         api: createFakeFeishuApi(),
         wsClient: feishuWsClient,
         botIdentity: {
-          openId: config.feishuBotOpenId
+          openId: config.feishuBotOpenId,
         },
         groupMessageMode: config.feishuGroupMessageMode,
-        startupRequired: config.feishuStartupRequired
-      })
+        startupRequired: config.feishuStartupRequired,
+      }),
     });
     const bridge = new SlackAgentBridge({
       config,
       sessions,
       agentRuntime: codex as never,
       githubPrIdentity: createFakeGitHubPrIdentity(),
-      feishuBridge
+      feishuBridge,
     });
     cleanups.push(async () => {
       await bridge.stop();
@@ -622,10 +615,10 @@ describe("dual-platform runtime", () => {
             groupMessageMode: "all",
             startupRequired: true,
             degradedReason: "startup_failed",
-            errorClass: "Error"
-          })
-        })
-      ])
+            errorClass: "Error",
+          }),
+        }),
+      ]),
     );
     expect(logRecords).not.toEqual(
       expect.arrayContaining([
@@ -633,17 +626,17 @@ describe("dual-platform runtime", () => {
           message: "chat.platform.starting",
           meta: expect.objectContaining({
             platform: "slack",
-            source: "socket_mode"
-          })
+            source: "socket_mode",
+          }),
         }),
         expect.objectContaining({
           message: "chat.platform.ready",
           meta: expect.objectContaining({
             platform: "slack",
-            source: "socket_mode"
-          })
-        })
-      ])
+            source: "socket_mode",
+          }),
+        }),
+      ]),
     );
   });
 });
@@ -679,18 +672,18 @@ function createFakeFeishuApi() {
   return {
     listMessages: async () => ({
       has_more: false,
-      items: []
+      items: [],
     }),
     replyMessage: async () => ({
-      message_id: "om_reply"
+      message_id: "om_reply",
     }),
     uploadMessageImage: async () => ({
-      image_key: "img_uploaded"
+      image_key: "img_uploaded",
     }),
     uploadMessageFile: async () => ({
-      file_key: "file_uploaded"
+      file_key: "file_uploaded",
     }),
-    downloadMessageResourceAsDataUrl: async () => "data:text/plain;base64,aGVsbG8="
+    downloadMessageResourceAsDataUrl: async () => "data:text/plain;base64,aGVsbG8=",
   } as any;
 }
 
@@ -702,20 +695,24 @@ function createFakeGitHubPrIdentity() {
       sessionKey: "test",
       selected: null,
       candidates: [],
-      defaultAccount: null
+      defaultAccount: null,
     })),
     resolveTokenForSession: vi.fn(async () => ({
       ok: false,
       mode: "blocked",
       reason: "session_not_found",
-      message: "No test GitHub PR identity is configured."
-    }))
+      message: "No test GitHub PR identity is configured.",
+    })),
   } as never;
 }
 
 async function readJsonl(filePath: string): Promise<unknown[]> {
   const raw = await readLogFileOrBucket(filePath);
-  return raw.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line) as unknown);
+  return raw
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as unknown);
 }
 
 async function readLogFileOrBucket(filePath: string): Promise<string> {
@@ -727,12 +724,8 @@ async function readLogFileOrBucket(filePath: string): Promise<string> {
     }
   }
 
-  const bucketDir = path.basename(filePath) === "broker.jsonl"
-    ? path.join(path.dirname(filePath), "broker")
-    : path.join(path.dirname(filePath), path.basename(filePath, ".jsonl"));
-  const files = (await fs.readdir(bucketDir))
-    .filter((file) => file.endsWith(".jsonl"))
-    .sort();
+  const bucketDir = path.basename(filePath) === "broker.jsonl" ? path.join(path.dirname(filePath), "broker") : path.join(path.dirname(filePath), path.basename(filePath, ".jsonl"));
+  const files = (await fs.readdir(bucketDir)).filter((file) => file.endsWith(".jsonl")).sort();
   const chunks = await Promise.all(files.map((file) => fs.readFile(path.join(bucketDir, file), "utf8")));
   return chunks.join("");
 }

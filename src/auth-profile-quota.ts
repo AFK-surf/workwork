@@ -14,10 +14,7 @@ export function remainingPercent(usedPercent: unknown): number | undefined {
   return Math.max(0, Math.min(100, 100 - used));
 }
 
-export function daysUntilReset(
-  resetsAt: unknown,
-  now: Date | number | string | undefined = undefined
-): number | undefined {
+export function daysUntilReset(resetsAt: unknown, now: Date | number | string | undefined = undefined): number | undefined {
   const resetSeconds = Number(resetsAt);
   if (!Number.isFinite(resetSeconds)) {
     return undefined;
@@ -27,10 +24,7 @@ export function daysUntilReset(
   return Math.max(deltaDays, MIN_REFRESH_DAYS);
 }
 
-export function msUntilReset(
-  resetsAt: unknown,
-  now: Date | number | string | undefined = undefined
-): number | undefined {
+export function msUntilReset(resetsAt: unknown, now: Date | number | string | undefined = undefined): number | undefined {
   const resetSeconds = Number(resetsAt);
   if (!Number.isFinite(resetSeconds)) {
     return undefined;
@@ -39,42 +33,26 @@ export function msUntilReset(
   return Math.max(resetSeconds * 1000 - timestampMs(now), MS_PER_MINUTE);
 }
 
-export function weightedWeeklyQuotaScore(
-  remaining: number | undefined,
-  refreshDays: number | undefined
-): number | undefined {
+export function weightedWeeklyQuotaScore(remaining: number | undefined, refreshDays: number | undefined): number | undefined {
   if (remaining === undefined) {
     return undefined;
   }
 
   const days = refreshDays ?? 7;
-  return (remaining / 100) / (days / 7);
+  return remaining / 100 / (days / 7);
 }
 
-export function weightedQuotaWindowScore(options: {
-  readonly remaining: number | undefined;
-  readonly resetsAt?: unknown;
-  readonly windowDurationMins?: unknown;
-  readonly fallbackWindowDurationMins: number;
-  readonly now?: Date | number | string | undefined;
-}): number | undefined {
+export function weightedQuotaWindowScore(options: { readonly remaining: number | undefined; readonly resetsAt?: unknown; readonly windowDurationMins?: unknown; readonly fallbackWindowDurationMins: number; readonly now?: Date | number | string | undefined }): number | undefined {
   if (options.remaining === undefined) {
     return undefined;
   }
 
-  const windowMins = normalizeWindowDurationMins(
-    options.windowDurationMins,
-    options.fallbackWindowDurationMins
-  );
+  const windowMins = normalizeWindowDurationMins(options.windowDurationMins, options.fallbackWindowDurationMins);
   const resetMs = msUntilReset(options.resetsAt, options.now) ?? windowMins * MS_PER_MINUTE;
-  return (options.remaining / 100) / (resetMs / (windowMins * MS_PER_MINUTE));
+  return options.remaining / 100 / (resetMs / (windowMins * MS_PER_MINUTE));
 }
 
-export function formatWeeklyQuotaDisplay(options: {
-  readonly usedPercent: unknown;
-  readonly resetsAt?: unknown;
-  readonly now?: Date | number | string | undefined;
-}): string | null {
+export function formatWeeklyQuotaDisplay(options: { readonly usedPercent: unknown; readonly resetsAt?: unknown; readonly now?: Date | number | string | undefined }): string | null {
   const remaining = remainingPercent(options.usedPercent);
   if (remaining === undefined) {
     return null;
@@ -84,43 +62,40 @@ export function formatWeeklyQuotaDisplay(options: {
   return `${Math.round(remaining)}% | ${formatWeightedWeeklyQuotaScore(score)}`;
 }
 
-export function formatQuotaWindowDisplay(options: {
-  readonly usedPercent: unknown;
-  readonly resetsAt?: unknown;
-  readonly windowDurationMins?: unknown;
-  readonly fallbackWindowDurationMins: number;
-  readonly now?: Date | number | string | undefined;
-}): string | null {
+export function formatQuotaWindowDisplay(options: { readonly usedPercent: unknown; readonly resetsAt?: unknown; readonly windowDurationMins?: unknown; readonly fallbackWindowDurationMins: number; readonly now?: Date | number | string | undefined }): string | null {
   const remaining = remainingPercent(options.usedPercent);
   if (remaining === undefined) {
     return null;
   }
 
-  const windowMins = normalizeWindowDurationMins(
-    options.windowDurationMins,
-    options.fallbackWindowDurationMins
-  );
+  const windowMins = normalizeWindowDurationMins(options.windowDurationMins, options.fallbackWindowDurationMins);
   const score = weightedQuotaWindowScore({
     remaining,
     resetsAt: options.resetsAt,
     windowDurationMins: windowMins,
     fallbackWindowDurationMins: windowMins,
-    now: options.now
+    now: options.now,
   });
   return `${formatWindowDuration(windowMins)} ${Math.round(remaining)}% / ${formatWeightedWeeklyQuotaScore(score)}`;
 }
 
 export function formatAuthQuotaDisplay(options: {
-  readonly primary?: {
-    readonly usedPercent?: unknown;
-    readonly resetsAt?: unknown;
-    readonly windowDurationMins?: unknown;
-  } | null | undefined;
-  readonly secondary?: {
-    readonly usedPercent?: unknown;
-    readonly resetsAt?: unknown;
-    readonly windowDurationMins?: unknown;
-  } | null | undefined;
+  readonly primary?:
+    | {
+        readonly usedPercent?: unknown;
+        readonly resetsAt?: unknown;
+        readonly windowDurationMins?: unknown;
+      }
+    | null
+    | undefined;
+  readonly secondary?:
+    | {
+        readonly usedPercent?: unknown;
+        readonly resetsAt?: unknown;
+        readonly windowDurationMins?: unknown;
+      }
+    | null
+    | undefined;
   readonly now?: Date | number | string | undefined;
 }): string | null {
   const weekly = formatQuotaWindowDisplay({
@@ -128,7 +103,7 @@ export function formatAuthQuotaDisplay(options: {
     resetsAt: options.secondary?.resetsAt,
     windowDurationMins: options.secondary?.windowDurationMins,
     fallbackWindowDurationMins: DEFAULT_WEEKLY_WINDOW_MINS,
-    now: options.now
+    now: options.now,
   });
   const short = shouldShowShortWindowQuota(options.primary, options.now)
     ? formatQuotaWindowDisplay({
@@ -136,7 +111,7 @@ export function formatAuthQuotaDisplay(options: {
         resetsAt: options.primary?.resetsAt,
         windowDurationMins: options.primary?.windowDurationMins,
         fallbackWindowDurationMins: DEFAULT_SHORT_WINDOW_MINS,
-        now: options.now
+        now: options.now,
       })
     : null;
   const parts = [weekly, short].filter(Boolean);
@@ -144,12 +119,15 @@ export function formatAuthQuotaDisplay(options: {
 }
 
 export function shouldShowShortWindowQuota(
-  limit: {
-    readonly usedPercent?: unknown;
-    readonly resetsAt?: unknown;
-    readonly windowDurationMins?: unknown;
-  } | null | undefined,
-  now?: Date | number | string | undefined
+  limit:
+    | {
+        readonly usedPercent?: unknown;
+        readonly resetsAt?: unknown;
+        readonly windowDurationMins?: unknown;
+      }
+    | null
+    | undefined,
+  now?: Date | number | string | undefined,
 ): boolean {
   const remaining = remainingPercent(limit?.usedPercent);
   const score = weightedQuotaWindowScore({
@@ -157,7 +135,7 @@ export function shouldShowShortWindowQuota(
     resetsAt: limit?.resetsAt,
     windowDurationMins: limit?.windowDurationMins,
     fallbackWindowDurationMins: DEFAULT_SHORT_WINDOW_MINS,
-    now
+    now,
   });
   return Number.isFinite(score) && Number(score) < SHORT_WINDOW_DISPLAY_SCORE_THRESHOLD;
 }

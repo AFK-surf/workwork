@@ -63,9 +63,9 @@ runtime artifact.
    `<service-root>/releases/admin/npm-<version>/`, switches the admin current
    symlink, and restarts only the admin LaunchDaemon.
 10. Worker deploy installs `@agent-session-broker/worker@<version>` into
-   `<service-root>/releases/worker/npm-<version>/`, switches the worker current
-   symlink, restarts only the worker LaunchDaemon, and waits for worker
-   readiness.
+    `<service-root>/releases/worker/npm-<version>/`, switches the worker current
+    symlink, restarts only the worker LaunchDaemon, and waits for worker
+    readiness.
 11. Rollback requires a target and only activates a release already installed
     locally for that target. It never fetches source or builds a missing version
     during rollback.

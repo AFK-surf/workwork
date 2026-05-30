@@ -17,7 +17,7 @@ describe("MockCodexAppServer", () => {
     const mockServer = new MockCodexAppServer({
       onTurnStart: async () => {
         throw new Error("callback boom");
-      }
+      },
     });
     const url = await mockServer.start();
     cleanups.push(() => mockServer.stop());
@@ -26,21 +26,19 @@ describe("MockCodexAppServer", () => {
       url,
       serviceName: "test",
       brokerHttpBaseUrl: "http://127.0.0.1:3000",
-      reposRoot: "/tmp/repos"
+      reposRoot: "/tmp/repos",
     });
     await client.connect();
     cleanups.push(() => client.close());
 
-    const startedThread = await client.request("thread/start", { cwd: "/tmp" }) as {
+    const startedThread = (await client.request("thread/start", { cwd: "/tmp" })) as {
       readonly thread: { readonly id: string };
     };
-    const startedTurn = await client.startTurn(startedThread.thread.id, "/tmp", [
-      { type: "text", text: "hello", text_elements: [] }
-    ]);
+    const startedTurn = await client.startTurn(startedThread.thread.id, "/tmp", [{ type: "text", text: "hello", text_elements: [] }]);
 
     const snapshot = await waitForTurnSnapshot(async () => {
       const result = await client.readTurnResult(startedThread.thread.id, startedTurn.turnId, {
-        syncActiveTurn: true
+        syncActiveTurn: true,
       });
       return result?.status === "failed" ? result : null;
     });

@@ -9,7 +9,7 @@ const RELEASE_METADATA_FILENAME = ".broker-release.json";
 const RELEASE_STATE_SCHEMA_VERSION = 3;
 const DEFAULT_RELEASE_PACKAGES: Record<ReleaseTarget, string> = {
   admin: "@agent-session-broker/admin",
-  worker: "@agent-session-broker/worker"
+  worker: "@agent-session-broker/worker",
 };
 const LAUNCHD_DOMAIN = "system";
 const LAUNCHDAEMON_DIR = "/Library/LaunchDaemons";
@@ -124,26 +124,21 @@ export class ReleaseDeploymentService {
       readonly scheduleAdminRestart?: ((restart: () => Promise<void>) => void) | undefined;
       readonly exec?: typeof execCommand | undefined;
       readonly spawnDetached?: typeof spawnDetachedCommand | undefined;
-    }
+    },
   ) {}
 
   async getStatus(): Promise<ReleaseDeploymentStatus> {
-    const [adminTarget, workerTarget, admin, worker] = await Promise.all([
-      this.#readTargetStatus("admin"),
-      this.#readTargetStatus("worker"),
-      this.#readAdminHealth(),
-      this.#readWorkerHealth()
-    ]);
+    const [adminTarget, workerTarget, admin, worker] = await Promise.all([this.#readTargetStatus("admin"), this.#readTargetStatus("worker"), this.#readAdminHealth(), this.#readWorkerHealth()]);
 
     return {
       serviceRoot: this.options.serviceRoot,
       npmRegistryUrl: this.options.npmRegistryUrl ?? null,
       targets: {
         admin: adminTarget,
-        worker: workerTarget
+        worker: workerTarget,
       },
       admin,
-      worker
+      worker,
     };
   }
 
@@ -162,9 +157,7 @@ export class ReleaseDeploymentService {
   async rollback(options: RollbackReleaseOptions): Promise<ReleaseDeploymentStatus> {
     return await this.#runExclusive(async () => {
       const target = normalizeReleaseTarget(options.target);
-      const releaseRoot = options.version
-        ? await this.#requireInstalledPackageRelease(target, options.version)
-        : await this.#requirePreviousRelease(target);
+      const releaseRoot = options.version ? await this.#requireInstalledPackageRelease(target, options.version) : await this.#requirePreviousRelease(target);
       await this.#activateRelease(target, releaseRoot);
       return await this.getStatus();
     });
@@ -199,7 +192,7 @@ export class ReleaseDeploymentService {
       this.#readLinkedRelease(paths.previousReleasePath),
       this.#readLinkedRelease(paths.failedReleasePath),
       this.#readRecentReleases(target),
-      this.#readRecentPackageVersions(target)
+      this.#readRecentPackageVersions(target),
     ]);
 
     return {
@@ -209,7 +202,7 @@ export class ReleaseDeploymentService {
       previousRelease,
       failedRelease,
       recentReleases,
-      recentPackageVersions
+      recentPackageVersions,
     };
   }
 
@@ -225,17 +218,7 @@ export class ReleaseDeploymentService {
     await fs.rm(tempRoot, { force: true, recursive: true });
 
     try {
-      await this.#exec(this.#npmPath(), [
-        "install",
-        "--prefix",
-        tempRoot,
-        "--omit=dev",
-        "--ignore-scripts",
-        "--no-audit",
-        "--no-fund",
-        ...this.#npmRegistryArgs(),
-        packageSpec(this.#packageName(target), version)
-      ]);
+      await this.#exec(this.#npmPath(), ["install", "--prefix", tempRoot, "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund", ...this.#npmRegistryArgs(), packageSpec(this.#packageName(target), version)]);
       const tempPackageRoot = this.#packageRootForInstallRoot(target, tempRoot);
       await this.#assertUsablePackageRoot(target, tempPackageRoot);
       await fs.rm(installRoot, { force: true, recursive: true });
@@ -278,16 +261,12 @@ export class ReleaseDeploymentService {
       installedAt: new Date().toISOString(),
       installedBy: process.env.USER || process.env.LOGNAME || "unknown",
       installedFromHost: process.env.HOSTNAME || "unknown",
-      stateSchemaVersion: RELEASE_STATE_SCHEMA_VERSION
+      stateSchemaVersion: RELEASE_STATE_SCHEMA_VERSION,
     };
   }
 
   async #writeReleaseMetadata(releaseRoot: string, metadata: ReleaseMetadata): Promise<void> {
-    await fs.writeFile(
-      path.join(releaseRoot, RELEASE_METADATA_FILENAME),
-      `${JSON.stringify(metadata, null, 2)}\n`,
-      "utf8"
-    );
+    await fs.writeFile(path.join(releaseRoot, RELEASE_METADATA_FILENAME), `${JSON.stringify(metadata, null, 2)}\n`, "utf8");
   }
 
   async #activateRelease(target: ReleaseTarget, releaseRoot: string): Promise<void> {
@@ -337,7 +316,7 @@ export class ReleaseDeploymentService {
       reason,
       plistPath: this.options.workerPlistPath,
       launchdLabel: this.options.workerLaunchdLabel,
-      serviceName: "worker"
+      serviceName: "worker",
     });
   }
 
@@ -358,12 +337,7 @@ export class ReleaseDeploymentService {
       throw new Error(`Missing admin launchd plist: ${this.options.adminPlistPath}`);
     }
 
-    const restartScriptPath = path.join(
-      this.options.currentAdminReleasePath,
-      "scripts",
-      "ops",
-      "macos-launchd-restart.mjs"
-    );
+    const restartScriptPath = path.join(this.options.currentAdminReleasePath, "scripts", "ops", "macos-launchd-restart.mjs");
     if (!(await fileExists(restartScriptPath))) {
       throw new Error(`Missing admin launchd restart helper: ${restartScriptPath}`);
     }
@@ -371,22 +345,8 @@ export class ReleaseDeploymentService {
     const domain = LAUNCHD_DOMAIN;
     const restartLogPath = path.join(this.options.serviceRoot, "logs", "admin-restart.log");
     await ensureDir(path.dirname(restartLogPath));
-    this.#spawnDetached(process.execPath, [
-      restartScriptPath,
-      "--domain",
-      domain,
-      "--plist",
-      this.options.adminPlistPath,
-      "--label",
-      this.options.adminLaunchdLabel,
-      "--delay-ms",
-      "250",
-      "--log-file",
-      restartLogPath,
-      "--reason",
-      reason
-    ], {
-      cwd: this.options.serviceRoot
+    this.#spawnDetached(process.execPath, [restartScriptPath, "--domain", domain, "--plist", this.options.adminPlistPath, "--label", this.options.adminLaunchdLabel, "--delay-ms", "250", "--log-file", restartLogPath, "--reason", reason], {
+      cwd: this.options.serviceRoot,
     });
 
     logger.info("Scheduled detached admin launchd restart", {
@@ -394,16 +354,11 @@ export class ReleaseDeploymentService {
       domain,
       launchdLabel: this.options.adminLaunchdLabel,
       plistPath: this.options.adminPlistPath,
-      helper: restartScriptPath
+      helper: restartScriptPath,
     });
   }
 
-  async #restartLaunchdService(options: {
-    readonly reason: string;
-    readonly plistPath: string;
-    readonly launchdLabel: string;
-    readonly serviceName: string;
-  }): Promise<void> {
+  async #restartLaunchdService(options: { readonly reason: string; readonly plistPath: string; readonly launchdLabel: string; readonly serviceName: string }): Promise<void> {
     if (!(await fileExists(options.plistPath))) {
       throw new Error(`Missing ${options.serviceName} launchd plist: ${options.plistPath}`);
     }
@@ -430,23 +385,21 @@ export class ReleaseDeploymentService {
     }
 
     if (!lastStatus.launchdLoaded || !lastStatus.healthOk || !lastStatus.readyOk) {
-      throw new Error(
-        `Worker failed health checks: launchdLoaded=${lastStatus.launchdLoaded} healthOk=${lastStatus.healthOk} readyOk=${lastStatus.readyOk}${lastStatus.readyError ? ` readyError=${lastStatus.readyError}` : ""}`
-      );
+      throw new Error(`Worker failed health checks: launchdLoaded=${lastStatus.launchdLoaded} healthOk=${lastStatus.healthOk} readyOk=${lastStatus.readyOk}${lastStatus.readyError ? ` readyError=${lastStatus.readyError}` : ""}`);
     }
   }
 
   async #readWorkerHealth(): Promise<WorkerHealthStatus> {
     const launchdLoaded = await this.#isLaunchdLoaded(this.options.workerLaunchdLabel);
     const healthResponse = await this.#fetchText(`${this.options.workerBaseUrl}/readyz`);
-    const healthOk = Boolean(healthResponse.ok && healthResponse.body.includes("\"ok\":true"));
+    const healthOk = Boolean(healthResponse.ok && healthResponse.body.includes('"ok":true'));
     const ready = await this.#checkWsReady();
     return {
       launchdLoaded,
       healthOk,
       readyOk: ready.ok,
       healthBody: healthResponse.body,
-      readyError: ready.ok ? null : ready.error
+      readyError: ready.ok ? null : ready.error,
     };
   }
 
@@ -459,8 +412,8 @@ export class ReleaseDeploymentService {
     const healthResponse = await this.#fetchText(`${this.options.adminBaseUrl}/readyz`);
     return {
       launchdLoaded,
-      healthOk: Boolean(healthResponse.ok && healthResponse.body.includes("\"ok\":true")),
-      healthBody: healthResponse.body
+      healthOk: Boolean(healthResponse.ok && healthResponse.body.includes('"ok":true')),
+      healthBody: healthResponse.body,
     };
   }
 
@@ -481,7 +434,7 @@ export class ReleaseDeploymentService {
     const timer = setTimeout(() => {
       void restart().catch((error) => {
         logger.error("Scheduled admin restart failed", {
-          error: error instanceof Error ? error.message : String(error)
+          error: error instanceof Error ? error.message : String(error),
         });
       });
     }, 250);
@@ -490,11 +443,7 @@ export class ReleaseDeploymentService {
 
   async #isLaunchdLoaded(label: string): Promise<boolean> {
     const domain = `${LAUNCHD_DOMAIN}/${label}`;
-    const plistPath = label === this.options.workerLaunchdLabel
-      ? this.options.workerPlistPath
-      : label === this.options.adminLaunchdLabel
-        ? this.options.adminPlistPath
-        : undefined;
+    const plistPath = label === this.options.workerLaunchdLabel ? this.options.workerPlistPath : label === this.options.adminLaunchdLabel ? this.options.adminPlistPath : undefined;
     try {
       await this.#launchctl(["print", domain], plistPath);
       return true;
@@ -506,17 +455,17 @@ export class ReleaseDeploymentService {
   async #fetchText(url: string): Promise<{ readonly ok: boolean; readonly body: string }> {
     try {
       const response = await fetch(url, {
-        signal: AbortSignal.timeout(3_000)
+        signal: AbortSignal.timeout(3_000),
       });
       const body = await response.text();
       return {
         ok: response.ok,
-        body
+        body,
       };
     } catch (error) {
       return {
         ok: false,
-        body: error instanceof Error ? error.message : String(error)
+        body: error instanceof Error ? error.message : String(error),
       };
     }
   }
@@ -526,7 +475,7 @@ export class ReleaseDeploymentService {
       const timer = setTimeout(() => {
         resolve({
           ok: false,
-          error: "timeout"
+          error: "timeout",
         });
       }, 3_000);
 
@@ -537,7 +486,7 @@ export class ReleaseDeploymentService {
         clearTimeout(timer);
         resolve({
           ok: false,
-          error: error instanceof Error ? error.message : String(error)
+          error: error instanceof Error ? error.message : String(error),
         });
         return;
       }
@@ -559,7 +508,7 @@ export class ReleaseDeploymentService {
         const error = "error" in event && event.error instanceof Error ? event.error.message : "websocket_open_failed";
         finish({
           ok: false,
-          error
+          error,
         });
       });
     });
@@ -588,9 +537,9 @@ export class ReleaseDeploymentService {
             targetPath,
             exists: true,
             metadata,
-            mtimeMs: stat.mtimeMs
+            mtimeMs: stat.mtimeMs,
           };
-        })
+        }),
     );
 
     return releases
@@ -614,19 +563,13 @@ export class ReleaseDeploymentService {
   async #readRecentPackageVersions(target: ReleaseTarget): Promise<readonly ReleasePackageVersionInfo[]> {
     const packageName = this.#packageName(target);
     try {
-      const result = await this.#exec(this.#npmPath(), [
-        "view",
-        packageName,
-        "versions",
-        "--json",
-        ...this.#npmRegistryArgs()
-      ]);
+      const result = await this.#exec(this.#npmPath(), ["view", packageName, "versions", "--json", ...this.#npmRegistryArgs()]);
       return parsePackageVersions(result.stdout, packageName).slice(0, 20);
     } catch (error) {
       logger.warn("Failed to read package versions for deployment status", {
         target,
         packageName,
-        error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
       });
       return [];
     }
@@ -638,7 +581,7 @@ export class ReleaseDeploymentService {
       linkPath,
       targetPath,
       exists: targetPath ? await fileExists(targetPath) : false,
-      metadata: targetPath ? await this.#readReleaseMetadata(targetPath) : null
+      metadata: targetPath ? await this.#readReleaseMetadata(targetPath) : null,
     };
   }
 
@@ -686,19 +629,16 @@ export class ReleaseDeploymentService {
   }
 
   async #assertUsablePackageRoot(target: ReleaseTarget, packageRoot: string): Promise<void> {
-    const required = target === "admin"
-      ? [
-          path.join(packageRoot, "dist", "src", "admin-index.js"),
-          path.join(packageRoot, "dist", "admin-ui", "index.html"),
-          path.join(packageRoot, "scripts", "ops", "macos-bootstrap.mjs"),
-          path.join(packageRoot, "scripts", "ops", "macos-launchd-launcher.mjs"),
-          path.join(packageRoot, "scripts", "ops", "macos-launchd-restart.mjs")
-        ]
-      : [
-          path.join(packageRoot, "dist", "src", "worker-index.js"),
-          path.join(packageRoot, "scripts", "ops", "macos-launchd-launcher.mjs"),
-          path.join(packageRoot, "scripts", "ops", "macos-launchd-restart.mjs")
-        ];
+    const required =
+      target === "admin"
+        ? [
+            path.join(packageRoot, "dist", "src", "admin-index.js"),
+            path.join(packageRoot, "dist", "admin-ui", "index.html"),
+            path.join(packageRoot, "scripts", "ops", "macos-bootstrap.mjs"),
+            path.join(packageRoot, "scripts", "ops", "macos-launchd-launcher.mjs"),
+            path.join(packageRoot, "scripts", "ops", "macos-launchd-restart.mjs"),
+          ]
+        : [path.join(packageRoot, "dist", "src", "worker-index.js"), path.join(packageRoot, "scripts", "ops", "macos-launchd-launcher.mjs"), path.join(packageRoot, "scripts", "ops", "macos-launchd-restart.mjs")];
     for (const filePath of required) {
       if (!(await fileExists(filePath))) {
         throw new Error(`Installed ${target} package is missing required runtime file: ${filePath}`);
@@ -719,12 +659,12 @@ export class ReleaseDeploymentService {
       ? {
           currentReleasePath: this.options.currentAdminReleasePath,
           previousReleasePath: this.options.previousAdminReleasePath,
-          failedReleasePath: this.options.failedAdminReleasePath
+          failedReleasePath: this.options.failedAdminReleasePath,
         }
       : {
           currentReleasePath: this.options.currentWorkerReleasePath,
           previousReleasePath: this.options.previousWorkerReleasePath,
-          failedReleasePath: this.options.failedWorkerReleasePath
+          failedReleasePath: this.options.failedWorkerReleasePath,
         };
   }
 
@@ -745,7 +685,7 @@ export class ReleaseDeploymentService {
     args: readonly string[],
     options: {
       readonly cwd?: string | undefined;
-    } = {}
+    } = {},
   ) {
     const exec = this.options.exec ?? execCommand;
     return await exec(command, args, options.cwd ? { cwd: options.cwd, env: process.env } : { env: process.env });
@@ -774,7 +714,7 @@ export class ReleaseDeploymentService {
     options: {
       readonly cwd?: string;
       readonly env?: NodeJS.ProcessEnv;
-    } = {}
+    } = {},
   ): void {
     const spawnDetached = this.options.spawnDetached ?? spawnDetachedCommand;
     spawnDetached(command, args, options);
@@ -809,6 +749,6 @@ function parsePackageVersions(stdout: string, packageName: string): readonly Rel
     .reverse()
     .map((version) => ({
       version,
-      packageSpec: packageSpec(packageName, version)
+      packageSpec: packageSpec(packageName, version),
     }));
 }

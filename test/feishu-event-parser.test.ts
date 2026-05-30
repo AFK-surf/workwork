@@ -1,23 +1,20 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  parseFeishuReceiveMessageEvent,
-  routeFeishuReceiveMessageEvent
-} from "../src/services/feishu/feishu-event-parser.js";
+import { parseFeishuReceiveMessageEvent, routeFeishuReceiveMessageEvent } from "../src/services/feishu/feishu-event-parser.js";
 
 describe("parseFeishuReceiveMessageEvent", () => {
   it("parses group mentions as bot mention inputs", () => {
     const parsed = parseFeishuReceiveMessageEvent(
       {
         header: {
-          event_id: "evt_feishu_1"
+          event_id: "evt_feishu_1",
         },
         event: {
           sender: {
             sender_id: {
-              open_id: "ou_user"
+              open_id: "ou_user",
             },
-            sender_type: "user"
+            sender_type: "user",
           },
           message: {
             chat_id: "oc_group",
@@ -28,25 +25,25 @@ describe("parseFeishuReceiveMessageEvent", () => {
             create_time: "1710000000000",
             message_type: "text",
             content: JSON.stringify({
-              text: "@_user_1 please check this"
+              text: "@_user_1 please check this",
             }),
             mentions: [
               {
                 key: "@_user_1",
                 id: {
-                  open_id: "ou_bot"
+                  open_id: "ou_bot",
                 },
-                name: "Codex"
-              }
-            ]
-          }
-        }
+                name: "Codex",
+              },
+            ],
+          },
+        },
       },
       {
         botIdentity: {
-          openId: "ou_bot"
-        }
-      }
+          openId: "ou_bot",
+        },
+      },
     );
 
     expect(parsed?.route).toBe("bot_mention");
@@ -61,7 +58,7 @@ describe("parseFeishuReceiveMessageEvent", () => {
       messageCursor: "1710000000000",
       source: "bot_mention",
       text: "@_user_1 please check this",
-      mentionedUserIds: ["ou_bot"]
+      mentionedUserIds: ["ou_bot"],
     });
   });
 
@@ -69,9 +66,9 @@ describe("parseFeishuReceiveMessageEvent", () => {
     const parsed = parseFeishuReceiveMessageEvent({
       sender: {
         sender_id: {
-          open_id: "ou_user"
+          open_id: "ou_user",
         },
-        sender_type: "user"
+        sender_type: "user",
       },
       message: {
         chat_id: "oc_private",
@@ -79,9 +76,9 @@ describe("parseFeishuReceiveMessageEvent", () => {
         message_id: "om_msg",
         message_type: "text",
         content: JSON.stringify({
-          text: "hello"
-        })
-      }
+          text: "hello",
+        }),
+      },
     });
 
     expect(parsed).toBeNull();
@@ -91,9 +88,9 @@ describe("parseFeishuReceiveMessageEvent", () => {
     const routed = routeFeishuReceiveMessageEvent({
       sender: {
         sender_id: {
-          open_id: "ou_any_bot"
+          open_id: "ou_any_bot",
         },
-        sender_type: "bot"
+        sender_type: "bot",
       },
       message: {
         chat_id: "oc_group",
@@ -101,9 +98,9 @@ describe("parseFeishuReceiveMessageEvent", () => {
         message_id: "om_bot",
         message_type: "text",
         content: JSON.stringify({
-          text: "bot echo"
-        })
-      }
+          text: "bot echo",
+        }),
+      },
     });
 
     expect(routed).toMatchObject({
@@ -112,32 +109,35 @@ describe("parseFeishuReceiveMessageEvent", () => {
       conversationId: "oc_group",
       conversationKind: "group",
       messageId: "om_bot",
-      senderKind: "bot"
+      senderKind: "bot",
     });
   });
 
   it("ignores user sender messages that match the configured bot identity", () => {
-    const routed = routeFeishuReceiveMessageEvent({
-      sender: {
-        sender_id: {
-          open_id: "ou_bot"
+    const routed = routeFeishuReceiveMessageEvent(
+      {
+        sender: {
+          sender_id: {
+            open_id: "ou_bot",
+          },
+          sender_type: "user",
         },
-        sender_type: "user"
+        message: {
+          chat_id: "oc_group",
+          chat_type: "group",
+          message_id: "om_bot_user",
+          message_type: "text",
+          content: JSON.stringify({
+            text: "self echo",
+          }),
+        },
       },
-      message: {
-        chat_id: "oc_group",
-        chat_type: "group",
-        message_id: "om_bot_user",
-        message_type: "text",
-        content: JSON.stringify({
-          text: "self echo"
-        })
-      }
-    }, {
-      botIdentity: {
-        openId: "ou_bot"
-      }
-    });
+      {
+        botIdentity: {
+          openId: "ou_bot",
+        },
+      },
+    );
 
     expect(routed).toMatchObject({
       route: "ignored",
@@ -145,35 +145,38 @@ describe("parseFeishuReceiveMessageEvent", () => {
       conversationId: "oc_group",
       conversationKind: "group",
       messageId: "om_bot_user",
-      senderKind: "user"
+      senderKind: "user",
     });
   });
 
   it.each([
     ["user_id", { userId: "bot-user-id" }],
-    ["union_id", { unionId: "bot-union-id" }]
+    ["union_id", { unionId: "bot-union-id" }],
   ] as const)("ignores user sender messages that match the configured bot %s", (_, botIdentity) => {
-    const routed = routeFeishuReceiveMessageEvent({
-      sender: {
-        sender_id: {
-          open_id: "ou_different_sender",
-          user_id: "bot-user-id",
-          union_id: "bot-union-id"
+    const routed = routeFeishuReceiveMessageEvent(
+      {
+        sender: {
+          sender_id: {
+            open_id: "ou_different_sender",
+            user_id: "bot-user-id",
+            union_id: "bot-union-id",
+          },
+          sender_type: "user",
         },
-        sender_type: "user"
+        message: {
+          chat_id: "oc_group",
+          chat_type: "group",
+          message_id: "om_bot_user_alt_identity",
+          message_type: "text",
+          content: JSON.stringify({
+            text: "self echo through alternate identity",
+          }),
+        },
       },
-      message: {
-        chat_id: "oc_group",
-        chat_type: "group",
-        message_id: "om_bot_user_alt_identity",
-        message_type: "text",
-        content: JSON.stringify({
-          text: "self echo through alternate identity"
-        })
-      }
-    }, {
-      botIdentity
-    });
+      {
+        botIdentity,
+      },
+    );
 
     expect(routed).toMatchObject({
       route: "ignored",
@@ -181,32 +184,35 @@ describe("parseFeishuReceiveMessageEvent", () => {
       conversationId: "oc_group",
       conversationKind: "group",
       messageId: "om_bot_user_alt_identity",
-      senderKind: "user"
+      senderKind: "user",
     });
   });
 
   it("ignores app sender messages as self messages", () => {
-    const routed = routeFeishuReceiveMessageEvent({
-      sender: {
-        sender_id: {
-          app_id: "cli-test"
+    const routed = routeFeishuReceiveMessageEvent(
+      {
+        sender: {
+          sender_id: {
+            app_id: "cli-test",
+          },
+          sender_type: "app",
         },
-        sender_type: "app"
+        message: {
+          chat_id: "oc_group",
+          chat_type: "group",
+          message_id: "om_app",
+          message_type: "text",
+          content: JSON.stringify({
+            text: "app echo",
+          }),
+        },
       },
-      message: {
-        chat_id: "oc_group",
-        chat_type: "group",
-        message_id: "om_app",
-        message_type: "text",
-        content: JSON.stringify({
-          text: "app echo"
-        })
-      }
-    }, {
-      botIdentity: {
-        appId: "cli-test"
-      }
-    });
+      {
+        botIdentity: {
+          appId: "cli-test",
+        },
+      },
+    );
 
     expect(routed).toMatchObject({
       route: "ignored",
@@ -214,7 +220,7 @@ describe("parseFeishuReceiveMessageEvent", () => {
       conversationId: "oc_group",
       conversationKind: "group",
       messageId: "om_app",
-      senderKind: "app"
+      senderKind: "app",
     });
   });
 
@@ -222,9 +228,9 @@ describe("parseFeishuReceiveMessageEvent", () => {
     const parsed = parseFeishuReceiveMessageEvent({
       sender: {
         sender_id: {
-          open_id: "ou_user"
+          open_id: "ou_user",
         },
-        sender_type: "user"
+        sender_type: "user",
       },
       message: {
         chat_id: "oc_group",
@@ -236,9 +242,9 @@ describe("parseFeishuReceiveMessageEvent", () => {
         create_time: "1710000001000",
         message_type: "text",
         content: JSON.stringify({
-          text: "follow up"
-        })
-      }
+          text: "follow up",
+        }),
+      },
     });
 
     expect(parsed?.route).toBe("thread_reply");
@@ -246,7 +252,7 @@ describe("parseFeishuReceiveMessageEvent", () => {
       rootMessageId: "om_root",
       parentMessageId: "om_root",
       platformThreadId: "omt_thread",
-      source: "thread_reply"
+      source: "thread_reply",
     });
   });
 
@@ -254,9 +260,9 @@ describe("parseFeishuReceiveMessageEvent", () => {
     const parsed = parseFeishuReceiveMessageEvent({
       sender: {
         sender_id: {
-          open_id: "ou_user"
+          open_id: "ou_user",
         },
-        sender_type: "user"
+        sender_type: "user",
       },
       message: {
         chat_id: "oc_group",
@@ -267,9 +273,9 @@ describe("parseFeishuReceiveMessageEvent", () => {
         create_time: "1710000001001",
         message_type: "text",
         content: JSON.stringify({
-          text: "follow up without root id"
-        })
-      }
+          text: "follow up without root id",
+        }),
+      },
     });
 
     expect(parsed?.route).toBe("thread_reply");
@@ -277,7 +283,7 @@ describe("parseFeishuReceiveMessageEvent", () => {
       rootMessageId: "om_root",
       parentMessageId: "om_root",
       platformThreadId: "omt_thread",
-      source: "thread_reply"
+      source: "thread_reply",
     });
   });
 
@@ -285,9 +291,9 @@ describe("parseFeishuReceiveMessageEvent", () => {
     const richText = parseFeishuReceiveMessageEvent({
       sender: {
         sender_id: {
-          open_id: "ou_user"
+          open_id: "ou_user",
         },
-        sender_type: "user"
+        sender_type: "user",
       },
       message: {
         chat_id: "oc_group",
@@ -296,25 +302,25 @@ describe("parseFeishuReceiveMessageEvent", () => {
         message_type: "post",
         content: JSON.stringify({
           title: "Status",
-          content: [[{ tag: "text", text: "Build passed" }]]
-        })
-      }
+          content: [[{ tag: "text", text: "Build passed" }]],
+        }),
+      },
     });
 
     expect(richText?.input.format).toBe("rich_text");
     expect(richText?.input.text).toContain("Build passed");
     expect(richText?.input.rawMessage).toEqual(
       expect.objectContaining({
-        message_id: "om_post"
-      })
+        message_id: "om_post",
+      }),
     );
 
     const card = parseFeishuReceiveMessageEvent({
       sender: {
         sender_id: {
-          open_id: "ou_user"
+          open_id: "ou_user",
         },
-        sender_type: "user"
+        sender_type: "user",
       },
       message: {
         chat_id: "oc_group",
@@ -322,9 +328,9 @@ describe("parseFeishuReceiveMessageEvent", () => {
         message_id: "om_card",
         message_type: "interactive",
         content: JSON.stringify({
-          title: "Deploy"
-        })
-      }
+          title: "Deploy",
+        }),
+      },
     });
 
     expect(card?.input.format).toBe("card");
@@ -335,9 +341,9 @@ describe("parseFeishuReceiveMessageEvent", () => {
     const image = parseFeishuReceiveMessageEvent({
       sender: {
         sender_id: {
-          open_id: "ou_user"
+          open_id: "ou_user",
         },
-        sender_type: "user"
+        sender_type: "user",
       },
       message: {
         chat_id: "oc_group",
@@ -345,9 +351,9 @@ describe("parseFeishuReceiveMessageEvent", () => {
         message_id: "om_image",
         message_type: "image",
         content: JSON.stringify({
-          image_key: "img_v2_key"
-        })
-      }
+          image_key: "img_v2_key",
+        }),
+      },
     });
 
     expect(image?.input.attachments).toEqual([
@@ -356,16 +362,16 @@ describe("parseFeishuReceiveMessageEvent", () => {
         id: "img_v2_key",
         kind: "image",
         messageId: "om_image",
-        resourceKey: "img_v2_key"
-      })
+        resourceKey: "img_v2_key",
+      }),
     ]);
 
     const file = parseFeishuReceiveMessageEvent({
       sender: {
         sender_id: {
-          open_id: "ou_user"
+          open_id: "ou_user",
         },
-        sender_type: "user"
+        sender_type: "user",
       },
       message: {
         chat_id: "oc_group",
@@ -374,17 +380,17 @@ describe("parseFeishuReceiveMessageEvent", () => {
         message_type: "file",
         content: JSON.stringify({
           file_key: "file_v2_key",
-          file_name: "report.pdf"
-        })
-      }
+          file_name: "report.pdf",
+        }),
+      },
     });
 
     expect(file?.input.attachments).toEqual([
       expect.objectContaining({
         id: "file_v2_key",
         kind: "file",
-        name: "report.pdf"
-      })
+        name: "report.pdf",
+      }),
     ]);
   });
 });

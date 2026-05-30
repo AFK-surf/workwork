@@ -1,67 +1,48 @@
 {
   "ok": true,
-  "checkedAt": "2026-05-30T10:22:44.793Z",
+  "checkedAt": "2026-05-30T10:42:03.160Z",
   "checks": [
     {
       "id": "scope.china_feishu",
       "label": "China Feishu is the configured Feishu-family target",
       "required": true,
       "status": "pass",
-      "evidence": [
-        "FEISHU_DOMAIN=feishu(default)"
-      ]
+      "evidence": ["FEISHU_DOMAIN=feishu(default)"]
     },
     {
       "id": "runtime.feishu_enabled",
       "label": "Feishu is enabled in the broker runtime",
       "required": true,
       "status": "pass",
-      "evidence": [
-        "platforms.feishu.enabled=true"
-      ]
+      "evidence": ["platforms.feishu.enabled=true"]
     },
     {
       "id": "runtime.feishu_ready",
       "label": "Feishu reports ready in the shared runtime",
       "required": true,
       "status": "pass",
-      "evidence": [
-        "platforms.feishu.state=ready"
-      ]
+      "evidence": ["platforms.feishu.state=ready"]
     },
     {
       "id": "runtime.slack_ready",
       "label": "Slack still reports ready in the shared runtime",
       "required": true,
       "status": "pass",
-      "evidence": [
-        "platforms.slack.state=ready"
-      ]
+      "evidence": ["platforms.slack.state=ready"]
     },
     {
       "id": "slack.socket_mode_ready",
       "label": "Slack Socket Mode reached ready state",
       "required": true,
       "status": "pass",
-      "evidence": [
-        "platforms.slack.state=ready",
-        "connection.mode=socket_mode",
-        "connection.connected=true",
-        "connection.lastConnectedAt=2026-05-30T09:18:23.236Z",
-        "chat.platform.ready slack socket_mode",
-        "chat.platform.ready slack socket_mode",
-        "chat.platform.ready slack socket_mode"
-      ]
+      "evidence": ["platforms.slack.state=ready", "connection.mode=socket_mode", "connection.connected=true", "connection.lastConnectedAt=2026-05-30T09:18:23.236Z", "chat.platform.ready slack socket_mode", "chat.platform.ready slack socket_mode", "chat.platform.ready slack socket_mode"]
     },
     {
       "id": "slack.message_roundtrip",
       "label": "Slack still receives an event and posts a reply in the shared runtime",
       "required": true,
       "status": "pass",
-      "evidence": [
-        "chat.message.accepted slack C123:888.220 C123 888.220 888.221 app_mention text",
-        "chat.outbound.posted slack C123:888.220 C123 888.220 9000000002.000000"
-      ]
+      "evidence": ["chat.message.accepted slack C123:888.220 C123 888.220 888.221 app_mention text", "chat.outbound.posted slack C123:888.220 C123 888.220 9000000002.000000"]
     },
     {
       "id": "admin.platform_health_contract",
@@ -82,27 +63,14 @@
       "label": "Feishu long connection reached ready state",
       "required": true,
       "status": "pass",
-      "evidence": [
-        "platforms.feishu.state=ready",
-        "connection.mode=long_connection",
-        "connection.connected=true",
-        "connection.lastConnectedAt=2026-05-30T09:18:18.720Z",
-        "chat.platform.ready feishu long_connection",
-        "chat.platform.ready feishu long_connection",
-        "chat.platform.ready feishu long_connection"
-      ]
+      "evidence": ["platforms.feishu.state=ready", "connection.mode=long_connection", "connection.connected=true", "connection.lastConnectedAt=2026-05-30T09:18:18.720Z", "chat.platform.ready feishu long_connection", "chat.platform.ready feishu long_connection", "chat.platform.ready feishu long_connection"]
     },
     {
       "id": "feishu.all_message_verified",
       "label": "All-group-message delivery is verified for production parity",
       "required": true,
       "status": "pass",
-      "evidence": [
-        "groupMessageMode=all",
-        "allMessageDeliveryVerified=true",
-        "sameSessionNonAtFollowup=true",
-        "permission.im:message.group_msg=verified"
-      ]
+      "evidence": ["groupMessageMode=all", "allMessageDeliveryVerified=true", "sameSessionNonAtFollowup=true", "permission.im:message.group_msg=verified"]
     },
     {
       "id": "feishu.group_at_created_session",
@@ -138,9 +106,7 @@
       "label": "A Feishu bot/app/self sender event was ignored before dispatch",
       "required": true,
       "status": "pass",
-      "evidence": [
-        "chat.message.ignored feishu long_connection feishu:b2NfZmY2M2ZmMzMyZDI2NWYyZmEwMmJmMDBiMzMzMzNiYmY:b21feDEwMGI2ZTllMzJjNmU4YjBjMjJiZGI5NmM2OWE5YWU oc_ff63ff332d265f2fa02bf00b33333bbf om_x100b6e9e32c6e8b0c22bdb96c69a9ae om_controlled_self ignored_self ignored_self"
-      ]
+      "evidence": ["chat.message.ignored feishu long_connection feishu:b2NfZmY2M2ZmMzMyZDI2NWYyZmEwMmJmMDBiMzMzMzNiYmY:b21feDEwMGI2ZTllMzJjNmU4YjBjMjJiZGI5NmM2OWE5YWU oc_ff63ff332d265f2fa02bf00b33333bbf om_x100b6e9e32c6e8b0c22bdb96c69a9ae om_controlled_self ignored_self ignored_self"]
     },
     {
       "id": "feishu.final_reply_posted",
@@ -284,9 +250,7 @@
       "label": "Observed Feishu logs satisfy the RFC required field matrix",
       "required": true,
       "status": "pass",
-      "evidence": [
-        "all observed Feishu RFC log events include their required fields"
-      ]
+      "evidence": ["all observed Feishu RFC log events include their required fields"]
     },
     {
       "id": "observability.behavior_coverage",
@@ -309,9 +273,7 @@
       "label": "Feishu info/warn logs do not expose raw body or secret fields",
       "required": true,
       "status": "pass",
-      "evidence": [
-        "no forbidden raw body/secret field names found in Feishu info/warn log metadata"
-      ]
+      "evidence": ["no forbidden raw body/secret field names found in Feishu info/warn log metadata"]
     },
     {
       "id": "setup.console_labels_recorded",

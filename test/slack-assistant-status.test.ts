@@ -15,22 +15,22 @@ describe("SlackAssistantStatusController", () => {
       slackApi: {
         setAssistantThreadStatus,
         addReaction: vi.fn(),
-        removeReaction: vi.fn()
+        removeReaction: vi.fn(),
       } as never,
       channelId: "C123",
-      threadTs: "111.222"
+      threadTs: "111.222",
     });
 
     controller.handleAssistantState({
       phase: "execution",
-      tools: [{ tool_name: "read" }]
+      tools: [{ tool_name: "read" }],
     });
 
     await vi.waitFor(() => {
       expect(setAssistantThreadStatus).toHaveBeenCalledWith({
         channelId: "C123",
         threadTs: "111.222",
-        status: "Reading files..."
+        status: "Reading files...",
       });
     });
   });
@@ -42,40 +42,38 @@ describe("SlackAssistantStatusController", () => {
       slackApi: {
         setAssistantThreadStatus,
         addReaction: vi.fn(),
-        removeReaction: vi.fn()
+        removeReaction: vi.fn(),
       } as never,
       channelId: "C123",
-      threadTs: "111.222"
+      threadTs: "111.222",
     });
 
     controller.handleToolStart({
       id: "call-1",
-      name: "apply_patch"
+      name: "apply_patch",
     });
 
     await vi.waitFor(() => {
       expect(setAssistantThreadStatus).toHaveBeenCalledWith({
         channelId: "C123",
         threadTs: "111.222",
-        status: "Updating files..."
+        status: "Updating files...",
       });
     });
   });
 
   it("retries the same status after a transient Slack API failure", async () => {
     vi.useFakeTimers();
-    const setAssistantThreadStatus = vi.fn()
-      .mockRejectedValueOnce(new Error("Slack API request failed (500 Internal Server Error) for assistant.threads.setStatus"))
-      .mockResolvedValueOnce(undefined);
+    const setAssistantThreadStatus = vi.fn().mockRejectedValueOnce(new Error("Slack API request failed (500 Internal Server Error) for assistant.threads.setStatus")).mockResolvedValueOnce(undefined);
 
     const controller = new SlackAssistantStatusController({
       slackApi: {
         setAssistantThreadStatus,
         addReaction: vi.fn(),
-        removeReaction: vi.fn()
+        removeReaction: vi.fn(),
       } as never,
       channelId: "C123",
-      threadTs: "111.222"
+      threadTs: "111.222",
     });
 
     controller.setThinking();
@@ -101,10 +99,10 @@ describe("SlackAssistantStatusController", () => {
           throw new Error("Slack API error for assistant.threads.setStatus: unknown_method");
         }),
         addReaction,
-        removeReaction
+        removeReaction,
       } as never,
       channelId: "C123",
-      threadTs: "111.222"
+      threadTs: "111.222",
     });
 
     controller.setThinking();
@@ -113,7 +111,7 @@ describe("SlackAssistantStatusController", () => {
       expect(addReaction).toHaveBeenCalledWith({
         channelId: "C123",
         timestamp: "111.222",
-        name: "eyes"
+        name: "eyes",
       });
     });
 
@@ -123,7 +121,7 @@ describe("SlackAssistantStatusController", () => {
       expect(removeReaction).toHaveBeenCalledWith({
         channelId: "C123",
         timestamp: "111.222",
-        name: "eyes"
+        name: "eyes",
       });
     });
   });
@@ -136,21 +134,21 @@ describe("SlackAssistantStatusController", () => {
       slackApi: {
         setAssistantThreadStatus,
         addReaction: vi.fn(),
-        removeReaction: vi.fn()
+        removeReaction: vi.fn(),
       } as never,
       channelId: "C123",
-      threadTs: "111.222"
+      threadTs: "111.222",
     });
 
     controller.handleToolStart({
       id: "stale-tool",
-      name: "apply_patch"
+      name: "apply_patch",
     });
     await vi.waitFor(() => {
       expect(setAssistantThreadStatus).toHaveBeenNthCalledWith(1, {
         channelId: "C123",
         threadTs: "111.222",
-        status: "Updating files..."
+        status: "Updating files...",
       });
     });
 
@@ -159,32 +157,32 @@ describe("SlackAssistantStatusController", () => {
       expect(setAssistantThreadStatus).toHaveBeenNthCalledWith(2, {
         channelId: "C123",
         threadTs: "111.222",
-        status: ""
+        status: "",
       });
     });
 
     controller.handleToolStart({
       id: "fresh-tool",
-      name: "search_query"
+      name: "search_query",
     });
     await vi.advanceTimersByTimeAsync(2_000);
     await vi.waitFor(() => {
       expect(setAssistantThreadStatus).toHaveBeenNthCalledWith(3, {
         channelId: "C123",
         threadTs: "111.222",
-        status: "Searching the web..."
+        status: "Searching the web...",
       });
     });
 
     controller.handleToolEnd({
-      id: "fresh-tool"
+      id: "fresh-tool",
     });
     await vi.advanceTimersByTimeAsync(2_000);
     await vi.waitFor(() => {
       expect(setAssistantThreadStatus).toHaveBeenNthCalledWith(4, {
         channelId: "C123",
         threadTs: "111.222",
-        status: "Thinking..."
+        status: "Thinking...",
       });
     });
   });

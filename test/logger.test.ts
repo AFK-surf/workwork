@@ -15,7 +15,7 @@ describe("logger raw payload limits", () => {
       rawSlackEvents: false,
       rawFeishuEvents: false,
       rawCodexRpc: false,
-      rawHttpRequests: false
+      rawHttpRequests: false,
     });
     await Promise.all(tempDirs.splice(0).map((directory) => fs.rm(directory, { force: true, recursive: true })));
   });
@@ -30,11 +30,11 @@ describe("logger raw payload limits", () => {
       rawFeishuEvents: false,
       rawCodexRpc: false,
       rawHttpRequests: false,
-      rawMaxBytes: 120
+      rawMaxBytes: 120,
     });
 
     logger.raw("slack-events", {
-      text: "x".repeat(1_000)
+      text: "x".repeat(1_000),
     });
     await flushLoggerForTests();
 

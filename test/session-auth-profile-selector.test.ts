@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  evaluateAuthProfile,
-  selectBestAuthProfile
-} from "../src/services/session-auth-profile-selector.js";
+import { evaluateAuthProfile, selectBestAuthProfile } from "../src/services/session-auth-profile-selector.js";
 import type { AuthProfileSummary, AuthProfilesStatus } from "../src/services/auth-profile-service.js";
 
 describe("session auth profile selector", () => {
@@ -13,19 +10,19 @@ describe("session auth profile selector", () => {
     const status = profileStatus([
       profile("low", {
         primaryUsed: 5,
-        secondaryUsed: 90
+        secondaryUsed: 90,
       }),
       profile("best", {
         primaryUsed: 25,
-        secondaryUsed: 20
+        secondaryUsed: 20,
       }),
       profile("invalid", {
-        rateLimitsOk: false
+        rateLimitsOk: false,
       }),
       profile("exhausted", {
         primaryUsed: 100,
-        secondaryUsed: 1
-      })
+        secondaryUsed: 1,
+      }),
     ]);
 
     expect(selectBestAuthProfile(status, { now })?.name).toBe("best");
@@ -35,12 +32,12 @@ describe("session auth profile selector", () => {
     const status = profileStatus([
       profile("bound", {
         primaryUsed: 60,
-        secondaryUsed: 50
+        secondaryUsed: 50,
       }),
       profile("bigger", {
         primaryUsed: 1,
-        secondaryUsed: 2
-      })
+        secondaryUsed: 2,
+      }),
     ]);
 
     expect(evaluateAuthProfile(status.profiles[0]!, { now }).usable).toBe(true);
@@ -54,13 +51,13 @@ describe("session auth profile selector", () => {
       profile("later-refresh", {
         primaryUsed: 0,
         secondaryUsed: 50,
-        secondaryResetsAt: sevenDays
+        secondaryResetsAt: sevenDays,
       }),
       profile("sooner-refresh", {
         primaryUsed: 0,
         secondaryUsed: 50,
-        secondaryResetsAt: oneDay
-      })
+        secondaryResetsAt: oneDay,
+      }),
     ]);
 
     const later = evaluateAuthProfile(status.profiles[0]!, { now });
@@ -74,38 +71,61 @@ describe("session auth profile selector", () => {
     const halfWeek = Math.floor((now.getTime() + 3.5 * 24 * 60 * 60 * 1000) / 1000);
     const fullWeek = Math.floor((now.getTime() + 7 * 24 * 60 * 60 * 1000) / 1000);
 
-    expect(evaluateAuthProfile(profile("full-week", {
-      primaryUsed: 0,
-      secondaryUsed: 0,
-      secondaryResetsAt: fullWeek
-    }), { now }).weightedWeeklyQuotaScore).toBeCloseTo(1);
-    expect(evaluateAuthProfile(profile("half-quota-half-week", {
-      primaryUsed: 0,
-      secondaryUsed: 50,
-      secondaryResetsAt: halfWeek
-    }), { now }).weightedWeeklyQuotaScore).toBeCloseTo(1);
-    expect(evaluateAuthProfile(profile("full-quota-half-week", {
-      primaryUsed: 0,
-      secondaryUsed: 0,
-      secondaryResetsAt: halfWeek
-    }), { now }).weightedWeeklyQuotaScore).toBeCloseTo(2);
+    expect(
+      evaluateAuthProfile(
+        profile("full-week", {
+          primaryUsed: 0,
+          secondaryUsed: 0,
+          secondaryResetsAt: fullWeek,
+        }),
+        { now },
+      ).weightedWeeklyQuotaScore,
+    ).toBeCloseTo(1);
+    expect(
+      evaluateAuthProfile(
+        profile("half-quota-half-week", {
+          primaryUsed: 0,
+          secondaryUsed: 50,
+          secondaryResetsAt: halfWeek,
+        }),
+        { now },
+      ).weightedWeeklyQuotaScore,
+    ).toBeCloseTo(1);
+    expect(
+      evaluateAuthProfile(
+        profile("full-quota-half-week", {
+          primaryUsed: 0,
+          secondaryUsed: 0,
+          secondaryResetsAt: halfWeek,
+        }),
+        { now },
+      ).weightedWeeklyQuotaScore,
+    ).toBeCloseTo(2);
   });
 
   it("marks a profile unavailable when either quota window is exhausted", () => {
-    expect(evaluateAuthProfile(profile("primary-empty", {
-      primaryUsed: 100,
-      secondaryUsed: 0
-    }))).toMatchObject({
+    expect(
+      evaluateAuthProfile(
+        profile("primary-empty", {
+          primaryUsed: 100,
+          secondaryUsed: 0,
+        }),
+      ),
+    ).toMatchObject({
       usable: false,
-      reason: "primary_quota_exhausted"
+      reason: "primary_quota_exhausted",
     });
 
-    expect(evaluateAuthProfile(profile("secondary-empty", {
-      primaryUsed: 0,
-      secondaryUsed: 100
-    }))).toMatchObject({
+    expect(
+      evaluateAuthProfile(
+        profile("secondary-empty", {
+          primaryUsed: 0,
+          secondaryUsed: 100,
+        }),
+      ),
+    ).toMatchObject({
       usable: false,
-      reason: "secondary_quota_exhausted"
+      reason: "secondary_quota_exhausted",
     });
   });
 });
@@ -114,7 +134,7 @@ function profileStatus(profiles: readonly AuthProfileSummary[]): AuthProfilesSta
   return {
     managedRoot: "/tmp/auth-profiles",
     profilesRoot: "/tmp/auth-profiles/docker/profiles",
-    profiles
+    profiles,
   };
 }
 
@@ -125,7 +145,7 @@ function profile(
     readonly secondaryUsed?: number | undefined;
     readonly secondaryResetsAt?: number | undefined;
     readonly rateLimitsOk?: boolean | undefined;
-  } = {}
+  } = {},
 ): AuthProfileSummary {
   const rateLimitsOk = options.rateLimitsOk ?? true;
   return {
@@ -138,9 +158,9 @@ function profile(
       account: {
         email: `${name}@example.com`,
         type: "chatgpt",
-        planType: "pro"
+        planType: "pro",
       },
-      requiresOpenaiAuth: false
+      requiresOpenaiAuth: false,
     },
     rateLimits: rateLimitsOk
       ? {
@@ -151,21 +171,21 @@ function profile(
             primary: {
               usedPercent: options.primaryUsed ?? 0,
               windowDurationMins: 300,
-              resetsAt: 1_779_000_000
+              resetsAt: 1_779_000_000,
             },
             secondary: {
               usedPercent: options.secondaryUsed ?? 0,
               windowDurationMins: 10_080,
-              resetsAt: options.secondaryResetsAt ?? 1_780_000_000
+              resetsAt: options.secondaryResetsAt ?? 1_780_000_000,
             },
             credits: null,
-            planType: "pro"
+            planType: "pro",
           },
-          rateLimitsByLimitId: {}
+          rateLimitsByLimitId: {},
         }
       : {
           ok: false,
-          error: "refresh_token_reused"
-        }
+          error: "refresh_token_reused",
+        },
   };
 }

@@ -3,30 +3,12 @@ import { URL } from "node:url";
 
 import type { AppConfig } from "../config.js";
 import { logger } from "../logger.js";
-import {
-  CHAT_FILE_SOURCE_FIELD_DESCRIPTIONS,
-  CHAT_INLINE_FILE_CONTENT_REQUIREMENT_MESSAGE,
-  CHAT_INLINE_FILE_FILENAME_REQUIREMENT_MESSAGE,
-  CHAT_PLATFORM_VALUES,
-  isNonEmptyBase64Content,
-  type ChatMessageFormat,
-  type ChatPlatform
-} from "../services/chat/chat-types.js";
+import { CHAT_FILE_SOURCE_FIELD_DESCRIPTIONS, CHAT_INLINE_FILE_CONTENT_REQUIREMENT_MESSAGE, CHAT_INLINE_FILE_FILENAME_REQUIREMENT_MESSAGE, CHAT_PLATFORM_VALUES, isNonEmptyBase64Content, type ChatMessageFormat, type ChatPlatform } from "../services/chat/chat-types.js";
 import type { SlackAgentBridge } from "../services/slack/slack-agent-bridge.js";
-import {
-  parseJsonLikeRequestField,
-  readJsonBody,
-  readPositiveIntegerQueryParam,
-  readString,
-  respondJson
-} from "./common.js";
+import { parseJsonLikeRequestField, readJsonBody, readPositiveIntegerQueryParam, readString, respondJson } from "./common.js";
 import { redactHttpRequestBody } from "./request-log-redaction.js";
 
-const CHAT_COORDINATE_REQUIRED_FIELDS = [
-  "platform",
-  "conversationId (alias: conversation_id)",
-  "rootMessageId (alias: root_message_id)"
-];
+const CHAT_COORDINATE_REQUIRED_FIELDS = ["platform", "conversationId (alias: conversation_id)", "rootMessageId (alias: root_message_id)"];
 
 export async function handleChatRequest(
   method: string,
@@ -36,7 +18,7 @@ export async function handleChatRequest(
   options: {
     readonly bridge: SlackAgentBridge;
     readonly config: AppConfig;
-  }
+  },
 ): Promise<boolean> {
   if (method === "GET" && url.pathname === "/chat/thread-history") {
     await handleChatThreadHistoryRequest(url, response, options);
@@ -67,7 +49,7 @@ async function handleChatThreadHistoryRequest(
   options: {
     readonly bridge: SlackAgentBridge;
     readonly config: AppConfig;
-  }
+  },
 ): Promise<void> {
   const platform = readPlatform(url.searchParams.get("platform"));
   const platformValue = url.searchParams.get("platform");
@@ -82,7 +64,7 @@ async function handleChatThreadHistoryRequest(
     respondJson(response, 400, {
       ok: false,
       error: "invalid_platform",
-      allowed: CHAT_PLATFORM_VALUES
+      allowed: CHAT_PLATFORM_VALUES,
     });
     return;
   }
@@ -91,7 +73,7 @@ async function handleChatThreadHistoryRequest(
     respondJson(response, 400, {
       ok: false,
       error: "missing_required_query",
-      required: CHAT_COORDINATE_REQUIRED_FIELDS
+      required: CHAT_COORDINATE_REQUIRED_FIELDS,
     });
     return;
   }
@@ -100,7 +82,7 @@ async function handleChatThreadHistoryRequest(
     respondJson(response, 400, {
       ok: false,
       error: "invalid_limit",
-      message: "limit must be a positive integer"
+      message: "limit must be a positive integer",
     });
     return;
   }
@@ -109,7 +91,7 @@ async function handleChatThreadHistoryRequest(
     respondJson(response, 400, {
       ok: false,
       error: "invalid_format",
-      allowed: ["json", "text"]
+      allowed: ["json", "text"],
     });
     return;
   }
@@ -121,7 +103,7 @@ async function handleChatThreadHistoryRequest(
       rootMessageId,
       beforeMessageId: url.searchParams.get("before_message_id") ?? url.searchParams.get("beforeMessageId") ?? undefined,
       beforeCursor: url.searchParams.get("before_cursor") ?? url.searchParams.get("beforeCursor") ?? undefined,
-      limit: parsedLimit
+      limit: parsedLimit,
     });
 
     if (responseFormat === "text") {
@@ -138,16 +120,14 @@ async function handleChatThreadHistoryRequest(
       returnedCount: result.messages.length,
       hasMore: result.hasMore,
       nextCursor: result.nextCursor,
-      maxLimit: platform === "slack"
-        ? options.config.slackHistoryApiMaxLimit
-        : options.config.feishuHistoryApiMaxLimit,
+      maxLimit: platform === "slack" ? options.config.slackHistoryApiMaxLimit : options.config.feishuHistoryApiMaxLimit,
       formattedText: result.formattedText,
-      messages: result.messages
+      messages: result.messages,
     });
   } catch (error) {
     respondJson(response, 500, {
       ok: false,
-      error: error instanceof Error ? error.message : String(error)
+      error: error instanceof Error ? error.message : String(error),
     });
   }
 }
@@ -157,7 +137,7 @@ async function handleChatPostMessageRequest(
   response: http.ServerResponse,
   options: {
     readonly bridge: SlackAgentBridge;
-  }
+  },
 ): Promise<void> {
   let body: Record<string, unknown>;
 
@@ -166,7 +146,7 @@ async function handleChatPostMessageRequest(
   } catch (error) {
     respondJson(response, 400, {
       ok: false,
-      error: error instanceof Error ? error.message : String(error)
+      error: error instanceof Error ? error.message : String(error),
     });
     return;
   }
@@ -179,22 +159,26 @@ async function handleChatPostMessageRequest(
   const reason = readString(body.reason) ?? readString(body.stop_reason);
   const format = readMessageFormat(body.format);
 
-  logger.raw("http-requests", {
-    method: "POST",
-    path: "/chat/post-message",
-    body: redactHttpRequestBody(body)
-  }, {
-    platform,
-    conversationId,
-    rootMessageId
-  });
+  logger.raw(
+    "http-requests",
+    {
+      method: "POST",
+      path: "/chat/post-message",
+      body: redactHttpRequestBody(body),
+    },
+    {
+      platform,
+      conversationId,
+      rootMessageId,
+    },
+  );
 
   if (!platform || !conversationId || !rootMessageId || !text) {
     if (isInvalidPlatformValue(body.platform)) {
       respondJson(response, 400, {
         ok: false,
         error: "invalid_platform",
-        allowed: CHAT_PLATFORM_VALUES
+        allowed: CHAT_PLATFORM_VALUES,
       });
       return;
     }
@@ -202,7 +186,7 @@ async function handleChatPostMessageRequest(
     respondJson(response, 400, {
       ok: false,
       error: "missing_required_body",
-      required: [...CHAT_COORDINATE_REQUIRED_FIELDS, "text"]
+      required: [...CHAT_COORDINATE_REQUIRED_FIELDS, "text"],
     });
     return;
   }
@@ -211,7 +195,7 @@ async function handleChatPostMessageRequest(
     respondJson(response, 400, {
       ok: false,
       error: "invalid_kind",
-      allowed: ["progress", "final", "block", "wait"]
+      allowed: ["progress", "final", "block", "wait"],
     });
     return;
   }
@@ -220,7 +204,7 @@ async function handleChatPostMessageRequest(
     respondJson(response, 400, {
       ok: false,
       error: "missing_reason",
-      required: ["reason"]
+      required: ["reason"],
     });
     return;
   }
@@ -229,20 +213,17 @@ async function handleChatPostMessageRequest(
     respondJson(response, 400, {
       ok: false,
       error: "invalid_format",
-      allowed: ["text", "markdown", "rich_text", "card"]
+      allowed: ["text", "markdown", "rich_text", "card"],
     });
     return;
   }
 
-  const richTextResult = parseJsonLikeRequestField(
-    body.rich_text ?? body.richText,
-    "richText (alias: rich_text)"
-  );
+  const richTextResult = parseJsonLikeRequestField(body.rich_text ?? body.richText, "richText (alias: rich_text)");
   if (!richTextResult.ok) {
     respondJson(response, 400, {
       ok: false,
       error: "invalid_json_field",
-      field: richTextResult.field
+      field: richTextResult.field,
     });
     return;
   }
@@ -252,7 +233,7 @@ async function handleChatPostMessageRequest(
     respondJson(response, 400, {
       ok: false,
       error: "invalid_json_field",
-      field: cardResult.field
+      field: cardResult.field,
     });
     return;
   }
@@ -267,13 +248,13 @@ async function handleChatPostMessageRequest(
       reason,
       format,
       richText: richTextResult.value,
-      card: cardResult.value
+      card: cardResult.value,
     });
     respondJson(response, 200, { ok: true });
   } catch (error) {
     respondJson(response, 500, {
       ok: false,
-      error: error instanceof Error ? error.message : String(error)
+      error: error instanceof Error ? error.message : String(error),
     });
   }
 }
@@ -283,7 +264,7 @@ async function handleChatPostStateRequest(
   response: http.ServerResponse,
   options: {
     readonly bridge: SlackAgentBridge;
-  }
+  },
 ): Promise<void> {
   let body: Record<string, unknown>;
 
@@ -292,7 +273,7 @@ async function handleChatPostStateRequest(
   } catch (error) {
     respondJson(response, 400, {
       ok: false,
-      error: error instanceof Error ? error.message : String(error)
+      error: error instanceof Error ? error.message : String(error),
     });
     return;
   }
@@ -303,22 +284,26 @@ async function handleChatPostStateRequest(
   const kind = readString(body.kind);
   const reason = readString(body.reason) ?? readString(body.stop_reason);
 
-  logger.raw("http-requests", {
-    method: "POST",
-    path: "/chat/post-state",
-    body: redactHttpRequestBody(body)
-  }, {
-    platform,
-    conversationId,
-    rootMessageId
-  });
+  logger.raw(
+    "http-requests",
+    {
+      method: "POST",
+      path: "/chat/post-state",
+      body: redactHttpRequestBody(body),
+    },
+    {
+      platform,
+      conversationId,
+      rootMessageId,
+    },
+  );
 
   if (!platform || !conversationId || !rootMessageId || !kind) {
     if (isInvalidPlatformValue(body.platform)) {
       respondJson(response, 400, {
         ok: false,
         error: "invalid_platform",
-        allowed: CHAT_PLATFORM_VALUES
+        allowed: CHAT_PLATFORM_VALUES,
       });
       return;
     }
@@ -326,7 +311,7 @@ async function handleChatPostStateRequest(
     respondJson(response, 400, {
       ok: false,
       error: "missing_required_body",
-      required: [...CHAT_COORDINATE_REQUIRED_FIELDS, "kind"]
+      required: [...CHAT_COORDINATE_REQUIRED_FIELDS, "kind"],
     });
     return;
   }
@@ -335,7 +320,7 @@ async function handleChatPostStateRequest(
     respondJson(response, 400, {
       ok: false,
       error: "invalid_kind",
-      allowed: ["wait", "block", "final"]
+      allowed: ["wait", "block", "final"],
     });
     return;
   }
@@ -344,7 +329,7 @@ async function handleChatPostStateRequest(
     respondJson(response, 400, {
       ok: false,
       error: "missing_reason",
-      required: ["reason"]
+      required: ["reason"],
     });
     return;
   }
@@ -355,13 +340,13 @@ async function handleChatPostStateRequest(
       conversationId,
       rootMessageId,
       kind,
-      reason
+      reason,
     });
     respondJson(response, 200, { ok: true });
   } catch (error) {
     respondJson(response, 500, {
       ok: false,
-      error: error instanceof Error ? error.message : String(error)
+      error: error instanceof Error ? error.message : String(error),
     });
   }
 }
@@ -371,7 +356,7 @@ async function handleChatPostFileRequest(
   response: http.ServerResponse,
   options: {
     readonly bridge: SlackAgentBridge;
-  }
+  },
 ): Promise<void> {
   let body: Record<string, unknown>;
 
@@ -380,7 +365,7 @@ async function handleChatPostFileRequest(
   } catch (error) {
     respondJson(response, 400, {
       ok: false,
-      error: error instanceof Error ? error.message : String(error)
+      error: error instanceof Error ? error.message : String(error),
     });
     return;
   }
@@ -392,22 +377,26 @@ async function handleChatPostFileRequest(
   const contentBase64 = readString(body.content_base64) ?? readString(body.contentBase64);
   const filename = readString(body.filename);
 
-  logger.raw("http-requests", {
-    method: "POST",
-    path: "/chat/post-file",
-    body: redactHttpRequestBody(body)
-  }, {
-    platform,
-    conversationId,
-    rootMessageId
-  });
+  logger.raw(
+    "http-requests",
+    {
+      method: "POST",
+      path: "/chat/post-file",
+      body: redactHttpRequestBody(body),
+    },
+    {
+      platform,
+      conversationId,
+      rootMessageId,
+    },
+  );
 
   if (!platform || !conversationId || !rootMessageId) {
     if (isInvalidPlatformValue(body.platform)) {
       respondJson(response, 400, {
         ok: false,
         error: "invalid_platform",
-        allowed: CHAT_PLATFORM_VALUES
+        allowed: CHAT_PLATFORM_VALUES,
       });
       return;
     }
@@ -415,7 +404,7 @@ async function handleChatPostFileRequest(
     respondJson(response, 400, {
       ok: false,
       error: "missing_required_body",
-      required: CHAT_COORDINATE_REQUIRED_FIELDS
+      required: CHAT_COORDINATE_REQUIRED_FIELDS,
     });
     return;
   }
@@ -424,7 +413,7 @@ async function handleChatPostFileRequest(
     respondJson(response, 400, {
       ok: false,
       error: "provide_exactly_one_file_source",
-      required: CHAT_FILE_SOURCE_FIELD_DESCRIPTIONS
+      required: CHAT_FILE_SOURCE_FIELD_DESCRIPTIONS,
     });
     return;
   }
@@ -434,7 +423,7 @@ async function handleChatPostFileRequest(
       ok: false,
       error: "missing_required_body",
       message: CHAT_INLINE_FILE_FILENAME_REQUIREMENT_MESSAGE,
-      required: ["filename"]
+      required: ["filename"],
     });
     return;
   }
@@ -444,7 +433,7 @@ async function handleChatPostFileRequest(
       ok: false,
       error: "invalid_content_base64",
       message: CHAT_INLINE_FILE_CONTENT_REQUIREMENT_MESSAGE,
-      required: ["contentBase64 (alias: content_base64)"]
+      required: ["contentBase64 (alias: content_base64)"],
     });
     return;
   }
@@ -461,16 +450,16 @@ async function handleChatPostFileRequest(
       initialComment: readString(body.initial_comment) ?? readString(body.initialComment),
       altText: readString(body.alt_text) ?? readString(body.altText),
       snippetType: readString(body.snippet_type) ?? readString(body.snippetType),
-      contentType: readString(body.content_type) ?? readString(body.contentType)
+      contentType: readString(body.content_type) ?? readString(body.contentType),
     });
     respondJson(response, 200, {
       ok: true,
-      file
+      file,
     });
   } catch (error) {
     respondJson(response, 500, {
       ok: false,
-      error: error instanceof Error ? error.message : String(error)
+      error: error instanceof Error ? error.message : String(error),
     });
   }
 }
@@ -484,9 +473,7 @@ function isInvalidPlatformValue(value: unknown): boolean {
 }
 
 function readMessageFormat(value: unknown): ChatMessageFormat | undefined {
-  return value === "text" || value === "markdown" || value === "rich_text" || value === "card"
-    ? value
-    : undefined;
+  return value === "text" || value === "markdown" || value === "rich_text" || value === "card" ? value : undefined;
 }
 
 function readHistoryResponseFormat(value: unknown): "json" | "text" | undefined {

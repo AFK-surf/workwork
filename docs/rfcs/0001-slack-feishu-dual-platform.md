@@ -19,23 +19,23 @@ Non-negotiables:
 
 ## Progressive Reading Path
 
-| Reader need | Read next | Stop when |
-| --- | --- | --- |
-| Approve direction | This file | Non-negotiables and ship blockers are acceptable. |
-| Review architecture | [Architecture](0001-slack-feishu-dual-platform/architecture.md) | Session identity, routing, content, and isolation are clear. |
-| Implement a slice | [Implementation](0001-slack-feishu-dual-platform/implementation.md) | You have the phase, red test, and evidence target. |
-| Debug or audit logs | [Observability](0001-slack-feishu-dual-platform/observability.md) | Required events, fields, and leak rules are clear. |
-| Verify Feishu setup | [Permissions](0001-slack-feishu-dual-platform/permissions.md) | Permission rationale and real-smoke proof are clear. |
-| Decide whether to ship | [Review gates](0001-slack-feishu-dual-platform/review-gates.md) | Approval, MVP, and completion checklists pass. |
+| Reader need            | Read next                                                           | Stop when                                                    |
+| ---------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------ |
+| Approve direction      | This file                                                           | Non-negotiables and ship blockers are acceptable.            |
+| Review architecture    | [Architecture](0001-slack-feishu-dual-platform/architecture.md)     | Session identity, routing, content, and isolation are clear. |
+| Implement a slice      | [Implementation](0001-slack-feishu-dual-platform/implementation.md) | You have the phase, red test, and evidence target.           |
+| Debug or audit logs    | [Observability](0001-slack-feishu-dual-platform/observability.md)   | Required events, fields, and leak rules are clear.           |
+| Verify Feishu setup    | [Permissions](0001-slack-feishu-dual-platform/permissions.md)       | Permission rationale and real-smoke proof are clear.         |
+| Decide whether to ship | [Review gates](0001-slack-feishu-dual-platform/review-gates.md)     | Approval, MVP, and completion checklists pass.               |
 
 ## Decision Snapshot
 
-| Question | Answer |
-| --- | --- |
-| First milestone | Feishu group text MVP: @bot starts/resumes a Codex session, replies post back, Slack still works. |
-| Why all group messages | Active Codex sessions often need non-@ follow-ups. Without `im:message.group_msg`, Feishu is explicitly degraded to `at_only`. |
-| What can wait | Polished rich/card UX, full file transfer rollout, and Feishu card-based co-author confirmation. Raw payload preservation cannot wait. |
-| How PRs stay safe | Every slice names RED, GREEN, OBSERVE, and REGRESSION evidence. |
+| Question               | Answer                                                                                                                                 |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| First milestone        | Feishu group text MVP: @bot starts/resumes a Codex session, replies post back, Slack still works.                                      |
+| Why all group messages | Active Codex sessions often need non-@ follow-ups. Without `im:message.group_msg`, Feishu is explicitly degraded to `at_only`.         |
+| What can wait          | Polished rich/card UX, full file transfer rollout, and Feishu card-based co-author confirmation. Raw payload preservation cannot wait. |
+| How PRs stay safe      | Every slice names RED, GREEN, OBSERVE, and REGRESSION evidence.                                                                        |
 
 ## Ship Blockers
 

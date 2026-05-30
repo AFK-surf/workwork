@@ -25,7 +25,7 @@ export function configureServiceLogger(config: AppConfig): void {
     rawFeishuEvents: config.logRawFeishuEvents,
     rawCodexRpc: config.logRawCodexRpc,
     rawHttpRequests: config.logRawHttpRequests,
-    rawMaxBytes: config.logRawMaxBytes
+    rawMaxBytes: config.logRawMaxBytes,
   });
 }
 
@@ -36,12 +36,12 @@ export function createSessionServices(config: AppConfig): {
   const stateStore = new StateStore(config.stateDir, config.sessionsRoot);
   const sessions = new SessionManager({
     stateStore,
-    sessionsRoot: config.sessionsRoot
+    sessionsRoot: config.sessionsRoot,
   });
 
   return {
     stateStore,
-    sessions
+    sessions,
   };
 }
 
@@ -49,13 +49,13 @@ export function createSlackApi(config: AppConfig): SlackApi {
   return new SlackApi({
     baseUrl: config.slackApiBaseUrl,
     appToken: config.slackAppToken,
-    botToken: config.slackBotToken
+    botToken: config.slackBotToken,
   });
 }
 
 export async function createGitHubAuthorMappings(config: AppConfig): Promise<GitHubAuthorMappingService> {
   const mappings = new GitHubAuthorMappingService({
-    stateDir: config.stateDir
+    stateDir: config.stateDir,
   });
   await mappings.load();
   return mappings;
@@ -67,7 +67,7 @@ export async function createGitHubPrIdentity(config: AppConfig): Promise<GitHubP
     defaultGitHubLogin: config.defaultGitHubLogin,
     defaultGitHubToken: config.defaultGitHubToken,
     githubApiBaseUrl: config.githubApiBaseUrl,
-    githubOAuthScopes: config.githubOAuthScopes
+    githubOAuthScopes: config.githubOAuthScopes,
   });
   await identities.load();
   return identities;
@@ -90,27 +90,22 @@ export function createCodexBroker(config: AppConfig): CodexBroker {
     geminiHttpProxy: config.geminiHttpProxy,
     geminiHttpsProxy: config.geminiHttpsProxy,
     geminiAllProxy: config.geminiAllProxy,
-    openAiApiKey: config.codexOpenAiApiKey
+    openAiApiKey: config.codexOpenAiApiKey,
   });
 }
 
-export function createAgentRuntime(options: {
-  readonly config: AppConfig;
-  readonly codex: CodexBroker;
-  readonly sessions: SessionManager;
-  readonly authProfiles: AuthProfileService;
-}): AgentRuntime {
+export function createAgentRuntime(options: { readonly config: AppConfig; readonly codex: CodexBroker; readonly sessions: SessionManager; readonly authProfiles: AuthProfileService }): AgentRuntime {
   const legacyRuntime = options.config.codexAppServerUrl
     ? new CodexAppServerRuntime({
         codex: options.codex,
-        sessions: options.sessions
+        sessions: options.sessions,
       })
     : undefined;
   return new SessionAuthProfileRuntime({
     config: options.config,
     sessions: options.sessions,
     authProfiles: options.authProfiles,
-    legacyRuntime
+    legacyRuntime,
   });
 }
 
@@ -131,17 +126,12 @@ export function createSlackBridge(options: {
       config: options.config,
       sessions: options.sessions,
       codex: options.codex,
-      mappings: options.githubAuthorMappings
-    })
+      mappings: options.githubAuthorMappings,
+    }),
   });
 }
 
-function createFeishuBridge(options: {
-  readonly config: AppConfig;
-  readonly sessions: SessionManager;
-  readonly codex?: CodexBroker | undefined;
-  readonly mappings?: GitHubAuthorMappingService | undefined;
-}): FeishuCodexBridge | undefined {
+function createFeishuBridge(options: { readonly config: AppConfig; readonly sessions: SessionManager; readonly codex?: CodexBroker | undefined; readonly mappings?: GitHubAuthorMappingService | undefined }): FeishuCodexBridge | undefined {
   if (!options.config.feishuEnabled) {
     return undefined;
   }
@@ -166,26 +156,22 @@ function createFeishuBridge(options: {
       botIdentity: {
         openId: options.config.feishuBotOpenId,
         userId: options.config.feishuBotUserId,
-        unionId: options.config.feishuBotUnionId
+        unionId: options.config.feishuBotUnionId,
       },
       groupMessageMode: options.config.feishuGroupMessageMode,
-      startupRequired: options.config.feishuStartupRequired
-    })
+      startupRequired: options.config.feishuStartupRequired,
+    }),
   });
 }
 
 export function createIsolatedMcpService(config: AppConfig): IsolatedMcpService {
   return new IsolatedMcpService({
     codexHome: config.codexHome,
-    isolatedMcpServers: config.isolatedMcpServers
+    isolatedMcpServers: config.isolatedMcpServers,
   });
 }
 
-export function createJobManager(options: {
-  readonly config: AppConfig;
-  readonly sessions: SessionManager;
-  readonly bridge: SlackAgentBridge;
-}): JobManager {
+export function createJobManager(options: { readonly config: AppConfig; readonly sessions: SessionManager; readonly bridge: SlackAgentBridge }): JobManager {
   return new JobManager({
     sessions: options.sessions,
     jobsRoot: options.config.jobsRoot,
@@ -193,18 +179,14 @@ export function createJobManager(options: {
     brokerHttpBaseUrl: options.config.brokerHttpBaseUrl,
     onEvent: async (event) => {
       await options.bridge.acceptBackgroundJobEvent(event);
-    }
+    },
   });
 }
 
-export function createDiskPressureCleanup(options: {
-  readonly config: AppConfig;
-  readonly sessions: SessionManager;
-  readonly jobManager: JobManager;
-}): DiskPressureCleanupService {
+export function createDiskPressureCleanup(options: { readonly config: AppConfig; readonly sessions: SessionManager; readonly jobManager: JobManager }): DiskPressureCleanupService {
   return new DiskPressureCleanupService({
     config: options.config,
     sessions: options.sessions,
-    jobTerminator: options.jobManager
+    jobTerminator: options.jobManager,
   });
 }

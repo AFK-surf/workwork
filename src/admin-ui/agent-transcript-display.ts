@@ -1,20 +1,9 @@
 import type { TimelineEvent } from "./timeline-display.js";
-import {
-  mergeToolTracePayloads,
-  parseToolTraceDetail,
-  summarizeToolTraceDisplay
-} from "../tool-trace-summary.js";
+import { mergeToolTracePayloads, parseToolTraceDetail, summarizeToolTraceDisplay } from "../tool-trace-summary.js";
 
 export type AgentTranscriptKind = "user" | "assistant" | "bot" | "tool" | "system" | "session";
 
-const runtimeInputSources = new Set([
-  "background_job",
-  "background_job_event",
-  "runtime_reminder",
-  "unexpected_turn_stop",
-  "broker_recovery",
-  "recovered_thread_batch"
-]);
+const runtimeInputSources = new Set(["background_job", "background_job_event", "runtime_reminder", "unexpected_turn_stop", "broker_recovery", "recovered_thread_batch"]);
 
 export function agentTranscriptKind(event: TimelineEvent): AgentTranscriptKind {
   const type = String(event.type || "").toLowerCase();
@@ -80,7 +69,7 @@ export function agentTranscriptAvatar(kind: AgentTranscriptKind): string {
     bot: "Bot",
     tool: "$",
     system: "i",
-    session: "S"
+    session: "S",
   };
   return labels[kind];
 }
@@ -106,7 +95,7 @@ function timelineSemanticType(event: TimelineEvent): string {
     status: String(event.status || ""),
     payload: mergeToolTracePayloads(event.metadata, parseToolTraceDetail(event.detail), rawDetailCommandPayload(event.detail)),
     fallbackTitle: String(event.title || ""),
-    fallbackSummary: String(event.summary || "")
+    fallbackSummary: String(event.summary || ""),
   });
   return String(toolSummary?.metadata?.semanticType || "").toLowerCase();
 }

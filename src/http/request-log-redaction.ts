@@ -10,18 +10,18 @@ const TEXT_BODY_FIELDS: Record<string, string> = {
   summary: "summary",
   details_text: "details-text",
   detailsText: "details-text",
-  error: "error"
+  error: "error",
 };
 
 const STRUCTURED_BODY_FIELDS: Record<string, string> = {
   card: "card",
   rich_text: "rich-text",
-  richText: "rich-text"
+  richText: "rich-text",
 };
 
 const INLINE_FILE_FIELDS: Record<string, string> = {
   content_base64: "base64",
-  contentBase64: "base64"
+  contentBase64: "base64",
 };
 
 const SECRET_BODY_FIELDS: Record<string, string> = {
@@ -29,7 +29,7 @@ const SECRET_BODY_FIELDS: Record<string, string> = {
   script: "script",
   arguments: "arguments",
   details_json: "details-json",
-  detailsJson: "details-json"
+  detailsJson: "details-json",
 };
 
 export function redactHttpRequestBody(body: Record<string, unknown>): Record<string, unknown> {
@@ -64,7 +64,5 @@ function redactField(body: Record<string, unknown>, field: string, label: string
     return;
   }
 
-  body[field] = typeof value === "string"
-    ? `[redacted-${label}:${value.length}]`
-    : `[redacted-${label}]`;
+  body[field] = typeof value === "string" ? `[redacted-${label}:${value.length}]` : `[redacted-${label}]`;
 }

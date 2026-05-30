@@ -5,14 +5,7 @@ export interface ToolTraceDisplaySummary {
   readonly metadata: Record<string, string | number | boolean | null>;
 }
 
-export function summarizeToolTraceDisplay(options: {
-  readonly eventType: string;
-  readonly toolName?: string | undefined;
-  readonly status?: string | undefined;
-  readonly payload?: unknown;
-  readonly fallbackTitle?: string | undefined;
-  readonly fallbackSummary?: string | undefined;
-}): ToolTraceDisplaySummary | undefined {
+export function summarizeToolTraceDisplay(options: { readonly eventType: string; readonly toolName?: string | undefined; readonly status?: string | undefined; readonly payload?: unknown; readonly fallbackTitle?: string | undefined; readonly fallbackSummary?: string | undefined }): ToolTraceDisplaySummary | undefined {
   const toolName = normalizeString(options.toolName ?? options.fallbackSummary ?? options.fallbackTitle);
   if (toolName !== "exec_command") {
     return undefined;
@@ -21,7 +14,7 @@ export function summarizeToolTraceDisplay(options: {
   const slackSummary = summarizeSlackBrokerTrace({
     eventType: options.eventType,
     status: options.status,
-    payload
+    payload,
   });
   if (slackSummary) {
     return slackSummary;
@@ -32,7 +25,7 @@ export function summarizeToolTraceDisplay(options: {
     status: options.status,
     payload,
     fallbackTitle: toolName,
-    fallbackSummary: options.fallbackSummary
+    fallbackSummary: options.fallbackSummary,
   });
 }
 
@@ -66,7 +59,7 @@ export function parseToolTraceDetail(detail: unknown): Record<string, unknown> |
       error,
       exitCode,
       durationMs,
-      status
+      status,
     });
     return Object.keys(compact).length ? compact : undefined;
   }
@@ -88,11 +81,7 @@ export function mergeToolTracePayloads(...payloads: readonly unknown[]): Record<
   return Object.keys(merged).length ? merged : undefined;
 }
 
-function summarizeSlackBrokerTrace(options: {
-  readonly eventType: string;
-  readonly status?: string | undefined;
-  readonly payload?: Record<string, unknown> | undefined;
-}): ToolTraceDisplaySummary | undefined {
+function summarizeSlackBrokerTrace(options: { readonly eventType: string; readonly status?: string | undefined; readonly payload?: Record<string, unknown> | undefined }): ToolTraceDisplaySummary | undefined {
   const payload = options.payload ?? {};
   const command = normalizeString(payload.command) || normalizeString(payload.cmd);
   if (!command) {
@@ -103,10 +92,7 @@ function summarizeSlackBrokerTrace(options: {
     return undefined;
   }
 
-  const data = mergeCurlJsonData(
-    extractCurlJsonData(command),
-    extractLooseCurlJsonData(command)
-  );
+  const data = mergeCurlJsonData(extractCurlJsonData(command), extractLooseCurlJsonData(command));
   const status = normalizeString(options.status ?? payload.status);
   const isResult = options.eventType === "agent_tool_result";
   const state = slackDeliveryState(isResult, status);
@@ -126,8 +112,8 @@ function summarizeSlackBrokerTrace(options: {
         slackKind: kind,
         slackText: text,
         command,
-        route
-      })
+        route,
+      }),
     };
   }
 
@@ -144,8 +130,8 @@ function summarizeSlackBrokerTrace(options: {
         slackFilePath: filePath,
         slackText: comment,
         command,
-        route
-      })
+        route,
+      }),
     };
   }
 
@@ -161,8 +147,8 @@ function summarizeSlackBrokerTrace(options: {
         slackKind: kind,
         slackText: reason,
         command,
-        route
-      })
+        route,
+      }),
     };
   }
 
@@ -195,10 +181,7 @@ function slackBrokerRoute(command: string): "/slack/post-message" | "/slack/post
 
 function extractCurlJsonData(command: string): Record<string, unknown> | undefined {
   const body = unwrapShellCommand(command);
-  const raw =
-    extractCurlDataArgument(body, "'") ??
-    extractCurlDataArgument(body, "\"") ??
-    extractCurlDataBareArgument(body);
+  const raw = extractCurlDataArgument(body, "'") ?? extractCurlDataArgument(body, '"') ?? extractCurlDataBareArgument(body);
   if (!raw) {
     return undefined;
   }
@@ -224,7 +207,7 @@ function parseCurlJsonData(raw: string): Record<string, unknown> | undefined {
       kind: extractJsonStringField(candidate, "kind"),
       file_path: extractJsonStringField(candidate, "file_path"),
       initial_comment: extractJsonStringField(candidate, "initial_comment"),
-      reason: extractJsonStringField(candidate, "reason")
+      reason: extractJsonStringField(candidate, "reason"),
     });
     if (Object.keys(recovered).length) {
       return recovered;
@@ -234,10 +217,7 @@ function parseCurlJsonData(raw: string): Record<string, unknown> | undefined {
   return undefined;
 }
 
-function mergeCurlJsonData(
-  primary: Record<string, unknown> | undefined,
-  fallback: Record<string, unknown> | undefined
-): Record<string, unknown> | undefined {
+function mergeCurlJsonData(primary: Record<string, unknown> | undefined, fallback: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
   if (!primary) {
     return fallback;
   }
@@ -272,7 +252,7 @@ function extractLooseCurlJsonData(command: string): Record<string, unknown> | un
       kind: extractLooseJsonStringField(candidate, "kind"),
       file_path: extractLooseJsonStringField(candidate, "file_path"),
       initial_comment: extractLooseJsonStringField(candidate, "initial_comment"),
-      reason: extractLooseJsonStringField(candidate, "reason")
+      reason: extractLooseJsonStringField(candidate, "reason"),
     });
     if (messageText(recovered.text) || messageText(recovered.initial_comment) || messageText(recovered.reason)) {
       return recovered;
@@ -320,14 +300,11 @@ function extractLooseJsonStringField(text: string, key: string): string {
 
 function findLooseJsonStringEnd(text: string, start: number): number {
   for (let index = start; index < text.length; index += 1) {
-    if (text[index] !== "\"" || text[index - 1] === "\\") {
+    if (text[index] !== '"' || text[index - 1] === "\\") {
       continue;
     }
     const tail = text.slice(index);
-    if (
-      /^"\s*,\s*"(?:channel_id|thread_ts|text|kind|reason|file_path|initial_comment)"\s*:/.test(tail) ||
-      /^"\s*[}\]]/.test(tail)
-    ) {
+    if (/^"\s*,\s*"(?:channel_id|thread_ts|text|kind|reason|file_path|initial_comment)"\s*:/.test(tail) || /^"\s*[}\]]/.test(tail)) {
       return index;
     }
   }
@@ -341,7 +318,7 @@ function cleanLooseJsonString(value: string): string {
     .replace(/\\r\\n/g, "\n")
     .replace(/\\n/g, "\n")
     .replace(/\\t/g, "\t")
-    .replace(/\\"/g, "\"")
+    .replace(/\\"/g, '"')
     .replace(/\\\\/g, "\\")
     .trim();
 }
@@ -365,8 +342,8 @@ function curlJsonDataCandidates(raw: string): string[] {
   return candidates;
 }
 
-function extractCurlDataArgument(command: string, quote: "'" | "\""): string | undefined {
-  const escapedQuote = quote === "'" ? "'" : "\\\"";
+function extractCurlDataArgument(command: string, quote: "'" | '"'): string | undefined {
+  const escapedQuote = quote === "'" ? "'" : '\\"';
   const pattern = new RegExp("(?:^|\\s)(?:-d|--data|--data-raw|--data-binary)\\s+" + escapedQuote + "([\\s\\S]*?)" + escapedQuote);
   return pattern.exec(command)?.[1];
 }
@@ -380,21 +357,12 @@ function unwrapShellCommand(command: string): string {
   return shell ? unescapeShellQuotedArgument(shell[1] ?? "") : command;
 }
 
-function summarizeExecCommandTrace(options: {
-  readonly eventType: string;
-  readonly status?: string | undefined;
-  readonly payload?: Record<string, unknown> | undefined;
-  readonly fallbackTitle: string;
-  readonly fallbackSummary?: string | undefined;
-}): ToolTraceDisplaySummary {
+function summarizeExecCommandTrace(options: { readonly eventType: string; readonly status?: string | undefined; readonly payload?: Record<string, unknown> | undefined; readonly fallbackTitle: string; readonly fallbackSummary?: string | undefined }): ToolTraceDisplaySummary {
   const payload = options.payload ?? {};
   const rawCommand = normalizeString(payload.command);
   const command = rawCommand ? simplifyShellCommand(rawCommand) : "";
   const title = compactText(command || options.fallbackTitle, 160);
-  const cwdLabel = summarizeCwd(
-    (rawCommand ? extractShellCdPath(rawCommand) : "") ||
-      normalizeString(payload.cwd)
-  );
+  const cwdLabel = summarizeCwd((rawCommand ? extractShellCdPath(rawCommand) : "") || normalizeString(payload.cwd));
   const actionSummary = summarizeCommandActions(payload.commandActions);
   const exitCode = normalizeNumber(payload.exitCode);
   const durationMs = normalizeNumber(payload.durationMs);
@@ -402,18 +370,8 @@ function summarizeExecCommandTrace(options: {
   const status = normalizeString(options.status ?? payload.status);
   const isResult = options.eventType === "agent_tool_result";
   const summaryParts = isResult
-    ? [
-        exitCode !== undefined ? `exit ${exitCode}` : statusLabel(status),
-        durationMs !== undefined ? formatDuration(durationMs) : "",
-        outputPreview ? `输出 ${outputPreview}` : "",
-        outputPreview ? "" : actionSummary,
-        outputPreview || actionSummary ? "" : cwdLabel
-      ]
-    : [
-        actionSummary,
-        cwdLabel ? `cwd ${cwdLabel}` : "",
-        statusLabel(status)
-      ];
+    ? [exitCode !== undefined ? `exit ${exitCode}` : statusLabel(status), durationMs !== undefined ? formatDuration(durationMs) : "", outputPreview ? `输出 ${outputPreview}` : "", outputPreview ? "" : actionSummary, outputPreview || actionSummary ? "" : cwdLabel]
+    : [actionSummary, cwdLabel ? `cwd ${cwdLabel}` : "", statusLabel(status)];
   const summary = compactText(summaryParts.filter(Boolean).join(" · ") || options.fallbackSummary || "", 220);
 
   return {
@@ -428,8 +386,8 @@ function summarizeExecCommandTrace(options: {
       actionSummary,
       exitCode,
       durationMs,
-      outputPreview
-    })
+      outputPreview,
+    }),
   };
 }
 
@@ -441,13 +399,11 @@ function simplifyShellCommand(command: string): string {
 }
 
 function extractShellCdPath(command: string): string {
-  return command.match(/^\/(?:bin|usr\/bin|opt\/homebrew\/bin)\/(?:zsh|bash|sh)\s+-lc\s+"([\s\S]*)"$/)
-    ? extractShellCdPath(unescapeShellQuotedArgument(command.match(/^\/(?:bin|usr\/bin|opt\/homebrew\/bin)\/(?:zsh|bash|sh)\s+-lc\s+"([\s\S]*)"$/)?.[1] ?? ""))
-    : (command.match(/^cd\s+(.+?)\s+&&\s+/)?.[1] ?? "").trim();
+  return command.match(/^\/(?:bin|usr\/bin|opt\/homebrew\/bin)\/(?:zsh|bash|sh)\s+-lc\s+"([\s\S]*)"$/) ? extractShellCdPath(unescapeShellQuotedArgument(command.match(/^\/(?:bin|usr\/bin|opt\/homebrew\/bin)\/(?:zsh|bash|sh)\s+-lc\s+"([\s\S]*)"$/)?.[1] ?? "")) : (command.match(/^cd\s+(.+?)\s+&&\s+/)?.[1] ?? "").trim();
 }
 
 function unescapeShellQuotedArgument(value: string): string {
-  return value.replace(/\\"/g, "\"").replace(/\\\\/g, "\\");
+  return value.replace(/\\"/g, '"').replace(/\\\\/g, "\\");
 }
 
 function summarizeCwd(cwd: string): string {
@@ -486,7 +442,7 @@ function actionTypeLabel(type: string): string {
     edit: "编辑",
     write: "写入",
     execute: "执行",
-    test: "测试"
+    test: "测试",
   };
   return labels[type] || (type ? `${type}` : "操作");
 }
@@ -520,7 +476,7 @@ function statusLabel(value: string): string {
     running: "运行中",
     inprogress: "运行中",
     inflight: "运行中",
-    started: "已开始"
+    started: "已开始",
   };
   const normalized = value.toLowerCase().replace(/[^a-z]/g, "");
   return labels[normalized] || "";
@@ -555,26 +511,17 @@ function normalizeNumber(value: unknown): number | undefined {
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : undefined;
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
 }
 
 function compactRecord(record: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(record).filter(([, value]) => value !== undefined && value !== null && value !== "")
-  );
+  return Object.fromEntries(Object.entries(record).filter(([, value]) => value !== undefined && value !== null && value !== ""));
 }
 
 function compactMetadataRecord(record: Record<string, unknown>): Record<string, string | number | boolean | null> {
   const compacted: Record<string, string | number | boolean | null> = {};
   for (const [key, value] of Object.entries(record)) {
-    if (
-      value === null ||
-      typeof value === "string" ||
-      typeof value === "number" ||
-      typeof value === "boolean"
-    ) {
+    if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
       if (value !== "") {
         compacted[key] = value;
       }

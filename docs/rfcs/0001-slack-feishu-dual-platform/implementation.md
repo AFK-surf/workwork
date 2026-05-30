@@ -4,23 +4,23 @@ This file contains the execution contract for [RFC 0001](../0001-slack-feishu-du
 
 ## One-Screen Summary
 
-| Question | Answer |
-| --- | --- |
-| How to implement | Ship vertical TDD slices, each with RED, GREEN, OBSERVE, and REGRESSION evidence. |
-| Current state | Phases 1-5 are implemented, documented, and covered by mock/unit/doc gates plus saved real-tenant evidence. |
+| Question            | Answer                                                                                                               |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| How to implement    | Ship vertical TDD slices, each with RED, GREEN, OBSERVE, and REGRESSION evidence.                                    |
+| Current state       | Phases 1-5 are implemented, documented, and covered by mock/unit/doc gates plus saved real-tenant evidence.          |
 | Completion evidence | Real tenant setup, real Feishu smoke, rollout-runtime evidence, and RFC audit all pass in the saved evidence bundle. |
-| Safe PR size | Cite one phase/ticket, one behavior, and the minimum evidence bundle needed for that behavior. |
-| Evidence boundary | Mock e2e proves broker behavior; real smoke proves Feishu tenant permissions and client delivery. |
+| Safe PR size        | Cite one phase/ticket, one behavior, and the minimum evidence bundle needed for that behavior.                       |
+| Evidence boundary   | Mock e2e proves broker behavior; real smoke proves Feishu tenant permissions and client delivery.                    |
 
 ## Read Layers
 
-| Layer | Use when | Expand |
-| --- | --- | --- |
-| 1 | You need the implementation status quickly. | Read this summary and the [Review gates](review-gates.md#completion-evidence-ledger). |
-| 2 | You are picking the next PR slice. | Expand "Plan, TDD, and phase gates". |
-| 3 | You are writing or reviewing a PR. | Expand "PR mechanics and tracer backlog". |
-| 4 | You are proving readiness. | Expand "Verification and real smoke". |
-| 5 | You are changing the RFC itself. | Expand "Risks, open questions, and drift control". |
+| Layer | Use when                                    | Expand                                                                                |
+| ----- | ------------------------------------------- | ------------------------------------------------------------------------------------- |
+| 1     | You need the implementation status quickly. | Read this summary and the [Review gates](review-gates.md#completion-evidence-ledger). |
+| 2     | You are picking the next PR slice.          | Expand "Plan, TDD, and phase gates".                                                  |
+| 3     | You are writing or reviewing a PR.          | Expand "PR mechanics and tracer backlog".                                             |
+| 4     | You are proving readiness.                  | Expand "Verification and real smoke".                                                 |
+| 5     | You are changing the RFC itself.            | Expand "Risks, open questions, and drift control".                                    |
 
 <details>
 <summary>Layer 2: Plan, TDD, and phase gates</summary>
@@ -101,36 +101,36 @@ Rules:
 
 Tracer bullets:
 
-| Phase | First failing test | First green behavior |
-| --- | --- | --- |
-| Phase 1 foundation | Legacy Slack session and Feishu-shaped session collide | Platform-aware keys work while Slack legacy keys still load |
-| Phase 1 routes | `/chat/post-state` cannot address a Slack session | `/slack/post-state` delegates without behavior change |
-| Phase 2 adapter | Feishu private-chat event is not ignored | Parser emits only accepted group messages |
-| Phase 2 startup | `FEISHU_ENABLED=false` still instantiates Feishu | Slack-only startup unchanged |
-| Phase 3 text MVP | Mock Feishu group @bot cannot start a session | Session persists and text reply posts |
-| Phase 3 all-message | Non-@ follow-up does not reach active session | Follow-up queues or steers into same session |
-| Phase 4 rich/cards | `post` and `interactive` payloads are flattened | Codex summary plus raw storage |
-| Phase 4 callbacks | Card callback cannot reach intended session | Callback acks and records session action |
-| Phase 5 rollout | Admin cannot show Slack ready and Feishu degraded independently | Platform health is independent |
-| Phase 5 co-authors | Feishu session candidates cannot be confirmed before commit | Feishu card callback confirms the candidate revision |
+| Phase               | First failing test                                              | First green behavior                                        |
+| ------------------- | --------------------------------------------------------------- | ----------------------------------------------------------- |
+| Phase 1 foundation  | Legacy Slack session and Feishu-shaped session collide          | Platform-aware keys work while Slack legacy keys still load |
+| Phase 1 routes      | `/chat/post-state` cannot address a Slack session               | `/slack/post-state` delegates without behavior change       |
+| Phase 2 adapter     | Feishu private-chat event is not ignored                        | Parser emits only accepted group messages                   |
+| Phase 2 startup     | `FEISHU_ENABLED=false` still instantiates Feishu                | Slack-only startup unchanged                                |
+| Phase 3 text MVP    | Mock Feishu group @bot cannot start a session                   | Session persists and text reply posts                       |
+| Phase 3 all-message | Non-@ follow-up does not reach active session                   | Follow-up queues or steers into same session                |
+| Phase 4 rich/cards  | `post` and `interactive` payloads are flattened                 | Codex summary plus raw storage                              |
+| Phase 4 callbacks   | Card callback cannot reach intended session                     | Callback acks and records session action                    |
+| Phase 5 rollout     | Admin cannot show Slack ready and Feishu degraded independently | Platform health is independent                              |
+| Phase 5 co-authors  | Feishu session candidates cannot be confirmed before commit     | Feishu card callback confirms the candidate revision        |
 
 ## Fixture and Replay Contract
 
 Required initial fixtures:
 
-| Fixture | Behavior proven |
-| --- | --- |
-| `feishu/group-at-text.json` | Group @bot text can create or resume a session. |
-| `feishu/private-text.json` | Private chat is ignored and creates no session. |
-| `feishu/group-app-self-message.json` | Bot/app/self group sender is ignored before dispatch. |
-| `feishu/group-followup-text.json` | Non-@ follow-up routes to an active session in `all` mode. |
-| `feishu/group-followup-parent-only.json` | Parent-only Feishu thread replies use `parent_id` as the session root when `root_id` is omitted. |
-| `feishu/group-rich-post.json` | Inbound rich text keeps raw `post` data plus readable summary. |
-| `feishu/group-interactive-card.json` | Inbound card keeps raw `interactive` data plus readable summary. |
-| `feishu/card-action-trigger.json` and `feishu/card-action-skip.json` | Card callbacks map confirmation/skip actions to the intended session and ack quickly. |
-| `feishu/duplicate-message.json` | Duplicate `message_id` is deduped. |
-| `feishu/group-image.json` and `feishu/group-file.json` | Resource messages preserve metadata and report download/transfer status. |
-| `feishu/history-page.json` | Bounded history recovery can rebuild context and cursor state. |
+| Fixture                                                              | Behavior proven                                                                                  |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `feishu/group-at-text.json`                                          | Group @bot text can create or resume a session.                                                  |
+| `feishu/private-text.json`                                           | Private chat is ignored and creates no session.                                                  |
+| `feishu/group-app-self-message.json`                                 | Bot/app/self group sender is ignored before dispatch.                                            |
+| `feishu/group-followup-text.json`                                    | Non-@ follow-up routes to an active session in `all` mode.                                       |
+| `feishu/group-followup-parent-only.json`                             | Parent-only Feishu thread replies use `parent_id` as the session root when `root_id` is omitted. |
+| `feishu/group-rich-post.json`                                        | Inbound rich text keeps raw `post` data plus readable summary.                                   |
+| `feishu/group-interactive-card.json`                                 | Inbound card keeps raw `interactive` data plus readable summary.                                 |
+| `feishu/card-action-trigger.json` and `feishu/card-action-skip.json` | Card callbacks map confirmation/skip actions to the intended session and ack quickly.            |
+| `feishu/duplicate-message.json`                                      | Duplicate `message_id` is deduped.                                                               |
+| `feishu/group-image.json` and `feishu/group-file.json`               | Resource messages preserve metadata and report download/transfer status.                         |
+| `feishu/history-page.json`                                           | Bounded history recovery can rebuild context and cursor state.                                   |
 
 Fixture rules:
 
@@ -142,14 +142,14 @@ Fixture rules:
 
 ## Phase Quality Gates
 
-| Phase | TDD gate | Logging/health gate | Minimum verification |
-| --- | --- | --- | --- |
-| 0 | RFC explains scope, non-goals, permissions, degradation, and test strategy. | Observability contract is explicit enough to implement. | `test/rfc-0001-docs.test.ts` plus Markdown/link/diff checks. |
-| 1 | Red tests cover platform-aware keys, legacy Slack compatibility, generic `/chat/*` routes, and Slack wrapper delegation. | Session logs distinguish `platform`, `sessionKey`, and route source. | Session, route, Slack wrapper, and Slack e2e tests. |
-| 2 | Red tests cover private-chat ignore, group @ accept, duplicate dedupe, API payloads, and feature-flag startup. | Emit platform startup/ready/degraded and message ignored/accepted/deduped logs. | Config, parser, API, adapter tests. |
-| 3 | Mock e2e covers group @ start, non-@ follow-up, private ignore, `-stop`, recovery, and text reply. | Emit session, history, turn, outbound, and `at_only` degradation logs. | Feishu mock e2e plus Slack regression. |
-| 4 | Tests cover inbound raw retention, outbound rich/card rendering, callbacks, and resource degradation. | Emit card callback and resource logs without raw body content. | Parser/API/formatter/card e2e tests. |
-| 5 | Tests cover admin health, co-author mapping, card confirmation, and independent health. | Admin shows ready/degraded/disabled per platform. | Admin tests plus real Slack + Feishu smoke. |
+| Phase | TDD gate                                                                                                                 | Logging/health gate                                                             | Minimum verification                                         |
+| ----- | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| 0     | RFC explains scope, non-goals, permissions, degradation, and test strategy.                                              | Observability contract is explicit enough to implement.                         | `test/rfc-0001-docs.test.ts` plus Markdown/link/diff checks. |
+| 1     | Red tests cover platform-aware keys, legacy Slack compatibility, generic `/chat/*` routes, and Slack wrapper delegation. | Session logs distinguish `platform`, `sessionKey`, and route source.            | Session, route, Slack wrapper, and Slack e2e tests.          |
+| 2     | Red tests cover private-chat ignore, group @ accept, duplicate dedupe, API payloads, and feature-flag startup.           | Emit platform startup/ready/degraded and message ignored/accepted/deduped logs. | Config, parser, API, adapter tests.                          |
+| 3     | Mock e2e covers group @ start, non-@ follow-up, private ignore, `-stop`, recovery, and text reply.                       | Emit session, history, turn, outbound, and `at_only` degradation logs.          | Feishu mock e2e plus Slack regression.                       |
+| 4     | Tests cover inbound raw retention, outbound rich/card rendering, callbacks, and resource degradation.                    | Emit card callback and resource logs without raw body content.                  | Parser/API/formatter/card e2e tests.                         |
+| 5     | Tests cover admin health, co-author mapping, card confirmation, and independent health.                                  | Admin shows ready/degraded/disabled per platform.                               | Admin tests plus real Slack + Feishu smoke.                  |
 
 </details>
 
@@ -237,14 +237,14 @@ Phase 5:
 
 Evidence ladder:
 
-| Evidence | Can prove | Cannot prove | Required before |
-| --- | --- | --- | --- |
-| RFC review | Scope, constraints, phase order, trade-offs | Runtime behavior | Phase 1 continues |
-| Unit tests | Parser, formatter, API wrapper, storage, routes | Real Feishu permissions | Each focused PR merges |
-| Mock e2e | Broker create/resume/stop/reply behavior | Tenant setup or real client rendering | Phase 3 ready for real smoke |
-| Preflight evidence | Local env posture for rollout smoke | Real Feishu delivery or permissions | Before starting rollout runtime |
-| Real Feishu smoke | Long connection, group @, non-@ `all`, bounded history, visible replies | Broad rollout safety | Production Feishu MVP claim |
-| Production telemetry | Real traffic health and debug loops | Unimplemented rich/card/file phases | Broad rollout |
+| Evidence             | Can prove                                                               | Cannot prove                          | Required before                 |
+| -------------------- | ----------------------------------------------------------------------- | ------------------------------------- | ------------------------------- |
+| RFC review           | Scope, constraints, phase order, trade-offs                             | Runtime behavior                      | Phase 1 continues               |
+| Unit tests           | Parser, formatter, API wrapper, storage, routes                         | Real Feishu permissions               | Each focused PR merges          |
+| Mock e2e             | Broker create/resume/stop/reply behavior                                | Tenant setup or real client rendering | Phase 3 ready for real smoke    |
+| Preflight evidence   | Local env posture for rollout smoke                                     | Real Feishu delivery or permissions   | Before starting rollout runtime |
+| Real Feishu smoke    | Long connection, group @, non-@ `all`, bounded history, visible replies | Broad rollout safety                  | Production Feishu MVP claim     |
+| Production telemetry | Real traffic health and debug loops                                     | Unimplemented rich/card/file phases   | Broad rollout                   |
 
 ### Local mock gate
 
@@ -286,16 +286,16 @@ Happy-path tenant smoke can be combined with controlled replay/fault-injection l
 
 Requirement evidence:
 
-| Requirement | Minimum evidence before claiming complete |
-| --- | --- |
-| China Feishu first | Config/docs/smoke target `open.feishu.cn` and defer Lark. |
-| No private chats | Parser fixture, runtime/mock e2e, and logs prove ignored private events create no session. |
-| All group messages | Permission docs name `im:message.group_msg`; admin exposes `all` vs `at_only`; admin health lists `im:message.group_msg=verified`; real non-@ smoke passes. |
-| Bounded history | Recovery uses `FEISHU_INITIAL_THREAD_HISTORY_COUNT`, clamps explicit `/chat/thread-history` limits to `FEISHU_HISTORY_API_MAX_LIMIT`, and recovered logs match admin session state. |
-| Rich text + cards | Raw `post`/`interactive` retention tests, outbound formatter/API tests, card callback mock e2e, real-smoke accepted payload logs matching the same group @ session, same-session outbound rich/card/file or image posting evidence with uploaded `fileId` for file/image logs, and real-smoke callback matching the same group @ session after a broker-posted card, using `messageId` when Feishu supplies one and callback `eventId`/`payloadRef` otherwise. |
-| Simultaneous Slack + Feishu | Dual-platform mock e2e, Slack wrapper delegation tests, and Slack regression with independent health/logs. |
-| TDD execution | Each PR names RED, GREEN, OBSERVE, and REGRESSION. |
-| Self-iteration logs | Required field tests, body leak tests, and playbook-to-fixture path. |
+| Requirement                 | Minimum evidence before claiming complete                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| China Feishu first          | Config/docs/smoke target `open.feishu.cn` and defer Lark.                                                                                                                                                                                                                                                                                                                                                                                                      |
+| No private chats            | Parser fixture, runtime/mock e2e, and logs prove ignored private events create no session.                                                                                                                                                                                                                                                                                                                                                                     |
+| All group messages          | Permission docs name `im:message.group_msg`; admin exposes `all` vs `at_only`; admin health lists `im:message.group_msg=verified`; real non-@ smoke passes.                                                                                                                                                                                                                                                                                                    |
+| Bounded history             | Recovery uses `FEISHU_INITIAL_THREAD_HISTORY_COUNT`, clamps explicit `/chat/thread-history` limits to `FEISHU_HISTORY_API_MAX_LIMIT`, and recovered logs match admin session state.                                                                                                                                                                                                                                                                            |
+| Rich text + cards           | Raw `post`/`interactive` retention tests, outbound formatter/API tests, card callback mock e2e, real-smoke accepted payload logs matching the same group @ session, same-session outbound rich/card/file or image posting evidence with uploaded `fileId` for file/image logs, and real-smoke callback matching the same group @ session after a broker-posted card, using `messageId` when Feishu supplies one and callback `eventId`/`payloadRef` otherwise. |
+| Simultaneous Slack + Feishu | Dual-platform mock e2e, Slack wrapper delegation tests, and Slack regression with independent health/logs.                                                                                                                                                                                                                                                                                                                                                     |
+| TDD execution               | Each PR names RED, GREEN, OBSERVE, and REGRESSION.                                                                                                                                                                                                                                                                                                                                                                                                             |
+| Self-iteration logs         | Required field tests, body leak tests, and playbook-to-fixture path.                                                                                                                                                                                                                                                                                                                                                                                           |
 
 ## Real Smoke Checklist
 
@@ -331,14 +331,14 @@ Requirement evidence:
 
 ## Open Question Gates
 
-| Question | Default until decided | Must decide before | Non-blocked work |
-| --- | --- | --- | --- |
-| Feishu startup failure policy | Production strict; development/limited rollout may degrade. | Production startup behavior and real rollout. | Phase 1 storage/API extraction; parser/API tests. |
-| Feishu co-author confirmation timing | Implemented after text MVP through Feishu cards. | Production co-author parity claim. | Real smoke, mapping admin docs, and callback fixture hardening. |
-| Operational card style | Minimal static cards first. | Polished outbound cards. | Phase 3 text MVP; inbound card preservation. |
-| `at_only` production allowance | Limited pilot only. | Any production parity claim. | Parser tests, degraded-mode tests, admin health. |
-| Global Lark | Out of scope. | Any PR adding Lark domain/config/docs. | China Feishu MVP phases. |
-| Exact permission labels | Use stable API names until real setup. | Final setup docs and smoke signoff. | Config, parser, API, mock e2e, admin health. |
+| Question                             | Default until decided                                       | Must decide before                            | Non-blocked work                                                |
+| ------------------------------------ | ----------------------------------------------------------- | --------------------------------------------- | --------------------------------------------------------------- |
+| Feishu startup failure policy        | Production strict; development/limited rollout may degrade. | Production startup behavior and real rollout. | Phase 1 storage/API extraction; parser/API tests.               |
+| Feishu co-author confirmation timing | Implemented after text MVP through Feishu cards.            | Production co-author parity claim.            | Real smoke, mapping admin docs, and callback fixture hardening. |
+| Operational card style               | Minimal static cards first.                                 | Polished outbound cards.                      | Phase 3 text MVP; inbound card preservation.                    |
+| `at_only` production allowance       | Limited pilot only.                                         | Any production parity claim.                  | Parser tests, degraded-mode tests, admin health.                |
+| Global Lark                          | Out of scope.                                               | Any PR adding Lark domain/config/docs.        | China Feishu MVP phases.                                        |
+| Exact permission labels              | Use stable API names until real setup.                      | Final setup docs and smoke signoff.           | Config, parser, API, mock e2e, admin health.                    |
 
 ## RFC Maintenance and Drift Control
 

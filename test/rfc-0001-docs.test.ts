@@ -26,27 +26,13 @@ describe("RFC 0001 documentation", () => {
   });
 
   it("keeps all RFC deep-dive files present", async () => {
-    const expectedDeepDives = [
-      "architecture.md",
-      "implementation.md",
-      "observability.md",
-      "permissions.md",
-      "review-gates.md"
-    ];
+    const expectedDeepDives = ["architecture.md", "implementation.md", "observability.md", "permissions.md", "review-gates.md"];
 
-    await expect(Promise.all(expectedDeepDives.map((file) => fs.stat(path.join(rfcDir, file))))).resolves.toHaveLength(
-      expectedDeepDives.length
-    );
+    await expect(Promise.all(expectedDeepDives.map((file) => fs.stat(path.join(rfcDir, file))))).resolves.toHaveLength(expectedDeepDives.length);
   });
 
   it("keeps RFC deep dives progressively disclosed", async () => {
-    const expectedDeepDives = [
-      "architecture.md",
-      "implementation.md",
-      "observability.md",
-      "permissions.md",
-      "review-gates.md"
-    ];
+    const expectedDeepDives = ["architecture.md", "implementation.md", "observability.md", "permissions.md", "review-gates.md"];
 
     for (const file of expectedDeepDives) {
       const content = await fs.readFile(path.join(rfcDir, file), "utf8");
@@ -140,7 +126,7 @@ describe("RFC 0001 documentation", () => {
     expect(setup).toContain("The example evidence file intentionally starts with pending/placeholder values");
     expect(setup).toContain("The checker requires `apiName=im:message.group_msg`, `status=approved`, redacted approval evidence");
     expect(setup).toContain("explicit send/reply, card callback, and resource transfer permission posture evidence");
-    expect(setup).toContain("It rejects example text such as \"replace\", \"approval ticket\", or other placeholders");
+    expect(setup).toContain('It rejects example text such as "replace", "approval ticket", or other placeholders');
     expect(setup).toContain("exact real-tenant console labels plus redacted approval/configuration evidence");
     expect(setup).toContain("admin-status.json");
     expect(setup).toContain("feishu-setup-evidence.json");
@@ -566,7 +552,7 @@ describe("RFC 0001 documentation", () => {
 
 async function collectMarkdownFiles(dir: string): Promise<string[]> {
   const entries = await fs.readdir(dir, {
-    withFileTypes: true
+    withFileTypes: true,
   });
   const files = await Promise.all(
     entries.map(async (entry) => {
@@ -576,7 +562,7 @@ async function collectMarkdownFiles(dir: string): Promise<string[]> {
       }
 
       return entry.isFile() && entry.name.endsWith(".md") ? [fullPath] : [];
-    })
+    }),
   );
 
   return files.flat().sort();
@@ -601,7 +587,7 @@ function parseRequiredLogFieldMatrix(content: string): Map<string, string[]> {
   const matrix = new Map<string, string[]>();
   const section = content.split("## Log Safety and Retention")[0] ?? content;
   for (const line of section.split(/\r?\n/u)) {
-    const match = /^\| `([^`]+)` \| (.+) \|$/u.exec(line.trim());
+    const match = /^\|\s*`([^`]+)`\s*\|\s*(.+?)\s*\|$/u.exec(line.trim());
     if (!match) {
       continue;
     }

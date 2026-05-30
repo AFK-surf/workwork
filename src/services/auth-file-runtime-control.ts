@@ -11,10 +11,9 @@ export class AuthFileRuntimeControl implements RuntimeControl {
     config: AppConfig,
     private readonly options: {
       readonly onRestart: (reason: string) => Promise<void>;
-    }
+    },
   ) {
-    this.#authJsonPath =
-      config.codexAuthJsonPath ?? path.join(config.codexHome, "auth.json");
+    this.#authJsonPath = config.codexAuthJsonPath ?? path.join(config.codexHome, "auth.json");
   }
 
   async restartRuntime(reason: string): Promise<void> {
@@ -25,7 +24,7 @@ export class AuthFileRuntimeControl implements RuntimeControl {
     const snapshot = await readChatGptUsageSnapshot(this.#authJsonPath);
     return {
       account: snapshot.account,
-      requiresOpenaiAuth: false
+      requiresOpenaiAuth: false,
     };
   }
 

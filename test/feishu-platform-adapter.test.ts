@@ -1,3 +1,4 @@
+/* oxlint-disable max-lines */
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -5,16 +6,8 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { configureLogger, flushLogger } from "../src/logger.js";
-import {
-  CHAT_FILE_SOURCE_REQUIREMENT_MESSAGE,
-  CHAT_INLINE_FILE_CONTENT_REQUIREMENT_MESSAGE,
-  CHAT_INLINE_FILE_FILENAME_REQUIREMENT_MESSAGE
-} from "../src/services/chat/chat-types.js";
-import {
-  FEISHU_GROUP_MESSAGE_MIN_INTERVAL_MS,
-  FeishuGroupMessageRateLimiter,
-  FeishuPlatformAdapter
-} from "../src/services/feishu/feishu-platform-adapter.js";
+import { CHAT_FILE_SOURCE_REQUIREMENT_MESSAGE, CHAT_INLINE_FILE_CONTENT_REQUIREMENT_MESSAGE, CHAT_INLINE_FILE_FILENAME_REQUIREMENT_MESSAGE } from "../src/services/chat/chat-types.js";
+import { FEISHU_GROUP_MESSAGE_MIN_INTERVAL_MS, FeishuGroupMessageRateLimiter, FeishuPlatformAdapter } from "../src/services/feishu/feishu-platform-adapter.js";
 
 describe("FeishuPlatformAdapter", () => {
   afterEach(() => {
@@ -39,38 +32,38 @@ describe("FeishuPlatformAdapter", () => {
       appId: "cli-test",
       appSecret: "secret-test",
       api: createFakeApi(calls),
-      wsClient: new FakeWsClient()
+      wsClient: new FakeWsClient(),
     });
 
     await adapter.postThreadMessage(
       {
         platform: "feishu",
         conversationId: "oc_group",
-        rootMessageId: "om_root"
+        rootMessageId: "om_root",
       },
       {
-        text: "first"
-      }
+        text: "first",
+      },
     );
     const second = adapter.postThreadMessage(
       {
         platform: "feishu",
         conversationId: "oc_group",
-        rootMessageId: "om_root"
+        rootMessageId: "om_root",
       },
       {
-        text: "second"
-      }
+        text: "second",
+      },
     );
     await adapter.postThreadMessage(
       {
         platform: "feishu",
         conversationId: "oc_other",
-        rootMessageId: "om_other"
+        rootMessageId: "om_other",
       },
       {
-        text: "other"
-      }
+        text: "other",
+      },
     );
 
     expect(postedFeishuTextCalls(calls)).toEqual(["first", "other"]);
@@ -101,32 +94,34 @@ describe("FeishuPlatformAdapter", () => {
               chat_id: "oc_group",
               body: {
                 content: JSON.stringify({
-                  title: "Recovered card"
-                })
+                  title: "Recovered card",
+                }),
               },
               raw: {
                 sender: {
                   id_type: "open_id",
                   id: "ou_user",
-                  sender_type: "user"
-                }
-              }
-            }
-          ]
-        }
+                  sender_type: "user",
+                },
+              },
+            },
+          ],
+        },
       }),
-      wsClient: new FakeWsClient()
+      wsClient: new FakeWsClient(),
     });
 
-    await expect(adapter.listThreadMessagePage({
-      platform: "feishu",
-      conversationId: "oc_group",
-      conversationKind: "group",
-      rootMessageId: "om_root",
-      platformThreadId: "omt_thread",
-      beforeCursor: "page_next",
-      limit: 20
-    })).resolves.toEqual({
+    await expect(
+      adapter.listThreadMessagePage({
+        platform: "feishu",
+        conversationId: "oc_group",
+        conversationKind: "group",
+        rootMessageId: "om_root",
+        platformThreadId: "omt_thread",
+        beforeCursor: "page_next",
+        limit: 20,
+      }),
+    ).resolves.toEqual({
       hasMore: true,
       nextCursor: "page_after_history",
       messages: [
@@ -139,9 +134,9 @@ describe("FeishuPlatformAdapter", () => {
           messageCursor: "1710000001000",
           source: "thread_reply",
           format: "card",
-          text: "[Feishu card: Recovered card]"
-        })
-      ]
+          text: "[Feishu card: Recovered card]",
+        }),
+      ],
     });
 
     expect(calls).toEqual([
@@ -153,9 +148,9 @@ describe("FeishuPlatformAdapter", () => {
           pageSize: 20,
           pageToken: "page_next",
           sortType: "ByCreateTimeAsc",
-          cardMsgContentType: "user_card_content"
-        }
-      }
+          cardMsgContentType: "user_card_content",
+        },
+      },
     ]);
   });
 
@@ -168,22 +163,22 @@ describe("FeishuPlatformAdapter", () => {
       api: createFakeApi(),
       wsClient,
       botIdentity: {
-        openId: "ou_bot"
-      }
+        openId: "ou_bot",
+      },
     });
 
     await adapter.start({
       onMessage: async (message) => {
         seen.push(message);
-      }
+      },
     });
 
     await wsClient.emit("im.message.receive_v1", {
       sender: {
         sender_id: {
-          open_id: "ou_user"
+          open_id: "ou_user",
         },
-        sender_type: "user"
+        sender_type: "user",
       },
       message: {
         chat_id: "oc_group",
@@ -191,18 +186,18 @@ describe("FeishuPlatformAdapter", () => {
         message_id: "om_msg",
         message_type: "text",
         content: JSON.stringify({
-          text: "@_user_1 hello"
+          text: "@_user_1 hello",
         }),
         mentions: [
           {
             key: "@_user_1",
             id: {
-              open_id: "ou_bot"
+              open_id: "ou_bot",
             },
-            name: "Codex"
-          }
-        ]
-      }
+            name: "Codex",
+          },
+        ],
+      },
     });
     await flushAsyncHandlers();
 
@@ -212,8 +207,8 @@ describe("FeishuPlatformAdapter", () => {
         conversationId: "oc_group",
         rootMessageId: "om_msg",
         messageId: "om_msg",
-        source: "bot_mention"
-      })
+        source: "bot_mention",
+      }),
     ]);
   });
 
@@ -227,8 +222,8 @@ describe("FeishuPlatformAdapter", () => {
       api: createFakeApi(),
       wsClient,
       botIdentity: {
-        openId: "ou_bot"
-      }
+        openId: "ou_bot",
+      },
     });
 
     await adapter.start({
@@ -237,38 +232,42 @@ describe("FeishuPlatformAdapter", () => {
         await new Promise<void>((resolve) => {
           releaseHandler = resolve;
         });
-      }
+      },
     });
 
-    await expect(Promise.race([
-      wsClient.emit("im.message.receive_v1", {
-        sender: {
-          sender_id: {
-            open_id: "ou_user"
-          },
-          sender_type: "user"
-        },
-        message: {
-          chat_id: "oc_group",
-          chat_type: "group",
-          message_id: "om_slow",
-          message_type: "text",
-          content: JSON.stringify({
-            text: "@_user_1 slow work"
-          }),
-          mentions: [
-            {
-              key: "@_user_1",
-              id: {
-                open_id: "ou_bot"
+    await expect(
+      Promise.race([
+        wsClient
+          .emit("im.message.receive_v1", {
+            sender: {
+              sender_id: {
+                open_id: "ou_user",
               },
-              name: "Codex"
-            }
-          ]
-        }
-      }).then(() => "dispatched"),
-      delay(50).then(() => "blocked")
-    ])).resolves.toBe("dispatched");
+              sender_type: "user",
+            },
+            message: {
+              chat_id: "oc_group",
+              chat_type: "group",
+              message_id: "om_slow",
+              message_type: "text",
+              content: JSON.stringify({
+                text: "@_user_1 slow work",
+              }),
+              mentions: [
+                {
+                  key: "@_user_1",
+                  id: {
+                    open_id: "ou_bot",
+                  },
+                  name: "Codex",
+                },
+              ],
+            },
+          })
+          .then(() => "dispatched"),
+        delay(50).then(() => "blocked"),
+      ]),
+    ).resolves.toBe("dispatched");
 
     await flushAsyncHandlers();
     expect(handlerStarted).toBe(true);
@@ -283,28 +282,28 @@ describe("FeishuPlatformAdapter", () => {
       rawSlackEvents: false,
       rawFeishuEvents: false,
       rawCodexRpc: false,
-      rawHttpRequests: false
+      rawHttpRequests: false,
     });
     const wsClient = new FakeWsClient();
     const adapter = new FeishuPlatformAdapter({
       appId: "cli-test",
       appSecret: "secret-test",
       api: createFakeApi(),
-      wsClient
+      wsClient,
     });
 
     await adapter.start({
       onMessage: async () => {
         throw new Error("SENTINEL_HANDLER_BODY");
-      }
+      },
     });
 
     await wsClient.emit("im.message.receive_v1", {
       sender: {
         sender_id: {
-          open_id: "ou_user"
+          open_id: "ou_user",
         },
-        sender_type: "user"
+        sender_type: "user",
       },
       message: {
         chat_id: "oc_group",
@@ -312,9 +311,9 @@ describe("FeishuPlatformAdapter", () => {
         message_id: "om_handler_failed",
         message_type: "text",
         content: JSON.stringify({
-          text: "SENTINEL_MESSAGE_BODY"
-        })
-      }
+          text: "SENTINEL_MESSAGE_BODY",
+        }),
+      },
     });
     await flushAsyncHandlers();
     await flushLogger();
@@ -327,10 +326,10 @@ describe("FeishuPlatformAdapter", () => {
           meta: expect.objectContaining({
             platform: "feishu",
             handler: "message",
-            errorClass: "Error"
-          })
-        })
-      ])
+            errorClass: "Error",
+          }),
+        }),
+      ]),
     );
     expect(JSON.stringify(records)).not.toContain("SENTINEL_HANDLER_BODY");
     expect(JSON.stringify(records)).not.toContain("SENTINEL_MESSAGE_BODY");
@@ -344,7 +343,7 @@ describe("FeishuPlatformAdapter", () => {
       rawSlackEvents: false,
       rawFeishuEvents: false,
       rawCodexRpc: false,
-      rawHttpRequests: false
+      rawHttpRequests: false,
     });
     const wsClient = new FakeWsClient();
     const seen: unknown[] = [];
@@ -354,23 +353,23 @@ describe("FeishuPlatformAdapter", () => {
       api: createFakeApi(),
       wsClient,
       botIdentity: {
-        openId: "ou_bot"
+        openId: "ou_bot",
       },
-      groupMessageMode: "all"
+      groupMessageMode: "all",
     });
 
     await adapter.start({
       onMessage: async (message) => {
         seen.push(message);
-      }
+      },
     });
 
     await wsClient.emit("im.message.receive_v1", {
       sender: {
         sender_id: {
-          open_id: "ou_user"
+          open_id: "ou_user",
         },
-        sender_type: "user"
+        sender_type: "user",
       },
       message: {
         chat_id: "oc_private",
@@ -378,9 +377,9 @@ describe("FeishuPlatformAdapter", () => {
         message_id: "om_private",
         message_type: "text",
         content: JSON.stringify({
-          text: "SENTINEL_PRIVATE_BODY"
-        })
-      }
+          text: "SENTINEL_PRIVATE_BODY",
+        }),
+      },
     });
     await flushAsyncHandlers();
     await flushLogger();
@@ -397,8 +396,8 @@ describe("FeishuPlatformAdapter", () => {
             platform: "feishu",
             source: "long_connection",
             groupMessageMode: "all",
-            startupRequired: true
-          })
+            startupRequired: true,
+          }),
         }),
         expect.objectContaining({
           type: "log",
@@ -407,8 +406,8 @@ describe("FeishuPlatformAdapter", () => {
           meta: expect.objectContaining({
             platform: "feishu",
             source: "long_connection",
-            groupMessageMode: "all"
-          })
+            groupMessageMode: "all",
+          }),
         }),
         expect.objectContaining({
           type: "log",
@@ -422,10 +421,10 @@ describe("FeishuPlatformAdapter", () => {
             eventId: "om_private",
             senderKind: "user",
             ignoredReason: "ignored_private_chat",
-            route: "ignored_private_chat"
-          })
-        })
-      ])
+            route: "ignored_private_chat",
+          }),
+        }),
+      ]),
     );
     expect(JSON.stringify(records)).not.toContain("SENTINEL_PRIVATE_BODY");
   });
@@ -438,7 +437,7 @@ describe("FeishuPlatformAdapter", () => {
       rawSlackEvents: false,
       rawFeishuEvents: false,
       rawCodexRpc: false,
-      rawHttpRequests: false
+      rawHttpRequests: false,
     });
     const wsClient = new FakeWsClient();
     const seen: unknown[] = [];
@@ -447,21 +446,21 @@ describe("FeishuPlatformAdapter", () => {
       appSecret: "secret-test",
       api: createFakeApi(),
       wsClient,
-      groupMessageMode: "all"
+      groupMessageMode: "all",
     });
 
     await adapter.start({
       onMessage: async (message) => {
         seen.push(message);
-      }
+      },
     });
 
     await wsClient.emit("im.message.receive_v1", {
       sender: {
         sender_id: {
-          open_id: "ou_any_bot"
+          open_id: "ou_any_bot",
         },
-        sender_type: "bot"
+        sender_type: "bot",
       },
       message: {
         chat_id: "oc_group",
@@ -469,9 +468,9 @@ describe("FeishuPlatformAdapter", () => {
         message_id: "om_bot",
         message_type: "text",
         content: JSON.stringify({
-          text: "SENTINEL_BOT_BODY"
-        })
-      }
+          text: "SENTINEL_BOT_BODY",
+        }),
+      },
     });
     await flushAsyncHandlers();
     await flushLogger();
@@ -492,10 +491,10 @@ describe("FeishuPlatformAdapter", () => {
             eventId: "om_bot",
             senderKind: "bot",
             ignoredReason: "ignored_self",
-            route: "ignored_self"
-          })
-        })
-      ])
+            route: "ignored_self",
+          }),
+        }),
+      ]),
     );
     expect(JSON.stringify(records)).not.toContain("SENTINEL_BOT_BODY");
   });
@@ -508,7 +507,7 @@ describe("FeishuPlatformAdapter", () => {
       rawSlackEvents: false,
       rawFeishuEvents: false,
       rawCodexRpc: false,
-      rawHttpRequests: false
+      rawHttpRequests: false,
     });
     const wsClient = new FakeWsClient();
     const seen: unknown[] = [];
@@ -518,24 +517,24 @@ describe("FeishuPlatformAdapter", () => {
       api: createFakeApi(),
       wsClient,
       botIdentity: {
-        userId: "bot-user-id"
+        userId: "bot-user-id",
       },
-      groupMessageMode: "all"
+      groupMessageMode: "all",
     });
 
     await adapter.start({
       onMessage: async (message) => {
         seen.push(message);
-      }
+      },
     });
 
     await wsClient.emit("im.message.receive_v1", {
       sender: {
         sender_id: {
           open_id: "ou_different_sender",
-          user_id: "bot-user-id"
+          user_id: "bot-user-id",
         },
-        sender_type: "user"
+        sender_type: "user",
       },
       message: {
         chat_id: "oc_group",
@@ -543,9 +542,9 @@ describe("FeishuPlatformAdapter", () => {
         message_id: "om_bot_user",
         message_type: "text",
         content: JSON.stringify({
-          text: "SENTINEL_SELF_IDENTITY_BODY"
-        })
-      }
+          text: "SENTINEL_SELF_IDENTITY_BODY",
+        }),
+      },
     });
     await flushAsyncHandlers();
     await flushLogger();
@@ -566,10 +565,10 @@ describe("FeishuPlatformAdapter", () => {
             eventId: "om_bot_user",
             senderKind: "user",
             ignoredReason: "ignored_self",
-            route: "ignored_self"
-          })
-        })
-      ])
+            route: "ignored_self",
+          }),
+        }),
+      ]),
     );
     expect(JSON.stringify(records)).not.toContain("SENTINEL_SELF_IDENTITY_BODY");
   });
@@ -582,7 +581,7 @@ describe("FeishuPlatformAdapter", () => {
       rawSlackEvents: false,
       rawFeishuEvents: false,
       rawCodexRpc: false,
-      rawHttpRequests: false
+      rawHttpRequests: false,
     });
     const wsClient = new FakeWsClient();
     const seen: unknown[] = [];
@@ -591,21 +590,21 @@ describe("FeishuPlatformAdapter", () => {
       appSecret: "secret-test",
       api: createFakeApi(),
       wsClient,
-      groupMessageMode: "all"
+      groupMessageMode: "all",
     });
 
     await adapter.start({
       onMessage: async (message) => {
         seen.push(message);
-      }
+      },
     });
 
     await wsClient.emit("im.message.receive_v1", {
       sender: {
         sender_id: {
-          app_id: "cli-test"
+          app_id: "cli-test",
         },
-        sender_type: "app"
+        sender_type: "app",
       },
       message: {
         chat_id: "oc_group",
@@ -613,9 +612,9 @@ describe("FeishuPlatformAdapter", () => {
         message_id: "om_app",
         message_type: "text",
         content: JSON.stringify({
-          text: "SENTINEL_APP_BODY"
-        })
-      }
+          text: "SENTINEL_APP_BODY",
+        }),
+      },
     });
     await flushAsyncHandlers();
     await flushLogger();
@@ -636,10 +635,10 @@ describe("FeishuPlatformAdapter", () => {
             eventId: "om_app",
             senderKind: "app",
             ignoredReason: "ignored_self",
-            route: "ignored_self"
-          })
-        })
-      ])
+            route: "ignored_self",
+          }),
+        }),
+      ]),
     );
     expect(JSON.stringify(records)).not.toContain("SENTINEL_APP_BODY");
   });
@@ -652,7 +651,7 @@ describe("FeishuPlatformAdapter", () => {
       rawSlackEvents: false,
       rawFeishuEvents: false,
       rawCodexRpc: false,
-      rawHttpRequests: false
+      rawHttpRequests: false,
     });
     const wsClient = new FakeWsClient();
     const seen: unknown[] = [];
@@ -661,26 +660,26 @@ describe("FeishuPlatformAdapter", () => {
       appSecret: "secret-test",
       api: createFakeApi(),
       wsClient,
-      groupMessageMode: "all"
+      groupMessageMode: "all",
     });
 
     await adapter.start({
       onMessage: async (message) => {
         seen.push(message);
-      }
+      },
     });
 
     await wsClient.emit("im.message.receive_v1", {
       header: {
-        event_id: "evt_invalid"
+        event_id: "evt_invalid",
       },
       event: {
         message: {
           content: JSON.stringify({
-            text: "SENTINEL_INVALID_BODY"
-          })
-        }
-      }
+            text: "SENTINEL_INVALID_BODY",
+          }),
+        },
+      },
     });
     await flushAsyncHandlers();
     await flushLogger();
@@ -701,10 +700,10 @@ describe("FeishuPlatformAdapter", () => {
             eventId: "evt_invalid",
             senderKind: "unknown",
             ignoredReason: "ignored_invalid_event",
-            route: "ignored_invalid_event"
-          })
-        })
-      ])
+            route: "ignored_invalid_event",
+          }),
+        }),
+      ]),
     );
     expect(JSON.stringify(records)).not.toContain("SENTINEL_INVALID_BODY");
   });
@@ -717,7 +716,7 @@ describe("FeishuPlatformAdapter", () => {
       rawSlackEvents: false,
       rawFeishuEvents: false,
       rawCodexRpc: false,
-      rawHttpRequests: false
+      rawHttpRequests: false,
     });
     const wsClient = new FakeWsClient();
     const seen: unknown[] = [];
@@ -725,21 +724,21 @@ describe("FeishuPlatformAdapter", () => {
       appId: "cli-test",
       appSecret: "secret-test",
       api: createFakeApi(),
-      wsClient
+      wsClient,
     });
 
     await adapter.start({
       onMessage: async (message) => {
         seen.push(message);
-      }
+      },
     });
 
     await wsClient.emit("im.message.receive_v1", {
       sender: {
         sender_id: {
-          open_id: "ou_user"
+          open_id: "ou_user",
         },
-        sender_type: "user"
+        sender_type: "user",
       },
       message: {
         chat_id: "oc_group",
@@ -748,9 +747,9 @@ describe("FeishuPlatformAdapter", () => {
         message_type: "post",
         content: JSON.stringify({
           title: "Status",
-          content: [[{ tag: "text", text: "RICH_SENTINEL_BODY" }]]
-        })
-      }
+          content: [[{ tag: "text", text: "RICH_SENTINEL_BODY" }]],
+        }),
+      },
     });
     await flushLogger();
 
@@ -758,9 +757,9 @@ describe("FeishuPlatformAdapter", () => {
       expect.objectContaining({
         format: "rich_text",
         rawMessage: expect.objectContaining({
-          message_id: "om_rich"
-        })
-      })
+          message_id: "om_rich",
+        }),
+      }),
     ]);
     const records = await readJsonl(path.join(logDir, "broker.jsonl"));
     expect(records).toEqual(
@@ -777,10 +776,10 @@ describe("FeishuPlatformAdapter", () => {
             eventId: "om_rich",
             msgType: "rich_text",
             route: "group_message",
-            payloadRef: "feishu-message:om_rich"
-          })
-        })
-      ])
+            payloadRef: "feishu-message:om_rich",
+          }),
+        }),
+      ]),
     );
     expect(JSON.stringify(records)).not.toContain("RICH_SENTINEL_BODY");
   });
@@ -793,26 +792,26 @@ describe("FeishuPlatformAdapter", () => {
       rawSlackEvents: false,
       rawFeishuEvents: false,
       rawCodexRpc: false,
-      rawHttpRequests: false
+      rawHttpRequests: false,
     });
     const wsClient = new FakeWsClient();
     const adapter = new FeishuPlatformAdapter({
       appId: "cli-test",
       appSecret: "secret-test",
       api: createFakeApi(),
-      wsClient
+      wsClient,
     });
 
     await adapter.start({
-      onMessage: async () => {}
+      onMessage: async () => {},
     });
 
     await wsClient.emit("im.message.receive_v1", {
       sender: {
         sender_id: {
-          open_id: "ou_user"
+          open_id: "ou_user",
         },
-        sender_type: "user"
+        sender_type: "user",
       },
       message: {
         chat_id: "oc_group",
@@ -820,16 +819,16 @@ describe("FeishuPlatformAdapter", () => {
         message_id: "om_image",
         message_type: "image",
         content: JSON.stringify({
-          image_key: "img_v2_key"
-        })
-      }
+          image_key: "img_v2_key",
+        }),
+      },
     });
     await wsClient.emit("im.message.receive_v1", {
       sender: {
         sender_id: {
-          open_id: "ou_user"
+          open_id: "ou_user",
         },
-        sender_type: "user"
+        sender_type: "user",
       },
       message: {
         chat_id: "oc_group",
@@ -838,9 +837,9 @@ describe("FeishuPlatformAdapter", () => {
         message_type: "file",
         content: JSON.stringify({
           file_key: "file_v2_key",
-          file_name: "report.pdf"
-        })
-      }
+          file_name: "report.pdf",
+        }),
+      },
     });
     await flushAsyncHandlers();
     await flushLogger();
@@ -857,8 +856,8 @@ describe("FeishuPlatformAdapter", () => {
             messageId: "om_image",
             msgType: "image",
             fileId: "img_v2_key",
-            payloadRef: "feishu-message:om_image"
-          })
+            payloadRef: "feishu-message:om_image",
+          }),
         }),
         expect.objectContaining({
           type: "log",
@@ -869,10 +868,10 @@ describe("FeishuPlatformAdapter", () => {
             messageId: "om_file",
             msgType: "file",
             fileId: "file_v2_key",
-            payloadRef: "feishu-message:om_file"
-          })
-        })
-      ])
+            payloadRef: "feishu-message:om_file",
+          }),
+        }),
+      ]),
     );
   });
 
@@ -884,25 +883,25 @@ describe("FeishuPlatformAdapter", () => {
       rawSlackEvents: false,
       rawFeishuEvents: false,
       rawCodexRpc: false,
-      rawHttpRequests: false
+      rawHttpRequests: false,
     });
     const disabledWsClient = new FakeWsClient();
     const disabledAdapter = new FeishuPlatformAdapter({
       appId: "cli-test",
       appSecret: "secret-test",
       api: createFakeApi(),
-      wsClient: disabledWsClient
+      wsClient: disabledWsClient,
     });
     await disabledAdapter.start({
-      onMessage: async () => {}
+      onMessage: async () => {},
     });
 
     await disabledWsClient.emit("im.message.receive_v1", {
       sender: {
         sender_id: {
-          open_id: "ou_user"
+          open_id: "ou_user",
         },
-        sender_type: "user"
+        sender_type: "user",
       },
       message: {
         chat_id: "oc_group",
@@ -910,16 +909,14 @@ describe("FeishuPlatformAdapter", () => {
         message_id: "om_raw_disabled",
         message_type: "text",
         content: JSON.stringify({
-          text: "RAW_DISABLED_SENTINEL"
-        })
-      }
+          text: "RAW_DISABLED_SENTINEL",
+        }),
+      },
     });
     await flushLogger();
 
-    await expect(
-      fs.readFile(path.join(disabledLogDir, "raw", "feishu-events.jsonl"), "utf8")
-    ).rejects.toMatchObject({
-      code: "ENOENT"
+    await expect(fs.readFile(path.join(disabledLogDir, "raw", "feishu-events.jsonl"), "utf8")).rejects.toMatchObject({
+      code: "ENOENT",
     });
 
     const enabledLogDir = await fs.mkdtemp(path.join(os.tmpdir(), "feishu-raw-enabled-"));
@@ -929,25 +926,25 @@ describe("FeishuPlatformAdapter", () => {
       rawSlackEvents: false,
       rawFeishuEvents: true,
       rawCodexRpc: false,
-      rawHttpRequests: false
+      rawHttpRequests: false,
     });
     const enabledWsClient = new FakeWsClient();
     const enabledAdapter = new FeishuPlatformAdapter({
       appId: "cli-test",
       appSecret: "secret-test",
       api: createFakeApi(),
-      wsClient: enabledWsClient
+      wsClient: enabledWsClient,
     });
     await enabledAdapter.start({
-      onMessage: async () => {}
+      onMessage: async () => {},
     });
 
     await enabledWsClient.emit("im.message.receive_v1", {
       sender: {
         sender_id: {
-          open_id: "ou_user"
+          open_id: "ou_user",
         },
-        sender_type: "user"
+        sender_type: "user",
       },
       message: {
         chat_id: "oc_group",
@@ -955,9 +952,9 @@ describe("FeishuPlatformAdapter", () => {
         message_id: "om_raw_enabled",
         message_type: "text",
         content: JSON.stringify({
-          text: "RAW_ENABLED_SENTINEL"
-        })
-      }
+          text: "RAW_ENABLED_SENTINEL",
+        }),
+      },
     });
     await flushLogger();
 
@@ -969,13 +966,13 @@ describe("FeishuPlatformAdapter", () => {
         payload: expect.objectContaining({
           event_type: "im.message.receive_v1",
           message: expect.objectContaining({
-            message_id: "om_raw_enabled"
-          })
+            message_id: "om_raw_enabled",
+          }),
         }),
         meta: {
-          platform: "feishu"
-        }
-      })
+          platform: "feishu",
+        },
+      }),
     ]);
     expect(JSON.stringify(rawRecords)).toContain("RAW_ENABLED_SENTINEL");
   });
@@ -986,25 +983,25 @@ describe("FeishuPlatformAdapter", () => {
       appId: "cli-test",
       appSecret: "secret-test",
       api: createFakeApi(calls),
-      wsClient: new FakeWsClient()
+      wsClient: new FakeWsClient(),
     });
 
     const posted = await adapter.postThreadMessage(
       {
         platform: "feishu",
         conversationId: "oc_group",
-        rootMessageId: "om_root"
+        rootMessageId: "om_root",
       },
       {
-        text: "done"
-      }
+        text: "done",
+      },
     );
 
     expect(posted).toMatchObject({
       platform: "feishu",
       conversationId: "oc_group",
       rootMessageId: "om_root",
-      messageId: "om_reply"
+      messageId: "om_reply",
     });
     expect(calls).toEqual([
       {
@@ -1013,11 +1010,11 @@ describe("FeishuPlatformAdapter", () => {
           messageId: "om_root",
           msgType: "text",
           content: {
-            text: "done"
+            text: "done",
           },
-          replyInThread: true
-        }
-      }
+          replyInThread: true,
+        },
+      },
     ]);
   });
 
@@ -1027,19 +1024,19 @@ describe("FeishuPlatformAdapter", () => {
       appId: "cli-test",
       appSecret: "secret-test",
       api: createFakeApi(calls),
-      wsClient: new FakeWsClient()
+      wsClient: new FakeWsClient(),
     });
 
     await adapter.postThreadMessage(
       {
         platform: "feishu",
         conversationId: "oc_group",
-        rootMessageId: "om_root"
+        rootMessageId: "om_root",
       },
       {
         text: "Build passed\n\n- tests green",
-        format: "markdown"
-      }
+        format: "markdown",
+      },
     );
 
     expect(calls).toEqual([
@@ -1050,15 +1047,12 @@ describe("FeishuPlatformAdapter", () => {
           msgType: "post",
           content: {
             zh_cn: {
-              content: [
-                [{ tag: "text", text: "Build passed" }],
-                [{ tag: "text", text: "- tests green" }]
-              ]
-            }
+              content: [[{ tag: "text", text: "Build passed" }], [{ tag: "text", text: "- tests green" }]],
+            },
           },
-          replyInThread: true
-        }
-      }
+          replyInThread: true,
+        },
+      },
     ]);
   });
 
@@ -1068,22 +1062,22 @@ describe("FeishuPlatformAdapter", () => {
       appId: "cli-test",
       appSecret: "secret-test",
       api: createFakeApi(calls),
-      wsClient: new FakeWsClient()
+      wsClient: new FakeWsClient(),
     });
 
     const uploaded = await adapter.uploadThreadFile(
       {
         platform: "feishu",
         conversationId: "oc_group",
-        rootMessageId: "om_root"
+        rootMessageId: "om_root",
       },
       {
         contentBase64: Buffer.from("png").toString("base64"),
         filename: "chart.png",
         contentType: "image/png",
         title: "chart",
-        initialComment: "see attached"
-      }
+        initialComment: "see attached",
+      },
     );
 
     expect(uploaded).toMatchObject({
@@ -1092,7 +1086,7 @@ describe("FeishuPlatformAdapter", () => {
       title: "chart",
       name: "chart.png",
       mimetype: "image/png",
-      size: 3
+      size: 3,
     });
     expect(calls).toEqual([
       {
@@ -1101,16 +1095,16 @@ describe("FeishuPlatformAdapter", () => {
           messageId: "om_root",
           msgType: "text",
           content: {
-            text: "see attached"
+            text: "see attached",
           },
-          replyInThread: true
-        }
+          replyInThread: true,
+        },
       },
       {
         operation: "uploadMessageImage",
         options: {
-          bytes: Buffer.from("png")
-        }
+          bytes: Buffer.from("png"),
+        },
       },
       {
         operation: "replyMessage",
@@ -1118,11 +1112,11 @@ describe("FeishuPlatformAdapter", () => {
           messageId: "om_root",
           msgType: "image",
           content: {
-            image_key: "img_uploaded"
+            image_key: "img_uploaded",
           },
-          replyInThread: true
-        }
-      }
+          replyInThread: true,
+        },
+      },
     ]);
   });
 
@@ -1132,20 +1126,20 @@ describe("FeishuPlatformAdapter", () => {
       appId: "cli-test",
       appSecret: "secret-test",
       api: createFakeApi(calls),
-      wsClient: new FakeWsClient()
+      wsClient: new FakeWsClient(),
     });
 
     const uploaded = await adapter.uploadThreadFile(
       {
         platform: "feishu",
         conversationId: "oc_group",
-        rootMessageId: "om_root"
+        rootMessageId: "om_root",
       },
       {
         contentBase64: Buffer.from("pdf").toString("base64"),
         filename: "report.pdf",
-        contentType: "application/pdf"
-      }
+        contentType: "application/pdf",
+      },
     );
 
     expect(uploaded).toMatchObject({
@@ -1154,7 +1148,7 @@ describe("FeishuPlatformAdapter", () => {
       title: "report.pdf",
       name: "report.pdf",
       mimetype: "application/pdf",
-      size: 3
+      size: 3,
     });
     expect(calls).toEqual([
       {
@@ -1162,8 +1156,8 @@ describe("FeishuPlatformAdapter", () => {
         options: {
           bytes: Buffer.from("pdf"),
           filename: "report.pdf",
-          fileType: "pdf"
-        }
+          fileType: "pdf",
+        },
       },
       {
         operation: "replyMessage",
@@ -1171,11 +1165,11 @@ describe("FeishuPlatformAdapter", () => {
           messageId: "om_root",
           msgType: "file",
           content: {
-            file_key: "file_uploaded"
+            file_key: "file_uploaded",
           },
-          replyInThread: true
-        }
-      }
+          replyInThread: true,
+        },
+      },
     ]);
   });
 
@@ -1185,29 +1179,33 @@ describe("FeishuPlatformAdapter", () => {
       appId: "cli-test",
       appSecret: "secret-test",
       api: createFakeApi(calls),
-      wsClient: new FakeWsClient()
+      wsClient: new FakeWsClient(),
     });
 
-    await expect(adapter.uploadThreadFile(
-      {
-        platform: "feishu",
-        conversationId: "oc_group",
-        rootMessageId: "om_root"
-      },
-      {}
-    )).rejects.toThrow(CHAT_FILE_SOURCE_REQUIREMENT_MESSAGE);
-    await expect(adapter.uploadThreadFile(
-      {
-        platform: "feishu",
-        conversationId: "oc_group",
-        rootMessageId: "om_root"
-      },
-      {
-        filePath: "/tmp/report.txt",
-        contentBase64: Buffer.from("pdf").toString("base64"),
-        filename: "report.pdf"
-      }
-    )).rejects.toThrow(CHAT_FILE_SOURCE_REQUIREMENT_MESSAGE);
+    await expect(
+      adapter.uploadThreadFile(
+        {
+          platform: "feishu",
+          conversationId: "oc_group",
+          rootMessageId: "om_root",
+        },
+        {},
+      ),
+    ).rejects.toThrow(CHAT_FILE_SOURCE_REQUIREMENT_MESSAGE);
+    await expect(
+      adapter.uploadThreadFile(
+        {
+          platform: "feishu",
+          conversationId: "oc_group",
+          rootMessageId: "om_root",
+        },
+        {
+          filePath: "/tmp/report.txt",
+          contentBase64: Buffer.from("pdf").toString("base64"),
+          filename: "report.pdf",
+        },
+      ),
+    ).rejects.toThrow(CHAT_FILE_SOURCE_REQUIREMENT_MESSAGE);
 
     expect(calls).toEqual([]);
   });
@@ -1218,19 +1216,21 @@ describe("FeishuPlatformAdapter", () => {
       appId: "cli-test",
       appSecret: "secret-test",
       api: createFakeApi(calls),
-      wsClient: new FakeWsClient()
+      wsClient: new FakeWsClient(),
     });
 
-    await expect(adapter.uploadThreadFile(
-      {
-        platform: "feishu",
-        conversationId: "oc_group",
-        rootMessageId: "om_root"
-      },
-      {
-        contentBase64: Buffer.from("pdf").toString("base64")
-      }
-    )).rejects.toThrow(CHAT_INLINE_FILE_FILENAME_REQUIREMENT_MESSAGE);
+    await expect(
+      adapter.uploadThreadFile(
+        {
+          platform: "feishu",
+          conversationId: "oc_group",
+          rootMessageId: "om_root",
+        },
+        {
+          contentBase64: Buffer.from("pdf").toString("base64"),
+        },
+      ),
+    ).rejects.toThrow(CHAT_INLINE_FILE_FILENAME_REQUIREMENT_MESSAGE);
 
     expect(calls).toEqual([]);
   });
@@ -1241,20 +1241,22 @@ describe("FeishuPlatformAdapter", () => {
       appId: "cli-test",
       appSecret: "secret-test",
       api: createFakeApi(calls),
-      wsClient: new FakeWsClient()
+      wsClient: new FakeWsClient(),
     });
 
-    await expect(adapter.uploadThreadFile(
-      {
-        platform: "feishu",
-        conversationId: "oc_group",
-        rootMessageId: "om_root"
-      },
-      {
-        contentBase64: "!!!!",
-        filename: "report.pdf"
-      }
-    )).rejects.toThrow(CHAT_INLINE_FILE_CONTENT_REQUIREMENT_MESSAGE);
+    await expect(
+      adapter.uploadThreadFile(
+        {
+          platform: "feishu",
+          conversationId: "oc_group",
+          rootMessageId: "om_root",
+        },
+        {
+          contentBase64: "!!!!",
+          filename: "report.pdf",
+        },
+      ),
+    ).rejects.toThrow(CHAT_INLINE_FILE_CONTENT_REQUIREMENT_MESSAGE);
 
     expect(calls).toEqual([]);
   });
@@ -1265,7 +1267,7 @@ describe("FeishuPlatformAdapter", () => {
       appId: "cli-test",
       appSecret: "secret-test",
       api: createFakeApi(calls),
-      wsClient: new FakeWsClient()
+      wsClient: new FakeWsClient(),
     });
     const largeImage = Buffer.alloc(10 * 1024 * 1024 + 1);
 
@@ -1273,13 +1275,13 @@ describe("FeishuPlatformAdapter", () => {
       {
         platform: "feishu",
         conversationId: "oc_group",
-        rootMessageId: "om_root"
+        rootMessageId: "om_root",
       },
       {
         contentBase64: largeImage.toString("base64"),
         filename: "large.png",
-        contentType: "image/png"
-      }
+        contentType: "image/png",
+      },
     );
 
     expect(uploaded).toMatchObject({
@@ -1288,15 +1290,15 @@ describe("FeishuPlatformAdapter", () => {
       kind: "file",
       name: "large.png",
       mimetype: "image/png",
-      size: largeImage.byteLength
+      size: largeImage.byteLength,
     });
     expect(calls).toEqual([
       expect.objectContaining({
         operation: "uploadMessageFile",
         options: expect.objectContaining({
           filename: "large.png",
-          fileType: "stream"
-        })
+          fileType: "stream",
+        }),
       }),
       expect.objectContaining({
         operation: "replyMessage",
@@ -1304,11 +1306,11 @@ describe("FeishuPlatformAdapter", () => {
           messageId: "om_root",
           msgType: "file",
           content: {
-            file_key: "file_uploaded"
+            file_key: "file_uploaded",
           },
-          replyInThread: true
-        })
-      })
+          replyInThread: true,
+        }),
+      }),
     ]);
   });
 
@@ -1321,22 +1323,24 @@ describe("FeishuPlatformAdapter", () => {
       appId: "cli-test",
       appSecret: "secret-test",
       api: createFakeApi(calls),
-      wsClient: new FakeWsClient()
+      wsClient: new FakeWsClient(),
     });
 
-    await expect(adapter.uploadThreadFile(
-      {
-        platform: "feishu",
-        conversationId: "oc_group",
-        rootMessageId: "om_root"
-      },
-      {
-        filePath,
-        filename: "too-large.pdf",
-        contentType: "application/pdf",
-        initialComment: "this should not post before validation"
-      }
-    )).rejects.toThrow("Feishu file upload exceeds 30 MB limit");
+    await expect(
+      adapter.uploadThreadFile(
+        {
+          platform: "feishu",
+          conversationId: "oc_group",
+          rootMessageId: "om_root",
+        },
+        {
+          filePath,
+          filename: "too-large.pdf",
+          contentType: "application/pdf",
+          initialComment: "this should not post before validation",
+        },
+      ),
+    ).rejects.toThrow("Feishu file upload exceeds 30 MB limit");
     expect(calls).toEqual([]);
   });
 
@@ -1346,23 +1350,27 @@ describe("FeishuPlatformAdapter", () => {
       appId: "cli-test",
       appSecret: "secret-test",
       api: createFakeApi(calls),
-      wsClient: new FakeWsClient()
+      wsClient: new FakeWsClient(),
     });
 
-    await expect(adapter.downloadAttachment({
-      platform: "feishu",
-      id: "img_v2_key",
-      kind: "image",
-      messageId: "om_image",
-      resourceKey: "img_v2_key"
-    })).resolves.toBe("data:image/png;base64,aGVsbG8=");
-    await expect(adapter.downloadAttachment({
-      platform: "feishu",
-      id: "file_v2_key",
-      kind: "file",
-      messageId: "om_file",
-      resourceKey: "file_v2_key"
-    })).resolves.toBe("data:image/png;base64,aGVsbG8=");
+    await expect(
+      adapter.downloadAttachment({
+        platform: "feishu",
+        id: "img_v2_key",
+        kind: "image",
+        messageId: "om_image",
+        resourceKey: "img_v2_key",
+      }),
+    ).resolves.toBe("data:image/png;base64,aGVsbG8=");
+    await expect(
+      adapter.downloadAttachment({
+        platform: "feishu",
+        id: "file_v2_key",
+        kind: "file",
+        messageId: "om_file",
+        resourceKey: "file_v2_key",
+      }),
+    ).resolves.toBe("data:image/png;base64,aGVsbG8=");
 
     expect(calls).toEqual([
       {
@@ -1372,8 +1380,8 @@ describe("FeishuPlatformAdapter", () => {
           fileKey: "img_v2_key",
           type: "image",
           maxBytes: 10 * 1024 * 1024,
-          allowedContentTypes: ["image/"]
-        }
+          allowedContentTypes: ["image/"],
+        },
       },
       {
         operation: "downloadMessageResourceAsDataUrl",
@@ -1382,9 +1390,9 @@ describe("FeishuPlatformAdapter", () => {
           fileKey: "file_v2_key",
           type: "file",
           maxBytes: 30 * 1024 * 1024,
-          allowedContentTypes: undefined
-        }
-      }
+          allowedContentTypes: undefined,
+        },
+      },
     ]);
   });
 
@@ -1396,7 +1404,7 @@ describe("FeishuPlatformAdapter", () => {
       rawSlackEvents: false,
       rawFeishuEvents: false,
       rawCodexRpc: false,
-      rawHttpRequests: false
+      rawHttpRequests: false,
     });
     const wsClient = new FakeWsClient();
     const callbacks: unknown[] = [];
@@ -1404,14 +1412,14 @@ describe("FeishuPlatformAdapter", () => {
       appId: "cli-test",
       appSecret: "secret-test",
       api: createFakeApi(),
-      wsClient
+      wsClient,
     });
 
     await adapter.start({
       onMessage: async () => {},
       onInteractive: async (payload) => {
         callbacks.push(payload);
-      }
+      },
     });
 
     await wsClient.emit("card.action.trigger", {
@@ -1423,9 +1431,9 @@ describe("FeishuPlatformAdapter", () => {
         value: {
           sessionKey: "feishu:b2M:b20",
           conversationId: "oc",
-          rootMessageId: "om"
-        }
-      }
+          rootMessageId: "om",
+        },
+      },
     });
     await flushAsyncHandlers();
     await flushLogger();
@@ -1433,7 +1441,7 @@ describe("FeishuPlatformAdapter", () => {
     expect(callbacks).toHaveLength(1);
     expect(callbacks[0]).toMatchObject({
       event_id: "evt_card_1",
-      open_message_id: "om_card"
+      open_message_id: "om_card",
     });
     const records = await readJsonl(path.join(logDir, "broker.jsonl"));
     expect(records).toEqual(
@@ -1445,10 +1453,10 @@ describe("FeishuPlatformAdapter", () => {
             conversationId: "oc",
             rootMessageId: "om",
             eventId: "evt_card_1",
-            messageId: "om_card"
-          })
-        })
-      ])
+            messageId: "om_card",
+          }),
+        }),
+      ]),
     );
     expect(JSON.stringify(records)).not.toContain("callback-token");
   });
@@ -1461,7 +1469,7 @@ describe("FeishuPlatformAdapter", () => {
       rawSlackEvents: false,
       rawFeishuEvents: false,
       rawCodexRpc: false,
-      rawHttpRequests: false
+      rawHttpRequests: false,
     });
     const wsClient = new FakeWsClient();
     const callbacks: unknown[] = [];
@@ -1469,14 +1477,14 @@ describe("FeishuPlatformAdapter", () => {
       appId: "cli-test",
       appSecret: "secret-test",
       api: createFakeApi(),
-      wsClient
+      wsClient,
     });
 
     await adapter.start({
       onMessage: async () => {},
       onInteractive: async (payload) => {
         callbacks.push(payload);
-      }
+      },
     });
 
     await wsClient.emit("card.action.trigger", {
@@ -1488,9 +1496,9 @@ describe("FeishuPlatformAdapter", () => {
           conversationId: "oc",
           rootMessageId: "om",
           candidateRevision: 2,
-          kind: "coauthor_confirm_all"
-        })
-      }
+          kind: "coauthor_confirm_all",
+        }),
+      },
     });
     await flushAsyncHandlers();
     await flushLogger();
@@ -1510,10 +1518,10 @@ describe("FeishuPlatformAdapter", () => {
             messageId: "om_card",
             payloadRef: "feishu-card:evt_card_string_value",
             kind: "coauthor_confirm_all",
-            candidateRevision: 2
-          })
-        })
-      ])
+            candidateRevision: 2,
+          }),
+        }),
+      ]),
     );
   });
 
@@ -1525,7 +1533,7 @@ describe("FeishuPlatformAdapter", () => {
       rawSlackEvents: false,
       rawFeishuEvents: false,
       rawCodexRpc: false,
-      rawHttpRequests: false
+      rawHttpRequests: false,
     });
     const wsClient = new FakeWsClient();
     const callbacks: unknown[] = [];
@@ -1533,21 +1541,21 @@ describe("FeishuPlatformAdapter", () => {
       appId: "cli-test",
       appSecret: "secret-test",
       api: createFakeApi(),
-      wsClient
+      wsClient,
     });
 
     await adapter.start({
       onMessage: async () => {},
       onInteractive: async (payload) => {
         callbacks.push(payload);
-      }
+      },
     });
 
     await wsClient.emit("card.action.trigger", {
       token: "SENTINEL_CALLBACK_TOKEN",
       action: {
-        value: {}
-      }
+        value: {},
+      },
     });
     await flushAsyncHandlers();
     await flushLogger();
@@ -1566,10 +1574,10 @@ describe("FeishuPlatformAdapter", () => {
             eventId: "unknown",
             messageId: "unknown",
             payloadRef: "feishu-card:unknown",
-            ackDurationMs: expect.any(Number)
-          })
-        })
-      ])
+            ackDurationMs: expect.any(Number),
+          }),
+        }),
+      ]),
     );
     expect(JSON.stringify(records)).not.toContain("SENTINEL_CALLBACK_TOKEN");
   });
@@ -1582,7 +1590,7 @@ describe("FeishuPlatformAdapter", () => {
       appId: "cli-test",
       appSecret: "secret-test",
       api: createFakeApi(),
-      wsClient
+      wsClient,
     });
 
     await adapter.start({
@@ -1592,23 +1600,27 @@ describe("FeishuPlatformAdapter", () => {
         await new Promise<void>((resolve) => {
           releaseHandler = resolve;
         });
-      }
+      },
     });
 
-    await expect(Promise.race([
-      wsClient.emit("card.action.trigger", {
-        event_id: "evt_card_slow",
-        open_message_id: "om_card",
-        action: {
-          value: {
-            sessionKey: "feishu:b2M:b20",
-            conversationId: "oc",
-            rootMessageId: "om"
-          }
-        }
-      }).then(() => "dispatched"),
-      delay(50).then(() => "blocked")
-    ])).resolves.toBe("dispatched");
+    await expect(
+      Promise.race([
+        wsClient
+          .emit("card.action.trigger", {
+            event_id: "evt_card_slow",
+            open_message_id: "om_card",
+            action: {
+              value: {
+                sessionKey: "feishu:b2M:b20",
+                conversationId: "oc",
+                rootMessageId: "om",
+              },
+            },
+          })
+          .then(() => "dispatched"),
+        delay(50).then(() => "blocked"),
+      ]),
+    ).resolves.toBe("dispatched");
 
     await flushAsyncHandlers();
     expect(handlerStarted).toBe(true);
@@ -1641,9 +1653,9 @@ class FakeWsClient {
     await this.dispatcher?.invoke({
       schema: "2.0",
       header: {
-        event_type: eventType
+        event_type: eventType,
       },
-      event: data
+      event: data,
     });
   }
 }
@@ -1670,7 +1682,7 @@ function createFakeApi(
   calls: unknown[] = [],
   options?: {
     readonly listMessages?: unknown;
-  }
+  },
 ) {
   return {
     replyMessage: async (options: unknown) => {
@@ -1678,31 +1690,33 @@ function createFakeApi(
       return {
         message_id: "om_reply",
         root_id: "om_root",
-        create_time: "1710000000000"
+        create_time: "1710000000000",
       };
     },
     listMessages: async (payload: unknown) => {
       calls.push({ operation: "listMessages", options: payload });
-      return options?.listMessages ?? {
-        has_more: false,
-        items: []
-      };
+      return (
+        options?.listMessages ?? {
+          has_more: false,
+          items: [],
+        }
+      );
     },
     uploadMessageImage: async (options: unknown) => {
       calls.push({ operation: "uploadMessageImage", options });
       return {
-        image_key: "img_uploaded"
+        image_key: "img_uploaded",
       };
     },
     uploadMessageFile: async (options: unknown) => {
       calls.push({ operation: "uploadMessageFile", options });
       return {
-        file_key: "file_uploaded"
+        file_key: "file_uploaded",
       };
     },
     downloadMessageResourceAsDataUrl: async (options: unknown) => {
       calls.push({ operation: "downloadMessageResourceAsDataUrl", options });
       return "data:image/png;base64,aGVsbG8=";
-    }
+    },
   } as any;
 }

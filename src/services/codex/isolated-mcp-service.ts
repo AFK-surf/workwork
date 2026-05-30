@@ -12,7 +12,7 @@ import { fileExists } from "../../utils/fs.js";
 
 const DEFAULT_MCP_URLS: Record<string, string> = {
   linear: "https://mcp.linear.app/mcp",
-  notion: "https://mcp.notion.com/mcp"
+  notion: "https://mcp.notion.com/mcp",
 };
 
 interface StoredMcpCredential {
@@ -51,7 +51,7 @@ export class IsolatedMcpService {
       readonly codexHome: string;
       readonly isolatedMcpServers: readonly string[];
       readonly createClient?: ((server: string) => Promise<ConnectedIsolatedMcpClient>) | undefined;
-    }
+    },
   ) {}
 
   async listTools(server: string): Promise<readonly IsolatedMcpToolSummary[]> {
@@ -65,11 +65,7 @@ export class IsolatedMcpService {
     }
   }
 
-  async callTool(options: {
-    readonly server: string;
-    readonly name: string;
-    readonly arguments?: Record<string, unknown> | undefined;
-  }): Promise<IsolatedMcpToolCallResult> {
+  async callTool(options: { readonly server: string; readonly name: string; readonly arguments?: Record<string, unknown> | undefined }): Promise<IsolatedMcpToolCallResult> {
     const normalizedServer = this.#normalizeServer(options.server);
     const toolName = options.name.trim();
     if (!toolName) {
@@ -109,15 +105,15 @@ export class IsolatedMcpService {
       codexHome: this.options.codexHome,
       server,
       serverUrl,
-      entry: credentialsEntry
+      entry: credentialsEntry,
     });
 
     const transport = new StreamableHTTPClientTransport(new URL(serverUrl), {
-      authProvider
+      authProvider,
     });
     const client = new Client({
       name: "slack-codex-broker",
-      version: "0.1.0"
+      version: "0.1.0",
     });
     await client.connect(transport as unknown as Transport);
 
@@ -130,21 +126,21 @@ export class IsolatedMcpService {
         return result.tools.map((tool) => ({
           name: tool.name,
           description: tool.description,
-          inputSchema: tool.inputSchema as JsonLike | undefined
+          inputSchema: tool.inputSchema as JsonLike | undefined,
         }));
       },
       callTool: async (name: string, args: Record<string, unknown>) => {
         const result = await client.callTool({
           name,
-          arguments: args
+          arguments: args,
         });
         return {
           content: result.content as JsonLike | undefined,
           structuredContent: result.structuredContent as JsonLike | undefined,
           isError: typeof result.isError === "boolean" ? result.isError : undefined,
-          _meta: result._meta as JsonLike | undefined
+          _meta: result._meta as JsonLike | undefined,
         };
-      }
+      },
     };
   }
 
@@ -152,10 +148,7 @@ export class IsolatedMcpService {
     const sourceConfigPath = path.join(this.options.codexHome, "config.toml");
     if (await fileExists(sourceConfigPath)) {
       const raw = await fs.readFile(sourceConfigPath, "utf8");
-      const pattern = new RegExp(
-        String.raw`^\[mcp_servers\.${escapeRegExp(server)}\][\s\S]*?^url\s*=\s*"([^"]+)"`,
-        "m"
-      );
+      const pattern = new RegExp(String.raw`^\[mcp_servers\.${escapeRegExp(server)}\][\s\S]*?^url\s*=\s*"([^"]+)"`, "m");
       const match = raw.match(pattern);
       if (match?.[1]) {
         return match[1];
@@ -178,9 +171,7 @@ export class IsolatedMcpService {
 
     const raw = await fs.readFile(credentialsPath, "utf8");
     const parsed = JSON.parse(raw) as Record<string, StoredMcpCredential>;
-    const match = Object.values(parsed).find(
-      (entry) => entry.server_name === server && entry.server_url === serverUrl
-    );
+    const match = Object.values(parsed).find((entry) => entry.server_name === server && entry.server_url === serverUrl);
 
     if (!match) {
       throw new Error(`missing_mcp_credentials:${server}`);
@@ -201,7 +192,7 @@ class StoredOauthProvider implements OAuthClientProvider {
       readonly server: string;
       readonly serverUrl: string;
       readonly entry: StoredMcpCredential;
-    }
+    },
   ) {
     this.#entry = options.entry;
   }
@@ -215,11 +206,9 @@ class StoredOauthProvider implements OAuthClientProvider {
       redirect_uris: [],
       client_name: "slack-codex-broker",
       client_uri: "https://github.com/HOOLC/slack-codex-broker",
-      grant_types: this.#entry.refresh_token
-        ? ["refresh_token"]
-        : ["authorization_code", "refresh_token"],
+      grant_types: this.#entry.refresh_token ? ["refresh_token"] : ["authorization_code", "refresh_token"],
       response_types: ["code"],
-      token_endpoint_auth_method: this.#entry.client_secret ? "client_secret_post" : "none"
+      token_endpoint_auth_method: this.#entry.client_secret ? "client_secret_post" : "none",
     };
   }
 
@@ -230,7 +219,7 @@ class StoredOauthProvider implements OAuthClientProvider {
 
     return {
       client_id: this.#entry.client_id,
-      client_secret: this.#entry.client_secret
+      client_secret: this.#entry.client_secret,
     };
   }
 
@@ -243,10 +232,8 @@ class StoredOauthProvider implements OAuthClientProvider {
       access_token: this.#entry.access_token,
       token_type: "Bearer",
       refresh_token: this.#entry.refresh_token,
-      expires_in: this.#entry.expires_at
-        ? Math.max(0, Math.floor((this.#entry.expires_at - Date.now()) / 1000))
-        : undefined,
-      scope: this.#entry.scopes?.join(" ") || undefined
+      expires_in: this.#entry.expires_at ? Math.max(0, Math.floor((this.#entry.expires_at - Date.now()) / 1000)) : undefined,
+      scope: this.#entry.scopes?.join(" ") || undefined,
     };
   }
 
@@ -278,14 +265,17 @@ class StoredOauthProvider implements OAuthClientProvider {
           return [key, value];
         }
 
-        return [key, {
-          ...value,
-          access_token: tokens.access_token,
-          refresh_token: tokens.refresh_token ?? value.refresh_token,
-          expires_at: tokens.expires_in ? Date.now() + tokens.expires_in * 1000 : value.expires_at,
-          scopes: tokens.scope ? tokens.scope.split(" ").filter(Boolean) : value.scopes
-        }];
-      })
+        return [
+          key,
+          {
+            ...value,
+            access_token: tokens.access_token,
+            refresh_token: tokens.refresh_token ?? value.refresh_token,
+            expires_at: tokens.expires_in ? Date.now() + tokens.expires_in * 1000 : value.expires_at,
+            scopes: tokens.scope ? tokens.scope.split(" ").filter(Boolean) : value.scopes,
+          },
+        ];
+      }),
     );
 
     const nextRefreshToken = tokens.refresh_token ?? this.#entry.refresh_token;
@@ -296,7 +286,7 @@ class StoredOauthProvider implements OAuthClientProvider {
       access_token: tokens.access_token,
       ...(nextRefreshToken ? { refresh_token: nextRefreshToken } : {}),
       ...(typeof nextExpiresAt === "number" ? { expires_at: nextExpiresAt } : {}),
-      ...(nextScopes ? { scopes: nextScopes } : {})
+      ...(nextScopes ? { scopes: nextScopes } : {}),
     };
 
     await fs.writeFile(credentialsPath, JSON.stringify(nextEntries), "utf8");

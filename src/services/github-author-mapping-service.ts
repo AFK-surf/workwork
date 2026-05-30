@@ -2,13 +2,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import type {
-  GitHubAuthorMappingIdentity,
-  GitHubAuthorMappingPlatform,
-  GitHubAuthorMappingRecord,
-  GitHubAuthorMappingSource,
-  SlackUserIdentity
-} from "../types.js";
+import type { GitHubAuthorMappingIdentity, GitHubAuthorMappingPlatform, GitHubAuthorMappingRecord, GitHubAuthorMappingSource, SlackUserIdentity } from "../types.js";
 import { ensureDir } from "../utils/fs.js";
 import { inferGitHubAuthorFromSlackIdentity } from "./git/github-author-utils.js";
 
@@ -17,9 +11,7 @@ export class GitHubAuthorMappingService {
   readonly #mappingsDir: string;
   #mappings = new Map<string, GitHubAuthorMappingRecord>();
 
-  constructor(options: {
-    readonly stateDir: string;
-  }) {
+  constructor(options: { readonly stateDir: string }) {
     this.#rootDir = path.join(options.stateDir, "github-author-mappings");
     this.#mappingsDir = this.#rootDir;
   }
@@ -56,14 +48,11 @@ export class GitHubAuthorMappingService {
   getMapping(slackUserId: string): GitHubAuthorMappingRecord | undefined {
     return this.getMappingForUser({
       platform: "slack",
-      userId: slackUserId
+      userId: slackUserId,
     });
   }
 
-  getMappingForUser(options: {
-    readonly platform: GitHubAuthorMappingPlatform;
-    readonly userId: string;
-  }): GitHubAuthorMappingRecord | undefined {
+  getMappingForUser(options: { readonly platform: GitHubAuthorMappingPlatform; readonly userId: string }): GitHubAuthorMappingRecord | undefined {
     return this.#mappings.get(mappingKey(options.platform, options.userId));
   }
 
@@ -81,18 +70,15 @@ export class GitHubAuthorMappingService {
       throw new Error("GitHub author mapping requires a user id");
     }
 
-    const existing = await this.#readRecord(platform, userId) ?? this.#mappings.get(mappingKey(platform, userId));
-    const identity = normalizeMappingIdentity(options.identity, platform) ??
-      slackIdentityToMappingIdentity(normalizeSlackIdentity(options.slackIdentity), platform) ??
-      existing?.identity ??
-      defaultMappingIdentity(platform, userId);
+    const existing = (await this.#readRecord(platform, userId)) ?? this.#mappings.get(mappingKey(platform, userId));
+    const identity = normalizeMappingIdentity(options.identity, platform) ?? slackIdentityToMappingIdentity(normalizeSlackIdentity(options.slackIdentity), platform) ?? existing?.identity ?? defaultMappingIdentity(platform, userId);
 
     const record = this.#buildRecord({
       platform,
       userId,
       githubAuthor: options.githubAuthor,
       source: "manual",
-      identity
+      identity,
     });
     await this.#writeRecord(record);
     return record;
@@ -101,21 +87,18 @@ export class GitHubAuthorMappingService {
   async deleteMapping(slackUserId: string): Promise<void> {
     await this.deleteMappingForUser({
       platform: "slack",
-      userId: slackUserId
+      userId: slackUserId,
     });
   }
 
-  async deleteMappingForUser(options: {
-    readonly platform: GitHubAuthorMappingPlatform;
-    readonly userId: string;
-  }): Promise<void> {
+  async deleteMappingForUser(options: { readonly platform: GitHubAuthorMappingPlatform; readonly userId: string }): Promise<void> {
     this.#mappings.delete(mappingKey(options.platform, options.userId));
     await fs.rm(this.#recordPath(options.platform, options.userId), {
-      force: true
+      force: true,
     });
     if (options.platform === "slack") {
       await fs.rm(this.#legacySlackRecordPath(options.userId), {
-        force: true
+        force: true,
       });
     }
   }
@@ -127,8 +110,7 @@ export class GitHubAuthorMappingService {
     }
 
     const inferredAuthor = inferGitHubAuthorFromSlackIdentity(normalizedIdentity);
-    const existing = await this.#readRecord("slack", normalizedIdentity.userId) ??
-      this.#mappings.get(mappingKey("slack", normalizedIdentity.userId));
+    const existing = (await this.#readRecord("slack", normalizedIdentity.userId)) ?? this.#mappings.get(mappingKey("slack", normalizedIdentity.userId));
     const mappingIdentity = slackIdentityToMappingIdentity(normalizedIdentity, "slack")!;
 
     if (existing?.source === "manual") {
@@ -138,7 +120,7 @@ export class GitHubAuthorMappingService {
           userId: existing.userId,
           githubAuthor: existing.githubAuthor,
           source: existing.source,
-          identity: mappingIdentity
+          identity: mappingIdentity,
         });
         await this.#writeRecord(updated);
         return updated;
@@ -151,12 +133,7 @@ export class GitHubAuthorMappingService {
       return existing ?? null;
     }
 
-    if (
-      existing &&
-      existing.source === "slack_inferred" &&
-      existing.githubAuthor === inferredAuthor &&
-      sameMappingIdentity(existing.identity, mappingIdentity)
-    ) {
+    if (existing && existing.source === "slack_inferred" && existing.githubAuthor === inferredAuthor && sameMappingIdentity(existing.identity, mappingIdentity)) {
       return existing;
     }
 
@@ -165,23 +142,17 @@ export class GitHubAuthorMappingService {
       userId: normalizedIdentity.userId,
       githubAuthor: inferredAuthor,
       source: "slack_inferred",
-      identity: mappingIdentity
+      identity: mappingIdentity,
     });
     await this.#writeRecord(record);
     return record;
   }
 
-  #buildRecord(options: {
-    readonly platform: GitHubAuthorMappingPlatform;
-    readonly userId: string;
-    readonly githubAuthor: string;
-    readonly source: GitHubAuthorMappingSource;
-    readonly identity: GitHubAuthorMappingIdentity;
-  }): GitHubAuthorMappingRecord {
+  #buildRecord(options: { readonly platform: GitHubAuthorMappingPlatform; readonly userId: string; readonly githubAuthor: string; readonly source: GitHubAuthorMappingSource; readonly identity: GitHubAuthorMappingIdentity }): GitHubAuthorMappingRecord {
     const identity = {
       ...options.identity,
       platform: options.platform,
-      userId: options.userId
+      userId: options.userId,
     };
 
     return {
@@ -192,7 +163,7 @@ export class GitHubAuthorMappingService {
       source: options.source,
       identity,
       slackIdentity: mappingIdentityToSlackIdentity(identity),
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
     };
   }
 
@@ -205,19 +176,13 @@ export class GitHubAuthorMappingService {
     await fs.rename(tempPath, filePath);
     if (record.platform === "slack") {
       await fs.rm(this.#legacySlackRecordPath(record.userId), {
-        force: true
+        force: true,
       });
     }
   }
 
-  async #readRecord(
-    platform: GitHubAuthorMappingPlatform,
-    userId: string
-  ): Promise<GitHubAuthorMappingRecord | null> {
-    const paths = [
-      this.#recordPath(platform, userId),
-      ...(platform === "slack" ? [this.#legacySlackRecordPath(userId)] : [])
-    ];
+  async #readRecord(platform: GitHubAuthorMappingPlatform, userId: string): Promise<GitHubAuthorMappingRecord | null> {
+    const paths = [this.#recordPath(platform, userId), ...(platform === "slack" ? [this.#legacySlackRecordPath(userId)] : [])];
 
     for (const filePath of paths) {
       try {
@@ -251,18 +216,10 @@ function normalizeMapping(raw: Partial<GitHubAuthorMappingRecord>): GitHubAuthor
   const platform = normalizePlatform(raw.platform) ?? "slack";
   const rawIdentity = normalizeMappingIdentity(raw.identity, platform);
   const slackIdentity = normalizeSlackIdentity(raw.slackIdentity);
-  const userId =
-    normalizeOptionalString(raw.userId) ??
-    normalizeOptionalString(raw.slackUserId) ??
-    rawIdentity?.userId ??
-    slackIdentity?.userId ??
-    "";
+  const userId = normalizeOptionalString(raw.userId) ?? normalizeOptionalString(raw.slackUserId) ?? rawIdentity?.userId ?? slackIdentity?.userId ?? "";
   const githubAuthor = typeof raw.githubAuthor === "string" ? raw.githubAuthor.trim() : "";
   const source = raw.source === "manual" || raw.source === "slack_inferred" ? raw.source : undefined;
-  const identity =
-    rawIdentity ??
-    slackIdentityToMappingIdentity(slackIdentity, platform) ??
-    (userId ? defaultMappingIdentity(platform, userId) : null);
+  const identity = rawIdentity ?? slackIdentityToMappingIdentity(slackIdentity, platform) ?? (userId ? defaultMappingIdentity(platform, userId) : null);
 
   if (!userId || !githubAuthor || !source || !identity) {
     return null;
@@ -276,7 +233,7 @@ function normalizeMapping(raw: Partial<GitHubAuthorMappingRecord>): GitHubAuthor
     source,
     identity,
     slackIdentity: slackIdentity ?? mappingIdentityToSlackIdentity(identity),
-    updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : new Date().toISOString()
+    updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : new Date().toISOString(),
   };
 }
 
@@ -284,10 +241,7 @@ function normalizePlatform(value: unknown): GitHubAuthorMappingPlatform | undefi
   return value === "slack" || value === "feishu" ? value : undefined;
 }
 
-function normalizeMappingIdentity(
-  identity: GitHubAuthorMappingIdentity | null | undefined,
-  platform: GitHubAuthorMappingPlatform
-): GitHubAuthorMappingIdentity | null {
+function normalizeMappingIdentity(identity: GitHubAuthorMappingIdentity | null | undefined, platform: GitHubAuthorMappingPlatform): GitHubAuthorMappingIdentity | null {
   if (!identity?.userId?.trim()) {
     return null;
   }
@@ -300,7 +254,7 @@ function normalizeMappingIdentity(
     username: normalizeOptionalString(identity.username),
     displayName: normalizeOptionalString(identity.displayName),
     realName: normalizeOptionalString(identity.realName),
-    email: normalizeOptionalString(identity.email)?.toLowerCase()
+    email: normalizeOptionalString(identity.email)?.toLowerCase(),
   };
 }
 
@@ -315,14 +269,11 @@ function normalizeSlackIdentity(identity: SlackUserIdentity | null | undefined):
     username: normalizeOptionalString(identity.username),
     displayName: normalizeOptionalString(identity.displayName),
     realName: normalizeOptionalString(identity.realName),
-    email: normalizeOptionalString(identity.email)?.toLowerCase()
+    email: normalizeOptionalString(identity.email)?.toLowerCase(),
   };
 }
 
-function slackIdentityToMappingIdentity(
-  identity: SlackUserIdentity | null,
-  platform: GitHubAuthorMappingPlatform
-): GitHubAuthorMappingIdentity | null {
+function slackIdentityToMappingIdentity(identity: SlackUserIdentity | null, platform: GitHubAuthorMappingPlatform): GitHubAuthorMappingIdentity | null {
   if (!identity) {
     return null;
   }
@@ -334,7 +285,7 @@ function slackIdentityToMappingIdentity(
     username: identity.username,
     displayName: identity.displayName,
     realName: identity.realName,
-    email: identity.email
+    email: identity.email,
   };
 }
 
@@ -345,18 +296,15 @@ function mappingIdentityToSlackIdentity(identity: GitHubAuthorMappingIdentity): 
     username: identity.username,
     displayName: identity.displayName,
     realName: identity.realName,
-    email: identity.email
+    email: identity.email,
   };
 }
 
-function defaultMappingIdentity(
-  platform: GitHubAuthorMappingPlatform,
-  userId: string
-): GitHubAuthorMappingIdentity {
+function defaultMappingIdentity(platform: GitHubAuthorMappingPlatform, userId: string): GitHubAuthorMappingIdentity {
   return {
     platform,
     userId,
-    mention: defaultMention(platform, userId)
+    mention: defaultMention(platform, userId),
   };
 }
 

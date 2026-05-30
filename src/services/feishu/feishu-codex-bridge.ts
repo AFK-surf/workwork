@@ -1,15 +1,6 @@
+/* oxlint-disable max-lines */
 import { logger } from "../../logger.js";
-import type {
-  ChatAttachment,
-  ChatInputMessage,
-  ChatOutboundFile,
-  ChatOutboundMessage,
-  ChatPostedMessage,
-  ChatThreadPage,
-  ChatThreadMessage,
-  ChatThreadTarget,
-  ChatUploadedFile
-} from "../chat/chat-types.js";
+import type { ChatAttachment, ChatInputMessage, ChatOutboundFile, ChatOutboundMessage, ChatPostedMessage, ChatThreadPage, ChatThreadMessage, ChatThreadTarget, ChatUploadedFile } from "../chat/chat-types.js";
 import type { ChatPlatformAdapter } from "../chat/chat-platform-adapter.js";
 import type { CodexBroker } from "../codex/codex-broker.js";
 import type { CodexInputItem } from "../codex/app-server-client.js";
@@ -17,12 +8,7 @@ import { type ChatSessionCoordinates } from "../chat/chat-session-key.js";
 import { appendCoAuthorTrailers } from "../git/github-author-utils.js";
 import { GitHubAuthorMappingService } from "../github-author-mapping-service.js";
 import { SessionManager } from "../session-manager.js";
-import type {
-  BackgroundJobEventPayload,
-  GitHubAuthorMappingRecord,
-  JsonLike,
-  SlackSessionRecord
-} from "../../types.js";
+import type { BackgroundJobEventPayload, GitHubAuthorMappingRecord, JsonLike, SlackSessionRecord } from "../../types.js";
 
 const COAUTHOR_PROMPT_COOLDOWN_MS = 5 * 60 * 1_000;
 const FEISHU_RECENT_SESSION_RECOVERY_LOOKBACK_MS = 14 * 24 * 60 * 60 * 1_000;
@@ -64,8 +50,7 @@ export class FeishuCodexBridge {
     this.#adapter = options.adapter;
     this.#codex = options.codex;
     this.#groupMessageMode = options.groupMessageMode;
-    this.#initialThreadHistoryCount =
-      options.initialThreadHistoryCount ?? DEFAULT_FEISHU_INITIAL_THREAD_HISTORY_COUNT;
+    this.#initialThreadHistoryCount = options.initialThreadHistoryCount ?? DEFAULT_FEISHU_INITIAL_THREAD_HISTORY_COUNT;
     this.#historyApiMaxLimit = options.historyApiMaxLimit ?? DEFAULT_FEISHU_HISTORY_API_MAX_LIMIT;
     this.#mappings = options.mappings;
   }
@@ -81,7 +66,7 @@ export class FeishuCodexBridge {
       },
       onInteractive: async (payload) => {
         await this.#handleInteractivePayload(payload);
-      }
+      },
     });
     this.#started = true;
     await this.#recoverActiveSessions();
@@ -100,7 +85,7 @@ export class FeishuCodexBridge {
     const target = {
       platform: "feishu" as const,
       conversationId: options.conversationId,
-      rootMessageId: options.rootMessageId
+      rootMessageId: options.rootMessageId,
     };
 
     return await this.#runWithOutboundQueue(target, async () => {
@@ -112,7 +97,7 @@ export class FeishuCodexBridge {
         posted = await this.#postLoggedThreadMessage(target, outbound, {
           attempt: index + 1,
           chunkIndex: index + 1,
-          chunkCount: chunks.length
+          chunkCount: chunks.length,
         });
       }
 
@@ -124,16 +109,11 @@ export class FeishuCodexBridge {
     });
   }
 
-  async postChatState(options: {
-    readonly conversationId: string;
-    readonly rootMessageId: string;
-    readonly kind: "wait" | "block" | "final";
-    readonly reason?: string | undefined;
-  }): Promise<void> {
+  async postChatState(options: { readonly conversationId: string; readonly rootMessageId: string; readonly kind: "wait" | "block" | "final"; readonly reason?: string | undefined }): Promise<void> {
     const coordinates = {
       platform: "feishu",
       conversationId: options.conversationId,
-      rootMessageId: options.rootMessageId
+      rootMessageId: options.rootMessageId,
     } as const;
     const session = this.#sessions.getChatSession(coordinates);
     if (!session) {
@@ -144,7 +124,7 @@ export class FeishuCodexBridge {
       turnId: session.activeTurnId,
       kind: options.kind,
       reason: options.reason,
-      occurredAt: new Date().toISOString()
+      occurredAt: new Date().toISOString(),
     });
     logger.info("chat.turn.completed", {
       platform: "feishu",
@@ -154,18 +134,20 @@ export class FeishuCodexBridge {
       durationMs: 0,
       batchId: "state",
       status: options.kind,
-      reason: options.reason
+      reason: options.reason,
     });
   }
 
-  async postChatFile(options: {
-    readonly conversationId: string;
-    readonly rootMessageId: string;
-  } & ChatOutboundFile): Promise<ChatUploadedFile> {
+  async postChatFile(
+    options: {
+      readonly conversationId: string;
+      readonly rootMessageId: string;
+    } & ChatOutboundFile,
+  ): Promise<ChatUploadedFile> {
     const target = {
       platform: "feishu" as const,
       conversationId: options.conversationId,
-      rootMessageId: options.rootMessageId
+      rootMessageId: options.rootMessageId,
     };
 
     return await this.#runWithOutboundQueue(target, async () => {
@@ -183,7 +165,7 @@ export class FeishuCodexBridge {
           initialComment: options.initialComment,
           altText: options.altText,
           snippetType: options.snippetType,
-          contentType: options.contentType
+          contentType: options.contentType,
         });
         logger.info("chat.outbound.posted", {
           platform: "feishu",
@@ -192,7 +174,7 @@ export class FeishuCodexBridge {
           rootMessageId: options.rootMessageId,
           fileId: uploaded.fileId,
           format: uploaded.kind ?? (uploaded.mimetype?.startsWith("image/") ? "image" : "file"),
-          durationMs: 0
+          durationMs: 0,
         });
         return uploaded;
       } catch (error) {
@@ -204,35 +186,25 @@ export class FeishuCodexBridge {
           format: "file",
           errorClass: error instanceof Error ? error.name : "Error",
           statusCode: statusCodeFromError(error) ?? "unknown",
-          attempt: 1
+          attempt: 1,
         });
         throw error;
       }
     });
   }
 
-  async readChatThreadHistory(options: {
-    readonly conversationId: string;
-    readonly rootMessageId: string;
-    readonly beforeMessageId?: string | undefined;
-    readonly beforeCursor?: string | undefined;
-    readonly limit?: number | undefined;
-  }): Promise<{
+  async readChatThreadHistory(options: { readonly conversationId: string; readonly rootMessageId: string; readonly beforeMessageId?: string | undefined; readonly beforeCursor?: string | undefined; readonly limit?: number | undefined }): Promise<{
     readonly messages: readonly ChatThreadMessage[];
     readonly formattedText?: string | undefined;
     readonly hasMore: boolean;
     readonly nextCursor?: string | undefined;
   }> {
-    const effectiveLimit = clampFeishuHistoryLimit(
-      options.limit,
-      this.#initialThreadHistoryCount,
-      this.#historyApiMaxLimit
-    );
+    const effectiveLimit = clampFeishuHistoryLimit(options.limit, this.#initialThreadHistoryCount, this.#historyApiMaxLimit);
     if (effectiveLimit === 0) {
       return {
         messages: [],
         formattedText: undefined,
-        hasMore: false
+        hasMore: false,
       };
     }
 
@@ -242,27 +214,21 @@ export class FeishuCodexBridge {
       rootMessageId: options.rootMessageId,
       beforeMessageId: options.beforeMessageId,
       beforeCursor: options.beforeCursor,
-      limit: effectiveLimit
+      limit: effectiveLimit,
     });
     return {
       messages: page.messages,
-      formattedText: page.messages.length > 0
-        ? page.messages.map((message) => formatFeishuMessageForCodex(message)).join("\n\n")
-        : undefined,
+      formattedText: page.messages.length > 0 ? page.messages.map((message) => formatFeishuMessageForCodex(message)).join("\n\n") : undefined,
       hasMore: page.hasMore,
-      nextCursor: page.nextCursor
+      nextCursor: page.nextCursor,
     };
   }
 
-  async acceptBackgroundJobEvent(options: {
-    readonly conversationId: string;
-    readonly rootMessageId: string;
-    readonly payload: BackgroundJobEventPayload;
-  }): Promise<void> {
+  async acceptBackgroundJobEvent(options: { readonly conversationId: string; readonly rootMessageId: string; readonly payload: BackgroundJobEventPayload }): Promise<void> {
     const coordinates = {
       platform: "feishu",
       conversationId: options.conversationId,
-      rootMessageId: options.rootMessageId
+      rootMessageId: options.rootMessageId,
     } as const;
     const session = this.#sessions.getChatSession(coordinates);
     if (!session) {
@@ -280,18 +246,14 @@ export class FeishuCodexBridge {
       source: "background_job_event",
       sender: {
         kind: "system",
-        userId: "BACKGROUND_JOB"
+        userId: "BACKGROUND_JOB",
       },
       text: options.payload.summary,
-      backgroundJob: options.payload
+      backgroundJob: options.payload,
     });
   }
 
-  async resolveCommitCoauthors(options: {
-    readonly cwd: string;
-    readonly commitMessage: string;
-    readonly primaryAuthorEmail?: string | undefined;
-  }): Promise<{
+  async resolveCommitCoauthors(options: { readonly cwd: string; readonly commitMessage: string; readonly primaryAuthorEmail?: string | undefined }): Promise<{
     readonly status: "noop" | "blocked" | "resolved";
     readonly sessionKey?: string | undefined;
     readonly message?: string | undefined;
@@ -308,7 +270,7 @@ export class FeishuCodexBridge {
     if (candidateUserIds.length === 0) {
       return {
         status: "noop",
-        sessionKey: session.key
+        sessionKey: session.key,
       };
     }
 
@@ -318,7 +280,7 @@ export class FeishuCodexBridge {
         status: "blocked",
         sessionKey: session.key,
         errorCode: "coauthor_confirmation_required",
-        message: "Commit blocked by Feishu co-author gate. Open the Feishu group card and confirm co-authors, then retry the commit."
+        message: "Commit blocked by Feishu co-author gate. Open the Feishu group card and confirm co-authors, then retry the commit.",
       };
     }
 
@@ -327,7 +289,7 @@ export class FeishuCodexBridge {
       return {
         status: "noop",
         sessionKey: session.key,
-        coAuthors: []
+        coAuthors: [],
       };
     }
 
@@ -336,16 +298,18 @@ export class FeishuCodexBridge {
         status: "blocked",
         sessionKey: session.key,
         errorCode: "coauthor_mapping_unavailable",
-        message: "Commit blocked by Feishu co-author gate. Feishu GitHub author mappings are not available in this runtime."
+        message: "Commit blocked by Feishu co-author gate. Feishu GitHub author mappings are not available in this runtime.",
       };
     }
 
     await this.#mappings.load();
     const mappings = confirmedUserIds.map((userId) => {
-      return this.#mappings!.getMappingForUser({
-        platform: "feishu",
-        userId
-      }) ?? null;
+      return (
+        this.#mappings!.getMappingForUser({
+          platform: "feishu",
+          userId,
+        }) ?? null
+      );
     });
 
     const missingUserIds = confirmedUserIds.filter((_, index) => !mappings[index]);
@@ -354,23 +318,21 @@ export class FeishuCodexBridge {
         status: "blocked",
         sessionKey: session.key,
         errorCode: "coauthor_mapping_required",
-        message: "Commit blocked by Feishu co-author gate. At least one confirmed Feishu contributor is still missing a GitHub author mapping."
+        message: "Commit blocked by Feishu co-author gate. At least one confirmed Feishu contributor is still missing a GitHub author mapping.",
       };
     }
 
-    const coAuthors = mappings
-      .filter((mapping): mapping is GitHubAuthorMappingRecord => mapping !== null)
-      .map((mapping) => mapping.githubAuthor);
+    const coAuthors = mappings.filter((mapping): mapping is GitHubAuthorMappingRecord => mapping !== null).map((mapping) => mapping.githubAuthor);
     const commitMessage = appendCoAuthorTrailers(options.commitMessage, {
       coAuthors,
-      primaryAuthorEmail: options.primaryAuthorEmail
+      primaryAuthorEmail: options.primaryAuthorEmail,
     });
 
     if (commitMessage === options.commitMessage) {
       return {
         status: "noop",
         sessionKey: session.key,
-        coAuthors
+        coAuthors,
       };
     }
 
@@ -378,7 +340,7 @@ export class FeishuCodexBridge {
       status: "resolved",
       sessionKey: session.key,
       coAuthors,
-      commitMessage
+      commitMessage,
     };
   }
 
@@ -392,7 +354,7 @@ export class FeishuCodexBridge {
         rootMessageId: message.rootMessageId,
         messageId: message.messageId,
         eventId: message.eventId ?? message.messageId,
-        route: "deduped"
+        route: "deduped",
       });
       return;
     }
@@ -414,7 +376,7 @@ export class FeishuCodexBridge {
         eventId: message.eventId ?? message.messageId,
         senderKind: message.sender.kind,
         ignoredReason: "ignored_no_active_session",
-        route: "ignored_no_active_session"
+        route: "ignored_no_active_session",
       });
       return;
     }
@@ -425,15 +387,17 @@ export class FeishuCodexBridge {
         source: "long_connection",
         groupMessageMode: this.#groupMessageMode,
         degradedReason: "group_message_all_unavailable",
-        permission: "im:message.group_msg"
+        permission: "im:message.group_msg",
       });
       return;
     }
 
-    let session = existing ?? await this.#sessions.ensureChatSession(coordinates, {
-      conversationKind: message.conversationKind,
-      platformThreadId: message.platformThreadId
-    });
+    let session =
+      existing ??
+      (await this.#sessions.ensureChatSession(coordinates, {
+        conversationKind: message.conversationKind,
+        platformThreadId: message.platformThreadId,
+      }));
     session = await this.#sessions.setChatLastObservedMessageTs(sessionCoordinates, message.messageCursor ?? message.messageId);
 
     if (!existing) {
@@ -443,7 +407,7 @@ export class FeishuCodexBridge {
         conversationId: message.conversationId,
         rootMessageId: message.rootMessageId,
         messageId: message.messageId,
-        groupMessageMode: this.#groupMessageMode
+        groupMessageMode: this.#groupMessageMode,
       });
     } else {
       logger.info("chat.session.resumed", {
@@ -452,7 +416,7 @@ export class FeishuCodexBridge {
         conversationId: sessionCoordinates.conversationId,
         rootMessageId: sessionCoordinates.rootMessageId,
         messageId: message.messageId,
-        turnId: session.activeTurnId
+        turnId: session.activeTurnId,
       });
     }
 
@@ -472,7 +436,7 @@ export class FeishuCodexBridge {
         sessionKey: session.key,
         turnId: session.activeTurnId,
         messageId: message.messageId,
-        batchId: message.messageId
+        batchId: message.messageId,
       });
       return;
     }
@@ -484,7 +448,7 @@ export class FeishuCodexBridge {
       turnId: started.turnId,
       codexThreadId: session.codexThreadId,
       messageId: message.messageId,
-      batchId: message.messageId
+      batchId: message.messageId,
     });
     session = await this.#sessions.setChatActiveTurnId(sessionCoordinates, started.turnId);
 
@@ -497,7 +461,7 @@ export class FeishuCodexBridge {
         turnId: result.turnId,
         codexThreadId: result.threadId,
         durationMs: 0,
-        batchId: message.messageId
+        batchId: message.messageId,
       });
     } catch (error) {
       await this.#sessions.setChatActiveTurnId(sessionCoordinates, undefined);
@@ -508,7 +472,7 @@ export class FeishuCodexBridge {
         codexThreadId: session.codexThreadId,
         errorClass: error instanceof Error ? error.name : "Error",
         durationMs: 0,
-        batchId: message.messageId
+        batchId: message.messageId,
       });
       throw error;
     }
@@ -526,26 +490,21 @@ export class FeishuCodexBridge {
     }
 
     const target = threadTargetForSession(session);
-    if (
-      action.conversationId !== target.conversationId ||
-      action.rootMessageId !== target.rootMessageId
-    ) {
+    if (action.conversationId !== target.conversationId || action.rootMessageId !== target.rootMessageId) {
       return;
     }
 
     if (session.coAuthorCandidateRevision !== action.candidateRevision) {
       await this.#postLoggedThreadMessage(target, {
-        text: "Co-author candidates changed. Retry the commit to open a fresh confirmation card."
+        text: "Co-author candidates changed. Retry the commit to open a fresh confirmation card.",
       });
       return;
     }
 
-    const confirmedUserIds = action.kind === "coauthor_skip"
-      ? []
-      : (session.coAuthorCandidateUserIds ?? []);
+    const confirmedUserIds = action.kind === "coauthor_skip" ? [] : (session.coAuthorCandidateUserIds ?? []);
     await this.#sessions.confirmChatCoAuthors(coordinatesForSession(session), {
       userIds: confirmedUserIds,
-      candidateRevision: action.candidateRevision
+      candidateRevision: action.candidateRevision,
     });
 
     logger.info("chat.coauthor.confirmed", {
@@ -554,24 +513,22 @@ export class FeishuCodexBridge {
       conversationId: target.conversationId,
       rootMessageId: target.rootMessageId,
       candidateRevision: action.candidateRevision,
-      confirmedCount: confirmedUserIds.length
+      confirmedCount: confirmedUserIds.length,
     });
     await this.#postLoggedThreadMessage(target, {
-      text: confirmedUserIds.length > 0
-        ? "Co-authors confirmed. Retry the commit; if a GitHub author mapping is missing, fill it in from the admin page first."
-        : "Co-author gate confirmed with no co-authors selected. Retry the commit."
+      text: confirmedUserIds.length > 0 ? "Co-authors confirmed. Retry the commit; if a GitHub author mapping is missing, fill it in from the admin page first." : "Co-author gate confirmed with no co-authors selected. Retry the commit.",
     });
   }
 
-  async #noteIncomingCoauthorCandidates(
-    session: SlackSessionRecord,
-    messages: readonly ChatThreadMessage[],
-    coordinates: ChatSessionCoordinates
-  ): Promise<SlackSessionRecord> {
-    const candidateUserIds = [...new Set(messages
-      .filter((message) => message.sender.kind === "user")
-      .map((message) => message.sender.userId.trim())
-      .filter(Boolean))];
+  async #noteIncomingCoauthorCandidates(session: SlackSessionRecord, messages: readonly ChatThreadMessage[], coordinates: ChatSessionCoordinates): Promise<SlackSessionRecord> {
+    const candidateUserIds = [
+      ...new Set(
+        messages
+          .filter((message) => message.sender.kind === "user")
+          .map((message) => message.sender.userId.trim())
+          .filter(Boolean),
+      ),
+    ];
     if (candidateUserIds.length === 0) {
       return session;
     }
@@ -584,13 +541,9 @@ export class FeishuCodexBridge {
       return undefined;
     }
 
-    return this.#sessions.listSessions()
-      .filter((session) =>
-        session.platform === "feishu" &&
-        (session.conversationId ?? session.channelId) === message.conversationId &&
-        Boolean(session.activeTurnId) &&
-        Boolean(session.codexThreadId)
-      )
+    return this.#sessions
+      .listSessions()
+      .filter((session) => session.platform === "feishu" && (session.conversationId ?? session.channelId) === message.conversationId && Boolean(session.activeTurnId) && Boolean(session.codexThreadId))
       .sort((left, right) => String(right.updatedAt ?? "").localeCompare(String(left.updatedAt ?? "")))[0];
   }
 
@@ -602,25 +555,24 @@ export class FeishuCodexBridge {
     }
 
     const promptAtMs = session.coAuthorPromptedAt ? Date.parse(session.coAuthorPromptedAt) : Number.NaN;
-    const promptedRecently =
-      session.coAuthorPromptRevision === candidateRevision &&
-      Number.isFinite(promptAtMs) &&
-      Date.now() - promptAtMs < COAUTHOR_PROMPT_COOLDOWN_MS;
+    const promptedRecently = session.coAuthorPromptRevision === candidateRevision && Number.isFinite(promptAtMs) && Date.now() - promptAtMs < COAUTHOR_PROMPT_COOLDOWN_MS;
     if (promptedRecently) {
       return;
     }
 
     const target = threadTargetForSession(session);
-    const labels = await Promise.all(candidateUserIds.map(async (userId) => {
-      const identity = await this.#adapter.getUserIdentity(userId).catch(() => null);
-      return describeFeishuContributor(identity, userId);
-    }));
+    const labels = await Promise.all(
+      candidateUserIds.map(async (userId) => {
+        const identity = await this.#adapter.getUserIdentity(userId).catch(() => null);
+        return describeFeishuContributor(identity, userId);
+      }),
+    );
 
     try {
       await this.#postLoggedThreadMessage(target, {
         text: "Git commit paused: confirm Feishu co-authors before retrying the commit.",
         format: "card",
-        card: createFeishuCoauthorPromptCard(session, labels, candidateRevision)
+        card: createFeishuCoauthorPromptCard(session, labels, candidateRevision),
       });
       await this.#sessions.markChatCoAuthorPrompted(coordinatesForSession(session), candidateRevision);
     } catch (error) {
@@ -628,10 +580,7 @@ export class FeishuCodexBridge {
     }
   }
 
-  async #ensureCodexThread(
-    session: SlackSessionRecord,
-    coordinates: ChatSessionCoordinates
-  ): Promise<SlackSessionRecord> {
+  async #ensureCodexThread(session: SlackSessionRecord, coordinates: ChatSessionCoordinates): Promise<SlackSessionRecord> {
     if (session.codexThreadId) {
       await this.#codex.ensureThread(session);
       return session;
@@ -644,20 +593,24 @@ export class FeishuCodexBridge {
   async #buildCodexInput(message: ChatInputMessage): Promise<readonly CodexInputItem[]> {
     const downloadedImages = await this.#downloadImageAttachments(message);
     return [
-      createTextInputItem(formatFeishuMessageForCodex(message, {
-        downloadedAttachmentIds: new Set(downloadedImages.map((image) => image.attachmentId))
-      })),
+      createTextInputItem(
+        formatFeishuMessageForCodex(message, {
+          downloadedAttachmentIds: new Set(downloadedImages.map((image) => image.attachmentId)),
+        }),
+      ),
       ...downloadedImages.map((image) => ({
         type: "image" as const,
-        url: image.url
-      }))
+        url: image.url,
+      })),
     ];
   }
 
-  async #downloadImageAttachments(message: ChatInputMessage): Promise<readonly {
-    readonly attachmentId: string;
-    readonly url: string;
-  }[]> {
+  async #downloadImageAttachments(message: ChatInputMessage): Promise<
+    readonly {
+      readonly attachmentId: string;
+      readonly url: string;
+    }[]
+  > {
     if (!this.#adapter.downloadAttachment || !message.attachments?.length) {
       return [];
     }
@@ -666,8 +619,8 @@ export class FeishuCodexBridge {
     const downloaded = await Promise.allSettled(
       images.map(async (attachment) => ({
         attachmentId: attachment.id,
-        url: await this.#adapter.downloadAttachment!(attachment)
-      }))
+        url: await this.#adapter.downloadAttachment!(attachment),
+      })),
     );
 
     return downloaded.flatMap((result, index) => {
@@ -684,7 +637,7 @@ export class FeishuCodexBridge {
         messageId: message.messageId,
         attachmentId: attachment?.id,
         kind: attachment?.kind,
-        errorClass: result.reason instanceof Error ? result.reason.name : "Error"
+        errorClass: result.reason instanceof Error ? result.reason.name : "Error",
       });
       return [];
     });
@@ -703,11 +656,11 @@ export class FeishuCodexBridge {
         platform: "feishu",
         conversationId: session.conversationId ?? session.channelId,
         rootMessageId: session.rootMessageId ?? session.rootThreadTs,
-        platformThreadId: session.platformThreadId
+        platformThreadId: session.platformThreadId,
       },
       {
-        text: hadActiveTurn ? "Stopped the current run." : "No active run to stop."
-      }
+        text: hadActiveTurn ? "Stopped the current run." : "No active run to stop.",
+      },
     );
     logger.info("chat.turn.stopped", {
       platform: "feishu",
@@ -716,7 +669,7 @@ export class FeishuCodexBridge {
       rootMessageId: session.rootMessageId ?? session.rootThreadTs,
       messageId: message.messageId,
       turnId: stoppedTurnId,
-      hadActiveTurn
+      hadActiveTurn,
     });
   }
 
@@ -724,18 +677,13 @@ export class FeishuCodexBridge {
     return this.#sessions.getChatSession(coordinates)?.key ?? SessionManager.createChatKey(coordinates);
   }
 
-  async #runWithOutboundQueue<T>(
-    target: ChatThreadTarget,
-    operation: () => Promise<T>
-  ): Promise<T> {
+  async #runWithOutboundQueue<T>(target: ChatThreadTarget, operation: () => Promise<T>): Promise<T> {
     const queueKey = feishuOutboundQueueKey(target);
     const previous = this.#outboundQueues.get(queueKey) ?? Promise.resolve();
-    const current = previous
-      .catch(() => undefined)
-      .then(operation);
+    const current = previous.catch(() => undefined).then(operation);
     const tail = current.then(
       () => undefined,
-      () => undefined
+      () => undefined,
     );
     this.#outboundQueues.set(queueKey, tail);
 
@@ -755,7 +703,7 @@ export class FeishuCodexBridge {
       readonly attempt?: number | undefined;
       readonly chunkIndex?: number | undefined;
       readonly chunkCount?: number | undefined;
-    }
+    },
   ): Promise<ChatPostedMessage> {
     const format = message.format ?? "text";
     try {
@@ -769,7 +717,7 @@ export class FeishuCodexBridge {
         format,
         chunkIndex: options?.chunkIndex,
         chunkCount: options?.chunkCount,
-        durationMs: 0
+        durationMs: 0,
       });
       return posted;
     } catch (error) {
@@ -781,38 +729,26 @@ export class FeishuCodexBridge {
         format,
         errorClass: error instanceof Error ? error.name : "Error",
         statusCode: statusCodeFromError(error) ?? "unknown",
-        attempt: options?.attempt ?? 1
+        attempt: options?.attempt ?? 1,
       });
       throw error;
     }
   }
 
-  async #listThreadMessagePage(query: {
-    readonly platform: "feishu";
-    readonly conversationId: string;
-    readonly rootMessageId: string;
-    readonly beforeMessageId?: string | undefined;
-    readonly beforeCursor?: string | undefined;
-    readonly limit?: number | undefined;
-  }): Promise<ChatThreadPage> {
+  async #listThreadMessagePage(query: { readonly platform: "feishu"; readonly conversationId: string; readonly rootMessageId: string; readonly beforeMessageId?: string | undefined; readonly beforeCursor?: string | undefined; readonly limit?: number | undefined }): Promise<ChatThreadPage> {
     if (this.#adapter.listThreadMessagePage) {
       return await this.#adapter.listThreadMessagePage(query);
     }
 
     return {
       messages: await this.#adapter.listThreadMessages(query),
-      hasMore: false
+      hasMore: false,
     };
   }
 
   async #recoverActiveSessions(): Promise<void> {
     const nowMs = Date.now();
-    const sessions = this.#sessions.listSessions()
-      .filter((session) =>
-        session.platform === "feishu" &&
-        Boolean(session.codexThreadId) &&
-        shouldRecoverFeishuSession(session, nowMs)
-      );
+    const sessions = this.#sessions.listSessions().filter((session) => session.platform === "feishu" && Boolean(session.codexThreadId) && shouldRecoverFeishuSession(session, nowMs));
 
     for (const session of sessions) {
       await this.#recoverSessionHistory(session);
@@ -823,11 +759,7 @@ export class FeishuCodexBridge {
     const startedAt = Date.now();
     const conversationId = session.conversationId ?? session.channelId;
     const rootMessageId = session.rootMessageId ?? session.rootThreadTs;
-    const recoveryLimit = clampFeishuHistoryLimit(
-      undefined,
-      this.#initialThreadHistoryCount,
-      this.#historyApiMaxLimit
-    );
+    const recoveryLimit = clampFeishuHistoryLimit(undefined, this.#initialThreadHistoryCount, this.#historyApiMaxLimit);
 
     if (recoveryLimit === 0) {
       logger.warn("chat.history.recovered", {
@@ -838,7 +770,7 @@ export class FeishuCodexBridge {
         messageCursor: session.lastObservedMessageTs ?? "none",
         recoveredCount: 0,
         degradedReason: "history_recovery_disabled",
-        durationMs: Date.now() - startedAt
+        durationMs: Date.now() - startedAt,
       });
       return;
     }
@@ -850,47 +782,41 @@ export class FeishuCodexBridge {
         conversationKind: session.conversationKind,
         rootMessageId,
         platformThreadId: session.platformThreadId,
-        limit: recoveryLimit
+        limit: recoveryLimit,
       });
       const recoveredMessages = selectRecoveredFeishuMessages(messages, session.lastObservedMessageTs);
       const lastRecoveredMessage = recoveredMessages.at(-1);
       const degradedReason = feishuRecoveryDegradedReason(messages, recoveredMessages, session.lastObservedMessageTs);
 
       if (recoveredMessages.length > 0) {
-        session = await this.#noteIncomingCoauthorCandidates(
-          session,
-          recoveredMessages,
-          coordinatesForSession(session)
-        );
+        session = await this.#noteIncomingCoauthorCandidates(session, recoveredMessages, coordinatesForSession(session));
       }
 
       if (recoveredMessages.length > 0 && session.activeTurnId) {
         await this.#codex.steer(session, createRecoveredFeishuHistoryInput(recoveredMessages));
-        await Promise.all(recoveredMessages.map(async (message) => {
-          await this.#sessions.markProcessedEvent(processedFeishuMessageKey(message));
-        }));
-        await this.#sessions.setChatLastObservedMessageTs(
-          coordinatesForSession(session),
-          lastRecoveredMessage?.messageCursor ?? lastRecoveredMessage?.messageId
+        await Promise.all(
+          recoveredMessages.map(async (message) => {
+            await this.#sessions.markProcessedEvent(processedFeishuMessageKey(message));
+          }),
         );
+        await this.#sessions.setChatLastObservedMessageTs(coordinatesForSession(session), lastRecoveredMessage?.messageCursor ?? lastRecoveredMessage?.messageId);
         logger.info("chat.turn.steered", {
           platform: "feishu",
           sessionKey: session.key,
           turnId: session.activeTurnId,
           messageId: lastRecoveredMessage?.messageId ?? "none",
           batchId: lastRecoveredMessage ? `history:${lastRecoveredMessage.messageId}` : "history:none",
-          source: "history_recovery"
+          source: "history_recovery",
         });
       } else if (recoveredMessages.length > 0 && session.codexThreadId) {
         const started = await this.#codex.startTurn(session, createRecoveredFeishuHistoryInput(recoveredMessages));
-        await Promise.all(recoveredMessages.map(async (message) => {
-          await this.#sessions.markProcessedEvent(processedFeishuMessageKey(message));
-        }));
-        await this.#sessions.setChatActiveTurnId(coordinatesForSession(session), started.turnId);
-        await this.#sessions.setChatLastObservedMessageTs(
-          coordinatesForSession(session),
-          lastRecoveredMessage?.messageCursor ?? lastRecoveredMessage?.messageId
+        await Promise.all(
+          recoveredMessages.map(async (message) => {
+            await this.#sessions.markProcessedEvent(processedFeishuMessageKey(message));
+          }),
         );
+        await this.#sessions.setChatActiveTurnId(coordinatesForSession(session), started.turnId);
+        await this.#sessions.setChatLastObservedMessageTs(coordinatesForSession(session), lastRecoveredMessage?.messageCursor ?? lastRecoveredMessage?.messageId);
         logger.info("chat.turn.started", {
           platform: "feishu",
           sessionKey: session.key,
@@ -898,7 +824,7 @@ export class FeishuCodexBridge {
           codexThreadId: session.codexThreadId,
           messageId: lastRecoveredMessage?.messageId ?? "none",
           batchId: lastRecoveredMessage ? `history:${lastRecoveredMessage.messageId}` : "history:none",
-          source: "history_recovery"
+          source: "history_recovery",
         });
         this.#observeRecoveredTurnCompletion(session, started, lastRecoveredMessage?.messageId ?? "history");
       }
@@ -908,14 +834,10 @@ export class FeishuCodexBridge {
         sessionKey: session.key,
         conversationId,
         rootMessageId,
-        messageCursor:
-          lastRecoveredMessage?.messageCursor ??
-          messages.at(-1)?.messageCursor ??
-          session.lastObservedMessageTs ??
-          "none",
+        messageCursor: lastRecoveredMessage?.messageCursor ?? messages.at(-1)?.messageCursor ?? session.lastObservedMessageTs ?? "none",
         recoveredCount: recoveredMessages.length,
         degradedReason,
-        durationMs: Date.now() - startedAt
+        durationMs: Date.now() - startedAt,
       });
     } catch (error) {
       logger.warn("chat.history.recovered", {
@@ -927,7 +849,7 @@ export class FeishuCodexBridge {
         recoveredCount: 0,
         degradedReason: "history_recovery_failed",
         errorClass: error instanceof Error ? error.name : "Error",
-        durationMs: Date.now() - startedAt
+        durationMs: Date.now() - startedAt,
       });
     }
   }
@@ -941,7 +863,7 @@ export class FeishuCodexBridge {
         readonly turnId: string;
       }>;
     },
-    batchId: string
+    batchId: string,
   ): void {
     void started.completion
       .then(async (result) => {
@@ -952,7 +874,7 @@ export class FeishuCodexBridge {
           turnId: result.turnId,
           codexThreadId: result.threadId,
           durationMs: 0,
-          batchId: `history:${batchId}`
+          batchId: `history:${batchId}`,
         });
       })
       .catch(async (error: unknown) => {
@@ -964,7 +886,7 @@ export class FeishuCodexBridge {
           codexThreadId: session.codexThreadId,
           errorClass: error instanceof Error ? error.name : "Error",
           durationMs: 0,
-          batchId: `history:${batchId}`
+          batchId: `history:${batchId}`,
         });
       });
   }
@@ -974,43 +896,27 @@ function coordinatesFor(message: ChatInputMessage): ChatSessionCoordinates {
   return {
     platform: "feishu",
     conversationId: message.conversationId,
-    rootMessageId: message.rootMessageId
+    rootMessageId: message.rootMessageId,
   };
 }
 
 function processedFeishuMessageKey(message: Pick<ChatThreadMessage, "conversationId" | "messageId">): string {
-  return [
-    "feishu",
-    "message",
-    message.conversationId,
-    message.messageId
-  ].join(":");
+  return ["feishu", "message", message.conversationId, message.messageId].join(":");
 }
 
 function createBackgroundJobMessageId(payload: BackgroundJobEventPayload): string {
-  return [
-    "job",
-    payload.jobId,
-    payload.eventKind,
-    Date.now().toString(36),
-    Math.floor(Math.random() * 1_000_000).toString(36)
-  ].join(":");
+  return ["job", payload.jobId, payload.eventKind, Date.now().toString(36), Math.floor(Math.random() * 1_000_000).toString(36)].join(":");
 }
 
 function createBackgroundJobEventId(payload: BackgroundJobEventPayload): string {
-  return [
-    "job-event",
-    payload.jobId,
-    payload.eventKind,
-    Date.now().toString(36)
-  ].join(":");
+  return ["job-event", payload.jobId, payload.eventKind, Date.now().toString(36)].join(":");
 }
 
 function coordinatesForSession(session: SlackSessionRecord): ChatSessionCoordinates {
   return {
     platform: "feishu",
     conversationId: session.conversationId ?? session.channelId,
-    rootMessageId: session.rootMessageId ?? session.rootThreadTs
+    rootMessageId: session.rootMessageId ?? session.rootThreadTs,
   };
 }
 
@@ -1019,7 +925,7 @@ function threadTargetForSession(session: SlackSessionRecord) {
     platform: "feishu" as const,
     conversationId: session.conversationId ?? session.channelId,
     rootMessageId: session.rootMessageId ?? session.rootThreadTs,
-    platformThreadId: session.platformThreadId
+    platformThreadId: session.platformThreadId,
   };
 }
 
@@ -1033,14 +939,10 @@ function shouldRecoverFeishuSession(session: SlackSessionRecord, nowMs: number):
   }
 
   const updatedAtMs = Date.parse(session.updatedAt);
-  return Number.isFinite(updatedAtMs) &&
-    nowMs - updatedAtMs <= FEISHU_RECENT_SESSION_RECOVERY_LOOKBACK_MS;
+  return Number.isFinite(updatedAtMs) && nowMs - updatedAtMs <= FEISHU_RECENT_SESSION_RECOVERY_LOOKBACK_MS;
 }
 
-function selectRecoveredFeishuMessages(
-  messages: readonly ChatThreadMessage[],
-  lastObservedMessageTs: string | undefined
-): readonly ChatThreadMessage[] {
+function selectRecoveredFeishuMessages(messages: readonly ChatThreadMessage[], lastObservedMessageTs: string | undefined): readonly ChatThreadMessage[] {
   if (!lastObservedMessageTs) {
     return [];
   }
@@ -1061,21 +963,12 @@ function selectRecoveredFeishuMessages(
   });
 }
 
-function feishuRecoveryDegradedReason(
-  messages: readonly ChatThreadMessage[],
-  recoveredMessages: readonly ChatThreadMessage[],
-  lastObservedMessageTs: string | undefined
-): string | undefined {
+function feishuRecoveryDegradedReason(messages: readonly ChatThreadMessage[], recoveredMessages: readonly ChatThreadMessage[], lastObservedMessageTs: string | undefined): string | undefined {
   if (!lastObservedMessageTs) {
     return "missing_last_observed_cursor";
   }
 
-  if (
-    messages.length > 0 &&
-    recoveredMessages.length === 0 &&
-    !messages.some((message) => messageMatchesRecoveryCursor(message, lastObservedMessageTs)) &&
-    parseRecoveryCursorNumber(lastObservedMessageTs) === undefined
-  ) {
+  if (messages.length > 0 && recoveredMessages.length === 0 && !messages.some((message) => messageMatchesRecoveryCursor(message, lastObservedMessageTs)) && parseRecoveryCursorNumber(lastObservedMessageTs) === undefined) {
     return "cursor_anchor_not_found";
   }
 
@@ -1101,20 +994,14 @@ function clampFeishuHistoryLimit(requested: number | undefined, fallback: number
 }
 
 function createRecoveredFeishuHistoryInput(messages: readonly ChatThreadMessage[]): readonly CodexInputItem[] {
-  return [
-    createTextInputItem([
-      "Recovered Feishu messages after broker restart:",
-      "",
-      ...messages.map((message) => formatFeishuMessageForCodex(message))
-    ].join("\n\n"))
-  ];
+  return [createTextInputItem(["Recovered Feishu messages after broker restart:", "", ...messages.map((message) => formatFeishuMessageForCodex(message))].join("\n\n"))];
 }
 
 function createTextInputItem(text: string): CodexInputItem {
   return {
     type: "text",
     text,
-    text_elements: []
+    text_elements: [],
   };
 }
 
@@ -1122,28 +1009,16 @@ function formatFeishuMessageForCodex(
   message: ChatThreadMessage,
   options?: {
     readonly downloadedAttachmentIds?: ReadonlySet<string> | undefined;
-  }
+  },
 ): string {
   if (message.source === "background_job_event" && message.backgroundJob) {
     return formatFeishuBackgroundJobEventForCodex(message);
   }
 
-  const lines = [
-    "Feishu message:",
-    `- chat_id: ${message.conversationId}`,
-    `- root_message_id: ${message.rootMessageId}`,
-    `- message_id: ${message.messageId}`,
-    `- source: ${message.source}`,
-    `- sender: ${message.sender.userId}`,
-    "",
-    message.text
-  ];
+  const lines = ["Feishu message:", `- chat_id: ${message.conversationId}`, `- root_message_id: ${message.rootMessageId}`, `- message_id: ${message.messageId}`, `- source: ${message.source}`, `- sender: ${message.sender.userId}`, "", message.text];
 
   if (message.attachments?.length) {
-    lines.push(
-      "",
-      ...message.attachments.flatMap((attachment) => formatFeishuAttachmentForCodex(attachment, options))
-    );
+    lines.push("", ...message.attachments.flatMap((attachment) => formatFeishuAttachmentForCodex(attachment, options)));
   }
 
   return lines.join("\n");
@@ -1159,7 +1034,7 @@ function formatFeishuBackgroundJobEventForCodex(message: ChatThreadMessage): str
     `- job_kind: ${message.backgroundJob?.jobKind}`,
     `- event_kind: ${message.backgroundJob?.eventKind}`,
     "",
-    `summary: ${message.backgroundJob?.summary ?? (message.text.trim() || "[no summary]")}`
+    `summary: ${message.backgroundJob?.summary ?? (message.text.trim() || "[no summary]")}`,
   ];
 
   if (message.backgroundJob?.detailsText) {
@@ -1177,37 +1052,23 @@ function formatFeishuAttachmentForCodex(
   attachment: ChatAttachment,
   options?: {
     readonly downloadedAttachmentIds?: ReadonlySet<string> | undefined;
-  }
+  },
 ): string[] {
-  const transferStatus = options?.downloadedAttachmentIds?.has(attachment.id)
-    ? "downloaded_as_image_input"
-    : attachment.kind === "file"
-      ? "downloadable_via_feishu_resource"
-      : "download_unavailable";
-  return [
-    "Feishu attachment:",
-    `- kind: ${attachment.kind}`,
-    `- id: ${attachment.id}`,
-    attachment.name ? `- name: ${attachment.name}` : undefined,
-    attachment.resourceKey ? `- resource_key: ${attachment.resourceKey}` : undefined,
-    `- transfer_status: ${transferStatus}`
-  ].filter((line): line is string => Boolean(line));
+  const transferStatus = options?.downloadedAttachmentIds?.has(attachment.id) ? "downloaded_as_image_input" : attachment.kind === "file" ? "downloadable_via_feishu_resource" : "download_unavailable";
+  return ["Feishu attachment:", `- kind: ${attachment.kind}`, `- id: ${attachment.id}`, attachment.name ? `- name: ${attachment.name}` : undefined, attachment.resourceKey ? `- resource_key: ${attachment.resourceKey}` : undefined, `- transfer_status: ${transferStatus}`].filter((line): line is string => Boolean(line));
 }
 
 function feishuOutboundQueueKey(target: Pick<ChatThreadTarget, "conversationId">): string {
   return `feishu-chat:${target.conversationId}`;
 }
 
-function createFeishuOutboundMessage(
-  options: FeishuPostChatMessageOptions,
-  text: string
-): ChatOutboundMessage {
+function createFeishuOutboundMessage(options: FeishuPostChatMessageOptions, text: string): ChatOutboundMessage {
   if (shouldRenderOperationalCard(options)) {
     return {
       text,
       format: "card",
       richText: undefined,
-      card: createFeishuOperationalCard(options.kind, text, options.reason)
+      card: createFeishuOperationalCard(options.kind, text, options.reason),
     };
   }
 
@@ -1215,7 +1076,7 @@ function createFeishuOutboundMessage(
     text,
     format: options.format,
     richText: options.richText,
-    card: options.card
+    card: options.card,
   };
 }
 
@@ -1225,19 +1086,15 @@ function shouldRenderOperationalCard(options: FeishuPostChatMessageOptions): opt
   return Boolean(options.kind) && !options.format && !options.richText && !options.card;
 }
 
-function createFeishuOperationalCard(
-  kind: NonNullable<ChatOutboundMessage["kind"]>,
-  text: string,
-  reason: string | undefined
-): JsonLike {
+function createFeishuOperationalCard(kind: NonNullable<ChatOutboundMessage["kind"]>, text: string, reason: string | undefined): JsonLike {
   const elements: JsonLike[] = [
     {
       tag: "div",
       text: {
         tag: "lark_md",
-        content: text
-      }
-    }
+        content: text,
+      },
+    },
   ];
 
   if (reason?.trim()) {
@@ -1246,66 +1103,60 @@ function createFeishuOperationalCard(
       elements: [
         {
           tag: "plain_text",
-          content: `Reason: ${reason.trim()}`
-        }
-      ]
+          content: `Reason: ${reason.trim()}`,
+        },
+      ],
     });
   }
 
   return {
     config: {
-      wide_screen_mode: true
+      wide_screen_mode: true,
     },
     header: {
       template: feishuOperationalCardTemplate(kind),
       title: {
         tag: "plain_text",
-        content: feishuOperationalCardTitle(kind)
-      }
+        content: feishuOperationalCardTitle(kind),
+      },
     },
-    elements
+    elements,
   };
 }
 
-function createFeishuCoauthorPromptCard(
-  session: SlackSessionRecord,
-  contributorLabels: readonly string[],
-  candidateRevision: number
-): JsonLike {
+function createFeishuCoauthorPromptCard(session: SlackSessionRecord, contributorLabels: readonly string[], candidateRevision: number): JsonLike {
   const value = {
     sessionKey: session.key,
     conversationId: session.conversationId ?? session.channelId,
     rootMessageId: session.rootMessageId ?? session.rootThreadTs,
-    candidateRevision
+    candidateRevision,
   };
 
   return {
     config: {
-      wide_screen_mode: true
+      wide_screen_mode: true,
     },
     header: {
       template: "yellow",
       title: {
         tag: "plain_text",
-        content: "Confirm co-authors"
-      }
+        content: "Confirm co-authors",
+      },
     },
     elements: [
       {
         tag: "div",
         text: {
           tag: "lark_md",
-          content: "Git commit paused: this Feishu session needs co-author confirmation before the commit can go through."
-        }
+          content: "Git commit paused: this Feishu session needs co-author confirmation before the commit can go through.",
+        },
       },
       {
         tag: "div",
         text: {
           tag: "lark_md",
-          content: contributorLabels.length > 0
-            ? `Candidates:\n${contributorLabels.map((label) => `- ${label}`).join("\n")}`
-            : "Candidates: none"
-        }
+          content: contributorLabels.length > 0 ? `Candidates:\n${contributorLabels.map((label) => `- ${label}`).join("\n")}` : "Candidates: none",
+        },
       },
       {
         tag: "action",
@@ -1315,34 +1166,32 @@ function createFeishuCoauthorPromptCard(
             type: "primary",
             text: {
               tag: "plain_text",
-              content: "Confirm all"
+              content: "Confirm all",
             },
             value: {
               ...value,
-              kind: "coauthor_confirm_all"
-            }
+              kind: "coauthor_confirm_all",
+            },
           },
           {
             tag: "button",
             type: "default",
             text: {
               tag: "plain_text",
-              content: "Skip co-authors"
+              content: "Skip co-authors",
             },
             value: {
               ...value,
-              kind: "coauthor_skip"
-            }
-          }
-        ]
-      }
-    ]
+              kind: "coauthor_skip",
+            },
+          },
+        ],
+      },
+    ],
   };
 }
 
-function feishuOperationalCardTemplate(
-  kind: NonNullable<ChatOutboundMessage["kind"]>
-): string {
+function feishuOperationalCardTemplate(kind: NonNullable<ChatOutboundMessage["kind"]>): string {
   switch (kind) {
     case "final":
       return "green";
@@ -1355,9 +1204,7 @@ function feishuOperationalCardTemplate(
   }
 }
 
-function feishuOperationalCardTitle(
-  kind: NonNullable<ChatOutboundMessage["kind"]>
-): string {
+function feishuOperationalCardTitle(kind: NonNullable<ChatOutboundMessage["kind"]>): string {
   switch (kind) {
     case "final":
       return "Done";
@@ -1409,7 +1256,7 @@ function parseFeishuCoauthorAction(payload: unknown): {
     sessionKey,
     conversationId,
     rootMessageId,
-    candidateRevision
+    candidateRevision,
   };
 }
 
@@ -1431,9 +1278,7 @@ function readActionValue(payload: unknown): Record<string, unknown> | null {
   if (typeof value === "string") {
     try {
       const parsed = JSON.parse(value) as unknown;
-      return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-        ? parsed as Record<string, unknown>
-        : null;
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null;
     } catch {
       return null;
     }
@@ -1466,13 +1311,9 @@ function describeFeishuContributor(
     readonly displayName?: string | undefined;
     readonly username?: string | undefined;
   } | null,
-  fallbackUserId: string
+  fallbackUserId: string,
 ): string {
-  return identity?.realName ??
-    identity?.displayName ??
-    identity?.username ??
-    identity?.mention ??
-    `@${fallbackUserId}`;
+  return identity?.realName ?? identity?.displayName ?? identity?.username ?? identity?.mention ?? `@${fallbackUserId}`;
 }
 
 const FEISHU_OUTBOUND_TEXT_CHUNK_SIZE = 4_000;

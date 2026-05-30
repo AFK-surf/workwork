@@ -4,18 +4,7 @@ import { loadConfig } from "./config.js";
 import { createHttpHandler } from "./http/router.js";
 import { logger } from "./logger.js";
 import { AuthProfileService } from "./services/auth-profile-service.js";
-import {
-  configureServiceLogger,
-  createAgentRuntime,
-  createCodexBroker,
-  createDiskPressureCleanup,
-  createGitHubAuthorMappings,
-  createGitHubPrIdentity,
-  createIsolatedMcpService,
-  createJobManager,
-  createSessionServices,
-  createSlackBridge
-} from "./services/service-components.js";
+import { configureServiceLogger, createAgentRuntime, createCodexBroker, createDiskPressureCleanup, createGitHubAuthorMappings, createGitHubPrIdentity, createIsolatedMcpService, createJobManager, createSessionServices, createSlackBridge } from "./services/service-components.js";
 
 export async function startWorkerService(): Promise<{
   readonly stop: () => Promise<void>;
@@ -27,14 +16,14 @@ export async function startWorkerService(): Promise<{
   const githubAuthorMappings = await createGitHubAuthorMappings(config);
   const githubPrIdentity = await createGitHubPrIdentity(config);
   const authProfiles = new AuthProfileService({
-    config
+    config,
   });
   const codexBroker = createCodexBroker(config);
   const agentRuntime = createAgentRuntime({
     config,
     codex: codexBroker,
     sessions: sessionManager,
-    authProfiles
+    authProfiles,
   });
   const bridge = createSlackBridge({
     config,
@@ -42,26 +31,26 @@ export async function startWorkerService(): Promise<{
     codex: codexBroker,
     agentRuntime,
     githubAuthorMappings,
-    githubPrIdentity
+    githubPrIdentity,
   });
   const isolatedMcp = createIsolatedMcpService(config);
   const jobManager = createJobManager({
     config,
     sessions: sessionManager,
-    bridge
+    bridge,
   });
   const diskCleanup = createDiskPressureCleanup({
     config,
     sessions: sessionManager,
-    jobManager
+    jobManager,
   });
   const server = http.createServer(
     createHttpHandler({
       bridge,
       isolatedMcp,
       jobManager,
-      config
-    })
+      config,
+    }),
   );
 
   try {
@@ -73,7 +62,7 @@ export async function startWorkerService(): Promise<{
     });
     logger.info("Worker HTTP server listening", {
       port: config.port,
-      workerBindHost: config.workerBindHost
+      workerBindHost: config.workerBindHost,
     });
     await bridge.start();
     await jobManager.start();
@@ -94,7 +83,7 @@ export async function startWorkerService(): Promise<{
     port: config.port,
     workerBindHost: config.workerBindHost,
     sessionsRoot: config.sessionsRoot,
-    reposRoot: config.reposRoot
+    reposRoot: config.reposRoot,
   });
 
   return {
@@ -111,13 +100,13 @@ export async function startWorkerService(): Promise<{
           resolve();
         });
       });
-    }
+    },
   };
 }
 
 startWorkerService().catch((error: unknown) => {
   logger.error("Fatal worker startup error", {
-    error: error instanceof Error ? error.message : String(error)
+    error: error instanceof Error ? error.message : String(error),
   });
   process.exit(1);
 });

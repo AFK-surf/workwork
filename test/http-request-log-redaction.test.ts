@@ -31,52 +31,58 @@ describe("raw HTTP request log redaction", () => {
       postChatState: async () => {},
       postChatFile: async () => ({
         platform: "feishu",
-        fileId: "file_uploaded"
-      })
+        fileId: "file_uploaded",
+      }),
     } as never);
     const inlineContent = Buffer.from("CHAT_SECRET_INLINE_FILE").toString("base64");
 
-    await expect(postJson(`${baseUrl}/chat/post-message`, {
-      platform: "feishu",
-      conversation_id: "oc_group",
-      root_message_id: "om_root",
-      text: "CHAT_SECRET_TEXT",
-      kind: "wait",
-      reason: "CHAT_SECRET_REASON",
-      stop_reason: "CHAT_SECRET_STOP_REASON",
-      format: "card",
-      card: {
-        title: "CHAT_SECRET_CARD"
-      },
-      rich_text: {
-        content: "CHAT_SECRET_RICH"
-      },
-      richText: {
-        content: "CHAT_SECRET_RICH_CAMEL"
-      }
-    })).resolves.toBe(200);
+    await expect(
+      postJson(`${baseUrl}/chat/post-message`, {
+        platform: "feishu",
+        conversation_id: "oc_group",
+        root_message_id: "om_root",
+        text: "CHAT_SECRET_TEXT",
+        kind: "wait",
+        reason: "CHAT_SECRET_REASON",
+        stop_reason: "CHAT_SECRET_STOP_REASON",
+        format: "card",
+        card: {
+          title: "CHAT_SECRET_CARD",
+        },
+        rich_text: {
+          content: "CHAT_SECRET_RICH",
+        },
+        richText: {
+          content: "CHAT_SECRET_RICH_CAMEL",
+        },
+      }),
+    ).resolves.toBe(200);
 
-    await expect(postJson(`${baseUrl}/chat/post-state`, {
-      platform: "feishu",
-      conversation_id: "oc_group",
-      root_message_id: "om_root",
-      kind: "block",
-      reason: "CHAT_SECRET_STATE_REASON"
-    })).resolves.toBe(200);
+    await expect(
+      postJson(`${baseUrl}/chat/post-state`, {
+        platform: "feishu",
+        conversation_id: "oc_group",
+        root_message_id: "om_root",
+        kind: "block",
+        reason: "CHAT_SECRET_STATE_REASON",
+      }),
+    ).resolves.toBe(200);
 
-    await expect(postJson(`${baseUrl}/chat/post-file`, {
-      platform: "feishu",
-      conversation_id: "oc_group",
-      root_message_id: "om_root",
-      content_base64: inlineContent,
-      contentBase64: inlineContent,
-      filename: "report.txt",
-      initial_comment: "CHAT_SECRET_COMMENT",
-      initialComment: "CHAT_SECRET_COMMENT_CAMEL",
-      text: "CHAT_SECRET_FILE_TEXT",
-      alt_text: "CHAT_SECRET_ALT",
-      altText: "CHAT_SECRET_ALT_CAMEL"
-    })).resolves.toBe(200);
+    await expect(
+      postJson(`${baseUrl}/chat/post-file`, {
+        platform: "feishu",
+        conversation_id: "oc_group",
+        root_message_id: "om_root",
+        content_base64: inlineContent,
+        contentBase64: inlineContent,
+        filename: "report.txt",
+        initial_comment: "CHAT_SECRET_COMMENT",
+        initialComment: "CHAT_SECRET_COMMENT_CAMEL",
+        text: "CHAT_SECRET_FILE_TEXT",
+        alt_text: "CHAT_SECRET_ALT",
+        altText: "CHAT_SECRET_ALT_CAMEL",
+      }),
+    ).resolves.toBe(200);
 
     const { raw, records } = await readRawHttpLog(logDir);
     expect(raw).not.toContain("CHAT_SECRET_TEXT");
@@ -117,36 +123,42 @@ describe("raw HTTP request log redaction", () => {
       postChatState: async () => {},
       postChatFile: async () => ({
         platform: "slack",
-        fileId: "F123"
-      })
+        fileId: "F123",
+      }),
     } as never);
     const inlineContent = Buffer.from("SLACK_SECRET_INLINE_FILE").toString("base64");
 
-    await expect(postForm(`${baseUrl}/slack/post-message`, {
-      channel_id: "C123",
-      thread_ts: "111.222",
-      text: "SLACK_SECRET_TEXT",
-      kind: "wait",
-      reason: "SLACK_SECRET_REASON",
-      stop_reason: "SLACK_SECRET_STOP_REASON"
-    })).resolves.toBe(200);
+    await expect(
+      postForm(`${baseUrl}/slack/post-message`, {
+        channel_id: "C123",
+        thread_ts: "111.222",
+        text: "SLACK_SECRET_TEXT",
+        kind: "wait",
+        reason: "SLACK_SECRET_REASON",
+        stop_reason: "SLACK_SECRET_STOP_REASON",
+      }),
+    ).resolves.toBe(200);
 
-    await expect(postForm(`${baseUrl}/slack/post-state`, {
-      channel_id: "C123",
-      thread_ts: "111.222",
-      kind: "block",
-      reason: "SLACK_SECRET_STATE_REASON"
-    })).resolves.toBe(200);
+    await expect(
+      postForm(`${baseUrl}/slack/post-state`, {
+        channel_id: "C123",
+        thread_ts: "111.222",
+        kind: "block",
+        reason: "SLACK_SECRET_STATE_REASON",
+      }),
+    ).resolves.toBe(200);
 
-    await expect(postForm(`${baseUrl}/slack/post-file`, {
-      channel_id: "C123",
-      thread_ts: "111.222",
-      content_base64: inlineContent,
-      filename: "report.txt",
-      initial_comment: "SLACK_SECRET_COMMENT",
-      text: "SLACK_SECRET_FILE_TEXT",
-      alt_text: "SLACK_SECRET_ALT"
-    })).resolves.toBe(200);
+    await expect(
+      postForm(`${baseUrl}/slack/post-file`, {
+        channel_id: "C123",
+        thread_ts: "111.222",
+        content_base64: inlineContent,
+        filename: "report.txt",
+        initial_comment: "SLACK_SECRET_COMMENT",
+        text: "SLACK_SECRET_FILE_TEXT",
+        alt_text: "SLACK_SECRET_ALT",
+      }),
+    ).resolves.toBe(200);
 
     const { raw, records } = await readRawHttpLog(logDir);
     expect(raw).not.toContain("SLACK_SECRET_TEXT");
@@ -176,30 +188,36 @@ describe("raw HTTP request log redaction", () => {
   it("redacts scripts, tokens, and event bodies from job route raw request logs", async () => {
     const { baseUrl, logDir } = await startLoggedJobBroker();
 
-    await expect(postJson(`${baseUrl}/jobs/register`, {
-      platform: "feishu",
-      conversation_id: "oc_group",
-      root_message_id: "om_root",
-      kind: "watch_ci",
-      script: "JOB_SECRET_SCRIPT",
-      cwd: "."
-    })).resolves.toBe(200);
+    await expect(
+      postJson(`${baseUrl}/jobs/register`, {
+        platform: "feishu",
+        conversation_id: "oc_group",
+        root_message_id: "om_root",
+        kind: "watch_ci",
+        script: "JOB_SECRET_SCRIPT",
+        cwd: ".",
+      }),
+    ).resolves.toBe(200);
 
-    await expect(postJson(`${baseUrl}/jobs/job-1/event`, {
-      token: "JOB_SECRET_TOKEN",
-      event_kind: "state_changed",
-      summary: "JOB_SECRET_SUMMARY",
-      details_text: "JOB_SECRET_DETAILS",
-      details_json: {
-        value: "JOB_SECRET_JSON"
-      }
-    })).resolves.toBe(200);
+    await expect(
+      postJson(`${baseUrl}/jobs/job-1/event`, {
+        token: "JOB_SECRET_TOKEN",
+        event_kind: "state_changed",
+        summary: "JOB_SECRET_SUMMARY",
+        details_text: "JOB_SECRET_DETAILS",
+        details_json: {
+          value: "JOB_SECRET_JSON",
+        },
+      }),
+    ).resolves.toBe(200);
 
-    await expect(postJson(`${baseUrl}/jobs/job-1/fail`, {
-      token: "JOB_SECRET_TOKEN",
-      summary: "JOB_SECRET_FAIL_SUMMARY",
-      error: "JOB_SECRET_ERROR"
-    })).resolves.toBe(200);
+    await expect(
+      postJson(`${baseUrl}/jobs/job-1/fail`, {
+        token: "JOB_SECRET_TOKEN",
+        summary: "JOB_SECRET_FAIL_SUMMARY",
+        error: "JOB_SECRET_ERROR",
+      }),
+    ).resolves.toBe(200);
 
     const { raw, records } = await readRawHttpLog(logDir);
     expect(raw).not.toContain("JOB_SECRET_SCRIPT");
@@ -225,31 +243,33 @@ describe("raw HTTP request log redaction", () => {
   it("redacts MCP call arguments from integration route raw request logs", async () => {
     const { baseUrl, logDir } = await startLoggedIntegrationBroker();
 
-    await expect(postJson(`${baseUrl}/integrations/mcp-call`, {
-      server: "linear",
-      name: "search",
-      arguments: {
-        query: "INTEGRATION_SECRET_QUERY",
-        apiToken: "INTEGRATION_SECRET_TOKEN"
-      }
-    })).resolves.toBe(200);
+    await expect(
+      postJson(`${baseUrl}/integrations/mcp-call`, {
+        server: "linear",
+        name: "search",
+        arguments: {
+          query: "INTEGRATION_SECRET_QUERY",
+          apiToken: "INTEGRATION_SECRET_TOKEN",
+        },
+      }),
+    ).resolves.toBe(200);
 
-    await expect(postJson(`${baseUrl}/integrations/mcp-call`, {
-      server: "linear",
-      name: "search",
-      arguments: JSON.stringify({
-        query: "INTEGRATION_SECRET_STRING_QUERY"
-      })
-    })).resolves.toBe(200);
+    await expect(
+      postJson(`${baseUrl}/integrations/mcp-call`, {
+        server: "linear",
+        name: "search",
+        arguments: JSON.stringify({
+          query: "INTEGRATION_SECRET_STRING_QUERY",
+        }),
+      }),
+    ).resolves.toBe(200);
 
     const { raw, records } = await readRawHttpLog(logDir);
     expect(raw).not.toContain("INTEGRATION_SECRET_QUERY");
     expect(raw).not.toContain("INTEGRATION_SECRET_TOKEN");
     expect(raw).not.toContain("INTEGRATION_SECRET_STRING_QUERY");
 
-    const bodies = records
-      .filter((record) => record.payload.path === "/integrations/mcp-call")
-      .map((record) => record.payload.body);
+    const bodies = records.filter((record) => record.payload.path === "/integrations/mcp-call").map((record) => record.payload.body);
     expect(bodies).toHaveLength(2);
     expect(bodies[0]?.arguments).toBe("[redacted-arguments]");
     expect(bodies[1]?.arguments).toMatch(/^\[redacted-arguments:\d+\]$/u);
@@ -261,22 +281,22 @@ describe("raw HTTP request log redaction", () => {
     configureLogger({
       ...disabledLoggerConfig(),
       logDir,
-      rawHttpRequests: true
+      rawHttpRequests: true,
     });
 
     const server = http.createServer(
       createHttpHandler({
         bridge,
         config: {
-          serviceName: "test-broker"
-        } as never
-      })
+          serviceName: "test-broker",
+        } as never,
+      }),
     );
     servers.push(server);
 
     return {
       baseUrl: await listen(server),
-      logDir
+      logDir,
     };
   }
 
@@ -286,7 +306,7 @@ describe("raw HTTP request log redaction", () => {
     configureLogger({
       ...disabledLoggerConfig(),
       logDir,
-      rawHttpRequests: true
+      rawHttpRequests: true,
     });
 
     const job = {
@@ -305,7 +325,7 @@ describe("raw HTTP request log redaction", () => {
       restartOnBoot: true,
       status: "running",
       createdAt: "2026-05-29T00:00:00.000Z",
-      updatedAt: "2026-05-29T00:00:00.000Z"
+      updatedAt: "2026-05-29T00:00:00.000Z",
     };
     const server = http.createServer(
       createHttpHandler({
@@ -314,19 +334,19 @@ describe("raw HTTP request log redaction", () => {
           emitJobEvent: async () => job,
           failJob: async () => ({
             ...job,
-            status: "failed"
-          })
+            status: "failed",
+          }),
         } as never,
         config: {
-          serviceName: "test-broker"
-        } as never
-      })
+          serviceName: "test-broker",
+        } as never,
+      }),
     );
     servers.push(server);
 
     return {
       baseUrl: await listen(server),
-      logDir
+      logDir,
     };
   }
 
@@ -336,7 +356,7 @@ describe("raw HTTP request log redaction", () => {
     configureLogger({
       ...disabledLoggerConfig(),
       logDir,
-      rawHttpRequests: true
+      rawHttpRequests: true,
     });
 
     const server = http.createServer(
@@ -345,19 +365,19 @@ describe("raw HTTP request log redaction", () => {
           listTools: async () => [],
           callTool: async () => ({
             content: [{ type: "text", text: "ok" }],
-            isError: false
-          })
+            isError: false,
+          }),
         } as never,
         config: {
-          serviceName: "test-broker"
-        } as never
-      })
+          serviceName: "test-broker",
+        } as never,
+      }),
     );
     servers.push(server);
 
     return {
       baseUrl: await listen(server),
-      logDir
+      logDir,
     };
   }
 });
@@ -366,9 +386,9 @@ async function postJson(url: string, body: Record<string, unknown>): Promise<num
   const response = await fetch(url, {
     method: "POST",
     headers: {
-      "content-type": "application/json"
+      "content-type": "application/json",
     },
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
   });
 
   return response.status;
@@ -378,9 +398,9 @@ async function postForm(url: string, body: Record<string, string>): Promise<numb
   const response = await fetch(url, {
     method: "POST",
     headers: {
-      "content-type": "application/x-www-form-urlencoded; charset=utf-8"
+      "content-type": "application/x-www-form-urlencoded; charset=utf-8",
     },
-    body: new URLSearchParams(body).toString()
+    body: new URLSearchParams(body).toString(),
   });
 
   return response.status;
@@ -401,10 +421,7 @@ async function readRawHttpLog(logDir: string): Promise<{
   return { raw, records };
 }
 
-function findRawBody(
-  records: Array<{ payload: { path: string; body: Record<string, unknown> } }>,
-  requestPath: string
-): Record<string, unknown> {
+function findRawBody(records: Array<{ payload: { path: string; body: Record<string, unknown> } }>, requestPath: string): Record<string, unknown> {
   const record = records.find((candidate) => candidate.payload.path === requestPath);
   if (!record) {
     throw new Error(`missing raw HTTP record for ${requestPath}`);
@@ -420,7 +437,7 @@ function disabledLoggerConfig(): Parameters<typeof configureLogger>[0] {
     rawSlackEvents: false,
     rawFeishuEvents: false,
     rawCodexRpc: false,
-    rawHttpRequests: false
+    rawHttpRequests: false,
   };
 }
 

@@ -1,12 +1,37 @@
 import http from "node:http";
+
 import fs from "node:fs/promises";
+
 import path from "node:path";
+
 import { fileURLToPath, URL } from "node:url";
 
 import type { AppConfig } from "../config.js";
+
 import type { AdminService } from "../services/admin-service.js";
+
 import { readJsonBody, readString, respondJson } from "./common.js";
+
 import { renderAdminPage } from "./admin-page.js";
+
+import {
+  matchSessionJobCancelPath,
+  matchSessionTimelineEventPath,
+  serveAdminSpaIndex,
+  findAdminSpaIndex,
+  serveAdminAsset,
+  isAdminSpaRoute,
+  contentTypeForAsset,
+  readAdminBody,
+  readPositiveNumber,
+  readReleaseTarget,
+  runAdminOperation,
+  isSessionNotFoundError,
+  streamAdminEvents,
+  readEventCursor,
+  respondTracedAdminJson,
+  isAuthorizedAdminRequest,
+} from "./admin-routes-helpers.js";
 
 export async function handleAdminRequest(
   method: string,
@@ -16,7 +41,7 @@ export async function handleAdminRequest(
   options: {
     readonly adminService: AdminService;
     readonly config: AppConfig;
-  }
+  },
 ): Promise<boolean> {
   if (method === "GET" && isAdminSpaRoute(url.pathname)) {
     return serveAdminSpaIndex(response, options.config);
@@ -33,7 +58,7 @@ export async function handleAdminRequest(
   if (!isAuthorizedAdminRequest(request, options.config)) {
     respondJson(response, 401, {
       ok: false,
-      error: "admin_auth_required"
+      error: "admin_auth_required",
     });
     return true;
   }
@@ -44,9 +69,11 @@ export async function handleAdminRequest(
   }
 
   if (method === "GET" && url.pathname === "/admin/api/logs") {
-    await respondTracedAdminJson(response, "logs", () => options.adminService.getRecentLogs({
-      limit: readPositiveNumber(url.searchParams.get("limit"))
-    }));
+    await respondTracedAdminJson(response, "logs", () =>
+      options.adminService.getRecentLogs({
+        limit: readPositiveNumber(url.searchParams.get("limit")),
+      }),
+    );
     return true;
   }
 
@@ -56,37 +83,30 @@ export async function handleAdminRequest(
   }
 
   if (method === "GET" && url.pathname.startsWith("/admin/api/sessions/") && url.pathname.endsWith("/timeline")) {
-    const sessionKey = decodeURIComponent(url.pathname.slice(
-      "/admin/api/sessions/".length,
-      -"/timeline".length
-    ));
+    const sessionKey = decodeURIComponent(url.pathname.slice("/admin/api/sessions/".length, -"/timeline".length));
     if (!sessionKey || sessionKey.includes("/")) {
       return false;
     }
 
-    await respondTracedAdminJson(response, "session-timeline", () => options.adminService.getSessionTimeline(sessionKey, {
-      limit: readPositiveNumber(url.searchParams.get("limit")),
-      beforeSequence: readPositiveNumber(url.searchParams.get("before_sequence"))
-    }));
+    await respondTracedAdminJson(response, "session-timeline", () =>
+      options.adminService.getSessionTimeline(sessionKey, {
+        limit: readPositiveNumber(url.searchParams.get("limit")),
+        beforeSequence: readPositiveNumber(url.searchParams.get("before_sequence")),
+      }),
+    );
     return true;
   }
 
   const timelineEventMatch = matchSessionTimelineEventPath(url.pathname);
   if (method === "GET" && timelineEventMatch) {
-    const result = await options.adminService.getSessionTimelineEvent(
-      timelineEventMatch.sessionKey,
-      timelineEventMatch.eventId
-    );
-    response.setHeader("server-timing", "admin;desc=\"session-timeline-event\";dur=0");
+    const result = await options.adminService.getSessionTimelineEvent(timelineEventMatch.sessionKey, timelineEventMatch.eventId);
+    response.setHeader("server-timing", 'admin;desc="session-timeline-event";dur=0');
     respondJson(response, result.ok === false ? 404 : 200, result);
     return true;
   }
 
   if (method === "GET" && url.pathname.startsWith("/admin/api/sessions/") && url.pathname.endsWith("/slack-thread-url")) {
-    const sessionKey = decodeURIComponent(url.pathname.slice(
-      "/admin/api/sessions/".length,
-      -"/slack-thread-url".length
-    ));
+    const sessionKey = decodeURIComponent(url.pathname.slice("/admin/api/sessions/".length, -"/slack-thread-url".length));
     if (!sessionKey || sessionKey.includes("/")) {
       return false;
     }
@@ -97,10 +117,7 @@ export async function handleAdminRequest(
   }
 
   if (method === "GET" && url.pathname.startsWith("/admin/api/sessions/") && url.pathname.endsWith("/github-identity")) {
-    const sessionKey = decodeURIComponent(url.pathname.slice(
-      "/admin/api/sessions/".length,
-      -"/github-identity".length
-    ));
+    const sessionKey = decodeURIComponent(url.pathname.slice("/admin/api/sessions/".length, -"/github-identity".length));
     if (!sessionKey || sessionKey.includes("/")) {
       return false;
     }
@@ -110,22 +127,13 @@ export async function handleAdminRequest(
     return true;
   }
 
-  if (
-    method === "POST" &&
-    url.pathname.startsWith("/admin/api/sessions/") &&
-    url.pathname.endsWith("/github-oauth/device/start")
-  ) {
-    const sessionKey = decodeURIComponent(url.pathname.slice(
-      "/admin/api/sessions/".length,
-      -"/github-oauth/device/start".length
-    ));
+  if (method === "POST" && url.pathname.startsWith("/admin/api/sessions/") && url.pathname.endsWith("/github-oauth/device/start")) {
+    const sessionKey = decodeURIComponent(url.pathname.slice("/admin/api/sessions/".length, -"/github-oauth/device/start".length));
     if (!sessionKey || sessionKey.includes("/")) {
       return false;
     }
 
-    await runAdminOperation(response, () =>
-      options.adminService.startSessionGitHubDeviceAuthorization(sessionKey)
-    );
+    await runAdminOperation(response, () => options.adminService.startSessionGitHubDeviceAuthorization(sessionKey));
     return true;
   }
 
@@ -135,36 +143,22 @@ export async function handleAdminRequest(
       return false;
     }
 
-    await runAdminOperation(response, () =>
-      options.adminService.pollGitHubDeviceAuthorization(deviceAuthorizationId)
-    );
+    await runAdminOperation(response, () => options.adminService.pollGitHubDeviceAuthorization(deviceAuthorizationId));
     return true;
   }
 
-  if (
-    method === "POST" &&
-    url.pathname.startsWith("/admin/api/github-accounts/") &&
-    url.pathname.endsWith("/oauth/device/start")
-  ) {
-    const slackUserId = decodeURIComponent(url.pathname.slice(
-      "/admin/api/github-accounts/".length,
-      -"/oauth/device/start".length
-    ));
+  if (method === "POST" && url.pathname.startsWith("/admin/api/github-accounts/") && url.pathname.endsWith("/oauth/device/start")) {
+    const slackUserId = decodeURIComponent(url.pathname.slice("/admin/api/github-accounts/".length, -"/oauth/device/start".length));
     if (!slackUserId || slackUserId.includes("/")) {
       return false;
     }
 
-    await runAdminOperation(response, () =>
-      options.adminService.startGitHubAccountDeviceAuthorization(slackUserId)
-    );
+    await runAdminOperation(response, () => options.adminService.startGitHubAccountDeviceAuthorization(slackUserId));
     return true;
   }
 
   if (method === "POST" && url.pathname.startsWith("/admin/api/sessions/") && url.pathname.endsWith("/auth-profile")) {
-    const sessionKey = decodeURIComponent(url.pathname.slice(
-      "/admin/api/sessions/".length,
-      -"/auth-profile".length
-    ));
+    const sessionKey = decodeURIComponent(url.pathname.slice("/admin/api/sessions/".length, -"/auth-profile".length));
     if (!sessionKey || sessionKey.includes("/")) {
       return false;
     }
@@ -181,7 +175,7 @@ export async function handleAdminRequest(
       respondJson(response, 400, {
         ok: false,
         error: "missing_required_body",
-        required: ["name", "mode=auto"]
+        required: ["name", "mode=auto"],
       });
       return true;
     }
@@ -189,25 +183,22 @@ export async function handleAdminRequest(
     await runAdminOperation(response, () =>
       options.adminService.switchSessionAuthProfile({
         sessionKey,
-        ...(autoMode ? { mode: "auto" as const } : { name })
-      })
+        ...(autoMode ? { mode: "auto" as const } : { name }),
+      }),
     );
     return true;
   }
 
   if (method === "POST" && url.pathname.startsWith("/admin/api/sessions/") && url.pathname.endsWith("/reset")) {
-    const sessionKey = decodeURIComponent(url.pathname.slice(
-      "/admin/api/sessions/".length,
-      -"/reset".length
-    ));
+    const sessionKey = decodeURIComponent(url.pathname.slice("/admin/api/sessions/".length, -"/reset".length));
     if (!sessionKey || sessionKey.includes("/")) {
       return false;
     }
 
     await runAdminOperation(response, () =>
       options.adminService.resetSession({
-        sessionKey
-      })
+        sessionKey,
+      }),
     );
     return true;
   }
@@ -218,28 +209,33 @@ export async function handleAdminRequest(
       return false;
     }
 
-    await runAdminOperation(response, () =>
-      options.adminService.deleteSession({
-        sessionKey
-      }), {
-        errorStatus: (error) => isSessionNotFoundError(error) ? 404 : 500
-      }
+    await runAdminOperation(
+      response,
+      () =>
+        options.adminService.deleteSession({
+          sessionKey,
+        }),
+      {
+        errorStatus: (error) => (isSessionNotFoundError(error) ? 404 : 500),
+      },
     );
     return true;
   }
 
   const sessionJobCancel = matchSessionJobCancelPath(url.pathname);
   if (method === "POST" && sessionJobCancel) {
-    await runAdminOperation(response, () =>
-      options.adminService.cancelSessionJob(sessionJobCancel)
-    );
+    await runAdminOperation(response, () => options.adminService.cancelSessionJob(sessionJobCancel));
     return true;
   }
 
   if (method === "GET" && url.pathname === "/admin/api/preflight") {
-    respondJson(response, 200, await options.adminService.getOperationPreflight({
-      operation: readString(url.searchParams.get("operation")) ?? "unknown"
-    }));
+    respondJson(
+      response,
+      200,
+      await options.adminService.getOperationPreflight({
+        operation: readString(url.searchParams.get("operation")) ?? "unknown",
+      }),
+    );
     return true;
   }
 
@@ -254,9 +250,13 @@ export async function handleAdminRequest(
   }
 
   if (method === "GET" && url.pathname === "/admin/api/audit") {
-    respondJson(response, 200, await options.adminService.listAdminAuditEvents({
-      operationId: readString(url.searchParams.get("operation_id")) ?? undefined
-    }));
+    respondJson(
+      response,
+      200,
+      await options.adminService.listAdminAuditEvents({
+        operationId: readString(url.searchParams.get("operation_id")) ?? undefined,
+      }),
+    );
     return true;
   }
 
@@ -282,7 +282,7 @@ export async function handleAdminRequest(
       respondJson(response, 400, {
         ok: false,
         error: "missing_required_body",
-        required: ["auth_json_content"]
+        required: ["auth_json_content"],
       });
       return true;
     }
@@ -290,16 +290,14 @@ export async function handleAdminRequest(
     await runAdminOperation(response, () =>
       options.adminService.addAuthProfile({
         name,
-        authJsonContent
-      })
+        authJsonContent,
+      }),
     );
     return true;
   }
 
   if (method === "POST" && url.pathname === "/admin/api/auth-profiles/device-code/start") {
-    await runAdminOperation(response, () =>
-      options.adminService.startAuthProfileDeviceCode()
-    );
+    await runAdminOperation(response, () => options.adminService.startAuthProfileDeviceCode());
     return true;
   }
 
@@ -317,7 +315,7 @@ export async function handleAdminRequest(
       respondJson(response, 400, {
         ok: false,
         error: "missing_required_body",
-        required: ["device_auth_id", "user_code"]
+        required: ["device_auth_id", "user_code"],
       });
       return true;
     }
@@ -327,8 +325,8 @@ export async function handleAdminRequest(
         name,
         deviceAuthId,
         userCode,
-        retryAfterSeconds
-      })
+        retryAfterSeconds,
+      }),
     );
     return true;
   }
@@ -345,7 +343,7 @@ export async function handleAdminRequest(
       respondJson(response, 400, {
         ok: false,
         error: "missing_required_body",
-        required: ["slack_user_id", "github_author"]
+        required: ["slack_user_id", "github_author"],
       });
       return true;
     }
@@ -353,8 +351,8 @@ export async function handleAdminRequest(
     await runAdminOperation(response, () =>
       options.adminService.upsertGitHubAuthorMapping({
         slackUserId,
-        githubAuthor
-      })
+        githubAuthor,
+      }),
     );
     return true;
   }
@@ -370,15 +368,15 @@ export async function handleAdminRequest(
       respondJson(response, 400, {
         ok: false,
         error: "missing_required_body",
-        required: ["slack_user_id"]
+        required: ["slack_user_id"],
       });
       return true;
     }
 
     await runAdminOperation(response, () =>
       options.adminService.setDefaultGitHubPrAccount({
-        slackUserId
-      })
+        slackUserId,
+      }),
     );
     return true;
   }
@@ -395,7 +393,7 @@ export async function handleAdminRequest(
       respondJson(response, 400, {
         ok: false,
         error: "missing_required_body",
-        required: ["target", "version"]
+        required: ["target", "version"],
       });
       return true;
     }
@@ -404,8 +402,8 @@ export async function handleAdminRequest(
       options.adminService.deployRelease({
         target,
         version,
-        allowActive: body.allow_active === true
-      })
+        allowActive: body.allow_active === true,
+      }),
     );
     return true;
   }
@@ -421,7 +419,7 @@ export async function handleAdminRequest(
       respondJson(response, 400, {
         ok: false,
         error: "missing_required_body",
-        required: ["target"]
+        required: ["target"],
       });
       return true;
     }
@@ -430,8 +428,8 @@ export async function handleAdminRequest(
       options.adminService.rollbackRelease({
         target,
         version: readString(body.version) ?? undefined,
-        allowActive: body.allow_active === true
-      })
+        allowActive: body.allow_active === true,
+      }),
     );
     return true;
   }
@@ -444,8 +442,8 @@ export async function handleAdminRequest(
 
     await runAdminOperation(response, () =>
       options.adminService.deleteAuthProfile({
-        name: profileName
-      })
+        name: profileName,
+      }),
     );
     return true;
   }
@@ -458,312 +456,10 @@ export async function handleAdminRequest(
 
     await runAdminOperation(response, () =>
       options.adminService.deleteGitHubAuthorMapping({
-        slackUserId
-      })
+        slackUserId,
+      }),
     );
     return true;
-  }
-
-  return false;
-}
-
-function matchSessionJobCancelPath(pathname: string): {
-  readonly sessionKey: string;
-  readonly jobId: string;
-} | null {
-  const prefix = "/admin/api/sessions/";
-  const suffix = "/cancel";
-  if (!pathname.startsWith(prefix) || !pathname.endsWith(suffix)) {
-    return null;
-  }
-  const middle = pathname.slice(prefix.length, -suffix.length);
-  const marker = "/jobs/";
-  const markerIndex = middle.indexOf(marker);
-  if (markerIndex <= 0) {
-    return null;
-  }
-  const encodedSessionKey = middle.slice(0, markerIndex);
-  const encodedJobId = middle.slice(markerIndex + marker.length);
-  if (!encodedSessionKey || !encodedJobId || encodedSessionKey.includes("/") || encodedJobId.includes("/")) {
-    return null;
-  }
-
-  return {
-    sessionKey: decodeURIComponent(encodedSessionKey),
-    jobId: decodeURIComponent(encodedJobId)
-  };
-}
-
-function matchSessionTimelineEventPath(pathname: string): {
-  readonly sessionKey: string;
-  readonly eventId: string;
-} | null {
-  const prefix = "/admin/api/sessions/";
-  const marker = "/timeline-events/";
-  if (!pathname.startsWith(prefix)) {
-    return null;
-  }
-  const middle = pathname.slice(prefix.length);
-  const markerIndex = middle.indexOf(marker);
-  if (markerIndex <= 0) {
-    return null;
-  }
-  const encodedSessionKey = middle.slice(0, markerIndex);
-  const encodedEventId = middle.slice(markerIndex + marker.length);
-  if (!encodedSessionKey || !encodedEventId || encodedSessionKey.includes("/") || encodedEventId.includes("/")) {
-    return null;
-  }
-  return {
-    sessionKey: decodeURIComponent(encodedSessionKey),
-    eventId: decodeURIComponent(encodedEventId)
-  };
-}
-
-async function serveAdminSpaIndex(response: http.ServerResponse, config: AppConfig): Promise<boolean> {
-  if (process.env.ADMIN_UI_DEV_ORIGIN) {
-    response.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
-    response.end(renderAdminPage({
-      serviceName: config.serviceName
-    }));
-    return true;
-  }
-
-  const indexPath = await findAdminSpaIndex();
-  if (indexPath) {
-    const html = await fs.readFile(indexPath, "utf8");
-    response.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
-    response.end(html);
-    return true;
-  }
-
-  response.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
-  response.end(renderAdminPage({
-    serviceName: config.serviceName
-  }));
-  return true;
-}
-
-async function findAdminSpaIndex(): Promise<string | null> {
-  const moduleDir = path.dirname(fileURLToPath(import.meta.url));
-  const candidates = [
-    path.resolve(moduleDir, "..", "..", "admin-ui", "index.html"),
-    path.resolve(moduleDir, "..", "..", "dist", "admin-ui", "index.html")
-  ];
-
-  for (const candidate of candidates) {
-    try {
-      await fs.access(candidate);
-      return candidate;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-        throw error;
-      }
-    }
-  }
-
-  return null;
-}
-
-async function serveAdminAsset(url: URL, response: http.ServerResponse): Promise<boolean> {
-  const assetName = decodeURIComponent(url.pathname.slice("/admin/assets/".length));
-  if (!assetName || assetName.includes("\0")) {
-    return false;
-  }
-
-  const moduleDir = path.dirname(fileURLToPath(import.meta.url));
-  const assetRoots = [
-    path.resolve(moduleDir, "..", "..", "admin-ui", "assets"),
-    path.resolve(moduleDir, "..", "..", "dist", "admin-ui", "assets")
-  ];
-
-  for (const assetRoot of assetRoots) {
-    const assetPath = path.resolve(assetRoot, assetName);
-    if (!assetPath.startsWith(`${assetRoot}${path.sep}`)) {
-      continue;
-    }
-
-    try {
-      const content = await fs.readFile(assetPath);
-      response.writeHead(200, {
-        "content-type": contentTypeForAsset(assetPath),
-        "cache-control": "no-store"
-      });
-      response.end(content);
-      return true;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-        throw error;
-      }
-    }
-  }
-
-  response.writeHead(404, { "content-type": "application/json" });
-  response.end(JSON.stringify({ ok: false, error: "admin_asset_not_found" }));
-  return true;
-}
-
-function isAdminSpaRoute(pathname: string): boolean {
-  return pathname === "/admin" || pathname === "/admin/" || pathname.startsWith("/admin/sessions/");
-}
-
-function contentTypeForAsset(assetPath: string): string {
-  const extension = path.extname(assetPath).toLowerCase();
-  if (extension === ".css") return "text/css; charset=utf-8";
-  if (extension === ".js") return "text/javascript; charset=utf-8";
-  if (extension === ".map") return "application/json; charset=utf-8";
-  if (extension === ".svg") return "image/svg+xml";
-  return "application/octet-stream";
-}
-
-async function readAdminBody(
-  request: http.IncomingMessage,
-  response: http.ServerResponse
-): Promise<Record<string, unknown> | null> {
-  try {
-    return await readJsonBody(request);
-  } catch (error) {
-    respondJson(response, 400, {
-      ok: false,
-      error: error instanceof Error ? error.message : String(error)
-    });
-    return null;
-  }
-}
-
-function readPositiveNumber(value: unknown): number | undefined {
-  const numeric = typeof value === "number" ? value : typeof value === "string" ? Number.parseFloat(value) : Number.NaN;
-  return Number.isFinite(numeric) && numeric > 0 ? numeric : undefined;
-}
-
-function readReleaseTarget(value: unknown): "admin" | "worker" | undefined {
-  return value === "admin" || value === "worker" ? value : undefined;
-}
-
-async function runAdminOperation(
-  response: http.ServerResponse,
-  operation: () => Promise<Record<string, unknown>>,
-  options?: {
-    readonly errorStatus?: ((error: unknown) => number) | undefined;
-  }
-): Promise<void> {
-  try {
-    respondJson(response, 200, await operation());
-  } catch (error) {
-    respondJson(response, options?.errorStatus?.(error) ?? 500, {
-      ok: false,
-      error: error instanceof Error ? error.message : String(error)
-    });
-  }
-}
-
-function isSessionNotFoundError(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  return message.startsWith("Session not found:");
-}
-
-function streamAdminEvents(
-  request: http.IncomingMessage,
-  response: http.ServerResponse,
-  adminService: AdminService,
-  url: URL
-): void {
-  let cursor = readEventCursor(url, request);
-  if (cursor <= 0) {
-    cursor = adminService.getRealtimeCursor();
-  }
-  let closed = false;
-  let draining = false;
-
-  response.writeHead(200, {
-    "content-type": "text/event-stream; charset=utf-8",
-    "cache-control": "no-store, no-transform",
-    connection: "keep-alive",
-    "x-accel-buffering": "no"
-  });
-  response.flushHeaders?.();
-
-  const interval = setInterval(() => {
-    void drain();
-  }, 500);
-
-  request.on("close", () => {
-    closed = true;
-    clearInterval(interval);
-  });
-
-  void drain();
-
-  async function drain(): Promise<void> {
-    if (closed || draining) {
-      return;
-    }
-    draining = true;
-    try {
-      const payload = await adminService.listRealtimeEvents({
-        afterSequence: cursor,
-        limit: 100
-      });
-      const events = Array.isArray(payload.events) ? payload.events as Array<Record<string, unknown>> : [];
-      for (const event of events) {
-        const sequence = Number(event.sequence);
-        if (!Number.isFinite(sequence)) {
-          continue;
-        }
-        cursor = Math.max(cursor, sequence);
-        response.write(`id: ${sequence}\n`);
-        response.write("event: admin-event\n");
-        response.write(`data: ${JSON.stringify({ ok: true, event })}\n\n`);
-      }
-    } catch (error) {
-      response.write("event: admin-error\n");
-      response.write(`data: ${JSON.stringify({
-        ok: false,
-        error: error instanceof Error ? error.message : String(error)
-      })}\n\n`);
-    } finally {
-      draining = false;
-    }
-  }
-}
-
-function readEventCursor(url: URL, request: http.IncomingMessage): number {
-  const fromHeader = request.headers["last-event-id"];
-  const value = Array.isArray(fromHeader) ? fromHeader.at(-1) : fromHeader;
-  const parsed = value == null || value === "" ? NaN : Number(value);
-  if (Number.isFinite(parsed) && parsed >= 0) {
-    return Math.floor(parsed);
-  }
-
-  const fromQuery = Number(url.searchParams.get("after") ?? "");
-  return Number.isFinite(fromQuery) && fromQuery >= 0 ? Math.floor(fromQuery) : 0;
-}
-
-async function respondTracedAdminJson(
-  response: http.ServerResponse,
-  label: string,
-  load: () => Promise<Record<string, unknown>>
-): Promise<void> {
-  const startedAt = Date.now();
-  const body = await load();
-  const durationMs = Math.max(0, Date.now() - startedAt);
-  response.setHeader("server-timing", `admin;desc="${label}";dur=${durationMs}`);
-  response.setHeader("x-admin-duration-ms", String(durationMs));
-  respondJson(response, 200, body);
-}
-
-function isAuthorizedAdminRequest(request: http.IncomingMessage, config: AppConfig): boolean {
-  if (!config.brokerAdminToken) {
-    return true;
-  }
-
-  const fromHeader = request.headers["x-admin-token"];
-  if (typeof fromHeader === "string" && fromHeader === config.brokerAdminToken) {
-    return true;
-  }
-
-  const authorization = request.headers.authorization;
-  if (typeof authorization === "string" && authorization.startsWith("Bearer ")) {
-    return authorization.slice("Bearer ".length) === config.brokerAdminToken;
   }
 
   return false;

@@ -11,30 +11,19 @@ const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 export const repoRoot = path.resolve(scriptDir, "..", "..");
 
 export function runCommand(command, args, options = {}) {
-  const {
-    capture = false,
-    cwd = repoRoot,
-    env = undefined,
-    input = undefined
-  } = options;
+  const { capture = false, cwd = repoRoot, env = undefined, input = undefined } = options;
 
   const result = spawnSync(command, args, {
     cwd,
     encoding: "utf8",
     env: env ? { ...process.env, ...env } : process.env,
     input,
-    stdio: capture ? ["pipe", "pipe", "pipe"] : "inherit"
+    stdio: capture ? ["pipe", "pipe", "pipe"] : "inherit",
   });
 
   if (result.status !== 0) {
-    const details = capture
-      ? sanitizeOpsCommandErrorText([result.stdout, result.stderr].filter(Boolean).join("\n").trim())
-      : "";
-    throw new Error(
-      `Command failed (${result.status ?? "null"}): ${formatCommandForError(command, args)}${
-        details ? `\n${details}` : ""
-      }`
-    );
+    const details = capture ? sanitizeOpsCommandErrorText([result.stdout, result.stderr].filter(Boolean).join("\n").trim()) : "";
+    throw new Error(`Command failed (${result.status ?? "null"}): ${formatCommandForError(command, args)}${details ? `\n${details}` : ""}`);
   }
 
   return capture ? result.stdout.trim() : "";
@@ -83,7 +72,7 @@ export function getAdminHeadersFromInspect(inspect) {
   const adminToken = env.BROKER_ADMIN_TOKEN;
   return adminToken
     ? {
-        "x-admin-token": adminToken
+        "x-admin-token": adminToken,
       }
     : {};
 }
@@ -95,21 +84,12 @@ const PERMISSION_STATUSES = new Set(["unknown", "configured", "verified", "missi
 const SAFE_HEALTH_TOKEN = /^[a-z][a-z0-9_.:-]*$/u;
 const SAFE_OPS_LOG_TOKEN = /^[a-z][a-z0-9_.:-]*$/u;
 const SAFE_OPS_LOG_TIMESTAMP = /^[0-9TZ:.+-]+$/u;
-const SECRET_LIKE_OPS_LOG_META_VALUE =
-  /\b(?:xox[abprs]-[A-Za-z0-9_-]+|xapp-[A-Za-z0-9_-]+|Bearer\s+\S+|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})\b|-----BEGIN [A-Z ]*PRIVATE KEY-----/iu;
-const SECRET_LIKE_OPS_COMMAND_ERROR_VALUE =
-  /\b(?:xox[abprs]-[A-Za-z0-9_-]+|xapp-[A-Za-z0-9_-]+|Bearer\s+\S+|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})\b|-----BEGIN [A-Z ]*PRIVATE KEY-----/giu;
+const SECRET_LIKE_OPS_LOG_META_VALUE = /\b(?:xox[abprs]-[A-Za-z0-9_-]+|xapp-[A-Za-z0-9_-]+|Bearer\s+\S+|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})\b|-----BEGIN [A-Z ]*PRIVATE KEY-----/iu;
+const SECRET_LIKE_OPS_COMMAND_ERROR_VALUE = /\b(?:xox[abprs]-[A-Za-z0-9_-]+|xapp-[A-Za-z0-9_-]+|Bearer\s+\S+|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})\b|-----BEGIN [A-Z ]*PRIVATE KEY-----/giu;
 const SENTINEL_LIKE_OPS_PATH_VALUE = /\b[A-Z0-9_]*(?:SECRET|BODY|PAYLOAD)[A-Z0-9_]*\b/u;
 const SENTINEL_LIKE_OPS_COMMAND_ERROR_VALUE = /\b[A-Z0-9_]*(?:SECRET|BODY|PAYLOAD)[A-Z0-9_]*\b/gu;
-const OPS_SAFE_COMMAND_ERROR_LITERALS = [
-  "FEISHU_APP_SECRET"
-];
-const OPS_SAFE_DOCKER_TEXT_LOG_MARKERS = [
-  "Codex app-server client connected",
-  "Connected to Slack Socket Mode",
-  "Service booted",
-  "event-dispatch is ready"
-];
+const OPS_SAFE_COMMAND_ERROR_LITERALS = ["FEISHU_APP_SECRET"];
+const OPS_SAFE_DOCKER_TEXT_LOG_MARKERS = ["Codex app-server client connected", "Connected to Slack Socket Mode", "Service booted", "event-dispatch is ready"];
 const OPS_SAFE_LOG_META_FIELDS = new Set([
   "ackDurationMs",
   "attempt",
@@ -147,19 +127,15 @@ const OPS_SAFE_LOG_META_FIELDS = new Set([
   "source",
   "startupRequired",
   "statusCode",
-  "turnId"
+  "turnId",
 ]);
 
 export function summarizePlatformHealth(adminStatus) {
-  const platforms = adminStatus?.platforms && typeof adminStatus.platforms === "object"
-    ? adminStatus.platforms
-    : {};
+  const platforms = adminStatus?.platforms && typeof adminStatus.platforms === "object" ? adminStatus.platforms : {};
 
   return Object.fromEntries(
     ["slack", "feishu"].map((platform) => {
-      const status = platforms[platform] && typeof platforms[platform] === "object"
-        ? platforms[platform]
-        : {};
+      const status = platforms[platform] && typeof platforms[platform] === "object" ? platforms[platform] : {};
 
       return [
         platform,
@@ -169,22 +145,19 @@ export function summarizePlatformHealth(adminStatus) {
           state: sanitizeKnownValue(status.state, PLATFORM_HEALTH_STATES) ?? "unknown",
           startupRequired: Boolean(status.startupRequired),
           groupMessageMode: sanitizeKnownValue(status.groupMessageMode, FEISHU_GROUP_MESSAGE_MODES),
-          allMessageDeliveryVerified: typeof status.allMessageDeliveryVerified === "boolean"
-            ? status.allMessageDeliveryVerified
-            : undefined,
+          allMessageDeliveryVerified: typeof status.allMessageDeliveryVerified === "boolean" ? status.allMessageDeliveryVerified : undefined,
           degradedReason: sanitizeHealthToken(status.degradedReason),
-          connection: status.connection && typeof status.connection === "object"
-            ? {
-                mode: sanitizeKnownValue(status.connection.mode, PLATFORM_CONNECTION_MODES),
-                connected: Boolean(status.connection.connected)
-              }
-            : undefined,
-          permissions: Array.isArray(status.permissions)
-            ? status.permissions.map(summarizePermissionHealth).filter(Boolean)
-            : undefined
-        }
+          connection:
+            status.connection && typeof status.connection === "object"
+              ? {
+                  mode: sanitizeKnownValue(status.connection.mode, PLATFORM_CONNECTION_MODES),
+                  connected: Boolean(status.connection.connected),
+                }
+              : undefined,
+          permissions: Array.isArray(status.permissions) ? status.permissions.map(summarizePermissionHealth).filter(Boolean) : undefined,
+        },
       ];
-    })
+    }),
   );
 }
 
@@ -201,7 +174,7 @@ function summarizePermissionHealth(permission) {
 
   return {
     name,
-    status
+    status,
   };
 }
 
@@ -214,8 +187,7 @@ function sanitizeHealthToken(value) {
 }
 
 export function getPublishedPort(inspect, containerPort = "3000/tcp") {
-  const bindings =
-    inspect.NetworkSettings?.Ports?.[containerPort] ?? inspect.HostConfig?.PortBindings?.[containerPort];
+  const bindings = inspect.NetworkSettings?.Ports?.[containerPort] ?? inspect.HostConfig?.PortBindings?.[containerPort];
   const firstBinding = Array.isArray(bindings) ? bindings[0] : undefined;
   if (!firstBinding?.HostPort) {
     throw new Error(`Could not resolve published port for ${containerPort}`);
@@ -228,7 +200,7 @@ export function summarizeOpsHostPath(filePath) {
   const basename = sanitizeOpsPathBasename(filePath);
   return withoutUndefined({
     basename,
-    redacted: Boolean(readString(filePath))
+    redacted: Boolean(readString(filePath)),
   });
 }
 
@@ -237,7 +209,7 @@ export function summarizeOpsEvidencePath(filePath) {
   return withoutUndefined({
     relativePath: sanitizeOpsRepoRelativePath(filePath),
     basename,
-    redacted: Boolean(readString(filePath))
+    redacted: Boolean(readString(filePath)),
   });
 }
 
@@ -252,10 +224,11 @@ export function summarizeOpsDisplayPath(filePath) {
 }
 
 export function sanitizeOpsDockerLogsForEvidence(text) {
-  const lines = readString(text)?.split(/\r?\n/u).filter((line) => line.trim()) ?? [];
-  return lines
-    .map((line) => JSON.stringify(sanitizeOpsDockerLogLine(line)))
-    .join("\n") + (lines.length > 0 ? "\n" : "");
+  const lines =
+    readString(text)
+      ?.split(/\r?\n/u)
+      .filter((line) => line.trim()) ?? [];
+  return lines.map((line) => JSON.stringify(sanitizeOpsDockerLogLine(line))).join("\n") + (lines.length > 0 ? "\n" : "");
 }
 
 function formatCommandForError(command, args) {
@@ -276,19 +249,12 @@ function sanitizeOpsCommandErrorText(value) {
   }, text);
 
   const sanitized = protectedText
-    .replace(/(["'])(\/[^"']+)\1/gu, (_match, quote, filePath) =>
-      `${quote}${summarizeOpsDisplayPath(filePath) ?? "[redacted-path]"}${quote}`
-    )
-    .replace(/(^|[\s=])\/(?!\/)([^\s'"]+)/gu, (_match, prefix, pathTail) =>
-      `${prefix}${summarizeOpsDisplayPath(`/${pathTail}`) ?? "[redacted-path]"}`
-    )
+    .replace(/(["'])(\/[^"']+)\1/gu, (_match, quote, filePath) => `${quote}${summarizeOpsDisplayPath(filePath) ?? "[redacted-path]"}${quote}`)
+    .replace(/(^|[\s=])\/(?!\/)([^\s'"]+)/gu, (_match, prefix, pathTail) => `${prefix}${summarizeOpsDisplayPath(`/${pathTail}`) ?? "[redacted-path]"}`)
     .replace(SECRET_LIKE_OPS_COMMAND_ERROR_VALUE, "[redacted unsafe ops output]")
     .replace(SENTINEL_LIKE_OPS_COMMAND_ERROR_VALUE, "[redacted unsafe ops output]");
 
-  return [...protectedLiterals.entries()].reduce(
-    (current, [placeholder, literal]) => current.replaceAll(placeholder, literal),
-    sanitized
-  );
+  return [...protectedLiterals.entries()].reduce((current, [placeholder, literal]) => current.replaceAll(placeholder, literal), sanitized);
 }
 
 function sanitizeOpsMetadataValue(value) {
@@ -304,7 +270,7 @@ function sanitizeOpsMetadataValue(value) {
     return Object.fromEntries(
       Object.entries(value)
         .map(([key, nested]) => [key, sanitizeOpsMetadataValue(nested)])
-        .filter(([, nested]) => nested !== undefined)
+        .filter(([, nested]) => nested !== undefined),
     );
   }
 
@@ -331,13 +297,13 @@ export async function readSessionStatsFromHost(dataRootSource) {
 
     return {
       activeCount,
-      sessionCount
+      sessionCount,
     };
   } catch (error) {
     if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
       return {
         activeCount: 0,
-        sessionCount: 0
+        sessionCount: 0,
       };
     }
 
@@ -347,7 +313,7 @@ export async function readSessionStatsFromHost(dataRootSource) {
 
 function toMountArg(mount) {
   const type = mount.Type ?? "bind";
-  const source = type === "volume" ? mount.Name ?? mount.Source : mount.Source;
+  const source = type === "volume" ? (mount.Name ?? mount.Source) : mount.Source;
   if (!source || !mount.Destination) {
     throw new Error(`Unsupported mount: ${JSON.stringify(mount)}`);
   }
@@ -392,7 +358,7 @@ export function getRunArgumentsFromInspect(inspect) {
   return {
     mountArgs: (inspect.Mounts ?? []).map(toMountArg),
     portArgs: toPortArgs(inspect),
-    restartPolicy: getRestartPolicy(inspect)
+    restartPolicy: getRestartPolicy(inspect),
   };
 }
 
@@ -404,13 +370,13 @@ export async function createTempEnvFile(inspect) {
     envFile,
     cleanup: async () => {
       await fsp.rm(tempDir, { recursive: true, force: true });
-    }
+    },
   };
 }
 
 export function dockerExecNode(containerName, source) {
   return runCommand("docker", ["exec", containerName, "node", "-e", source], {
-    capture: true
+    capture: true,
   });
 }
 
@@ -462,14 +428,14 @@ export async function checkContainer(containerName, options = {}) {
 
       return payload;
     },
-    options
+    options,
   );
 
   const adminStatus = await retryUntil(
     "admin platform status check",
     async () => {
       const statusResponse = await fetch(`http://127.0.0.1:${hostPort}/admin/api/status`, {
-        headers: getAdminHeadersFromInspect(inspect)
+        headers: getAdminHeadersFromInspect(inspect),
       });
       if (!statusResponse.ok) {
         throw new Error(`Admin status endpoint returned ${statusResponse.status}`);
@@ -482,7 +448,7 @@ export async function checkContainer(containerName, options = {}) {
 
       return payload;
     },
-    options
+    options,
   );
   const platformHealth = summarizePlatformHealth(adminStatus);
 
@@ -494,17 +460,17 @@ export async function checkContainer(containerName, options = {}) {
         [
           'fetch("http://127.0.0.1:4590/readyz")',
           "  .then(async (response) => {",
-          '    const text = await response.text();',
-          '    console.log(JSON.stringify({ status: response.status, body: text }));',
+          "    const text = await response.text();",
+          "    console.log(JSON.stringify({ status: response.status, body: text }));",
           "    if (!response.ok) process.exit(1);",
           "  })",
           "  .catch((error) => {",
           "    console.error(error.stack || String(error));",
           "    process.exit(1);",
-          "  });"
-        ].join("\n")
+          "  });",
+        ].join("\n"),
       ),
-    options
+    options,
   );
 
   const fileChecks = JSON.parse(
@@ -524,9 +490,9 @@ export async function checkContainer(containerName, options = {}) {
         "];",
         "const result = Object.fromEntries(checks.map((item) => [item, fs.existsSync(item)]));",
         "result.runtimeAgentLink = fs.readlinkSync('/app/.data/runtime-home/.codex/AGENT.md');",
-        "console.log(JSON.stringify(result));"
-      ].join("\n")
-    )
+        "console.log(JSON.stringify(result));",
+      ].join("\n"),
+    ),
   );
 
   const missing = Object.entries(fileChecks)
@@ -540,19 +506,15 @@ export async function checkContainer(containerName, options = {}) {
     "startup log markers",
     async () => {
       const logs = runCommand("docker", ["logs", "--tail", String(options.logsTail ?? 200), containerName], {
-        capture: true
+        capture: true,
       });
-      const requiredLogMarkers = [
-        "Codex app-server client connected",
-        "Connected to Slack Socket Mode",
-        "Service booted"
-      ];
+      const requiredLogMarkers = ["Codex app-server client connected", "Connected to Slack Socket Mode", "Service booted"];
       const missingMarkers = requiredLogMarkers.filter((marker) => !logs.includes(marker));
       if (missingMarkers.length > 0) {
         throw new Error(`Missing expected log markers: ${missingMarkers.join(", ")}`);
       }
     },
-    options
+    options,
   );
 
   const dataRootSource = getDataRootSource(inspect);
@@ -566,16 +528,13 @@ export async function checkContainer(containerName, options = {}) {
     healthPayload,
     platformHealth,
     readyPayload: JSON.parse(readyPayload),
-    runtimeAgentLink: fileChecks.runtimeAgentLink
+    runtimeAgentLink: fileChecks.runtimeAgentLink,
   };
 }
 
 export async function writeRolloutMetadata(directory, payload) {
   await fsp.mkdir(directory, { recursive: true });
-  await fsp.writeFile(
-    path.join(directory, "metadata.json"),
-    `${JSON.stringify(sanitizeOpsMetadataValue(payload), null, 2)}\n`
-  );
+  await fsp.writeFile(path.join(directory, "metadata.json"), `${JSON.stringify(sanitizeOpsMetadataValue(payload), null, 2)}\n`);
 }
 
 async function readJsonIfExists(filePath) {
@@ -636,7 +595,7 @@ async function readLastJsonlLines(filePath, limit) {
         } catch {
           return {
             type: "log_parse_error",
-            message: "unparseable broker log line"
+            message: "unparseable broker log line",
           };
         }
       });
@@ -667,7 +626,7 @@ function summarizeOpsSession(session) {
     activeTurnStartedAt: readString(session?.activeTurnStartedAt),
     lastObservedMessageTs: readString(session?.lastObservedMessageTs),
     lastDeliveredMessageTs: readString(session?.lastDeliveredMessageTs),
-    lastSlackReplyAt: readString(session?.lastSlackReplyAt)
+    lastSlackReplyAt: readString(session?.lastSlackReplyAt),
   });
 }
 
@@ -688,7 +647,7 @@ function summarizeOpsInboundMessage(message) {
     updatedAt: readString(message?.updatedAt),
     textPreview: redactOpsInboundTextPreview(text),
     textLength: text.length,
-    textRedacted: true
+    textRedacted: true,
   });
 }
 
@@ -714,7 +673,7 @@ function summarizeOpsBackgroundJob(job) {
     errorLength: error ? error.length : undefined,
     errorRedacted: error ? true : undefined,
     lastEventAt: readString(job?.lastEventAt),
-    lastEventKind: readString(job?.lastEventKind)
+    lastEventKind: readString(job?.lastEventKind),
   });
 }
 
@@ -723,14 +682,14 @@ function sanitizeOpsBrokerLogRecord(record) {
   if (!parsed) {
     return {
       type: "log_parse_error",
-      message: "non-object broker log line"
+      message: "non-object broker log line",
     };
   }
 
   if (parsed.type === "log_parse_error") {
     return {
       type: "log_parse_error",
-      message: "unparseable broker log line"
+      message: "unparseable broker log line",
     };
   }
 
@@ -740,7 +699,7 @@ function sanitizeOpsBrokerLogRecord(record) {
     type: readSafeOpsLogToken(parsed.type),
     level: readSafeOpsLogToken(parsed.level),
     message: readSafeOpsLogToken(parsed.message),
-    meta
+    meta,
   });
 }
 
@@ -761,7 +720,7 @@ function sanitizeOpsDockerLogLine(line) {
   return withoutUndefined({
     type: "log_text_redacted",
     message: marker ?? "non-structured docker log line redacted",
-    length: trimmed.length
+    length: trimmed.length,
   });
 }
 
@@ -779,7 +738,7 @@ function parseOpsTextLogLine(line) {
     type: "log",
     level: level.toLowerCase(),
     message: readSafeOpsLogToken(message),
-    meta: sanitizeOpsLogMeta(metaCandidate)
+    meta: sanitizeOpsLogMeta(metaCandidate),
   });
 }
 
@@ -788,9 +747,7 @@ function sanitizeOpsLogMeta(meta) {
     return undefined;
   }
 
-  const safeEntries = Object.entries(meta).filter(([key, value]) =>
-    OPS_SAFE_LOG_META_FIELDS.has(key) && isSafeOpsLogMetaValue(value)
-  );
+  const safeEntries = Object.entries(meta).filter(([key, value]) => OPS_SAFE_LOG_META_FIELDS.has(key) && isSafeOpsLogMetaValue(value));
   return safeEntries.length > 0 ? Object.fromEntries(safeEntries) : undefined;
 }
 
@@ -821,12 +778,7 @@ function sanitizeOpsPathBasename(filePath) {
   }
 
   const basename = path.basename(text);
-  if (
-    !basename ||
-    basename === "." ||
-    SECRET_LIKE_OPS_LOG_META_VALUE.test(basename) ||
-    SENTINEL_LIKE_OPS_PATH_VALUE.test(basename)
-  ) {
+  if (!basename || basename === "." || SECRET_LIKE_OPS_LOG_META_VALUE.test(basename) || SENTINEL_LIKE_OPS_PATH_VALUE.test(basename)) {
     return "[redacted-path]";
   }
 
@@ -877,9 +829,7 @@ function asRecord(value) {
 }
 
 function withoutUndefined(record) {
-  return Object.fromEntries(
-    Object.entries(record).filter(([, value]) => value !== undefined)
-  );
+  return Object.fromEntries(Object.entries(record).filter(([, value]) => value !== undefined));
 }
 
 export async function readDetailedStateFromHost(dataRootSource, options = {}) {
@@ -892,13 +842,9 @@ export async function readDetailedStateFromHost(dataRootSource, options = {}) {
   const inboundMessages = await readJsonRecordsFromDirectory(path.join(stateRoot, "inbound-messages"));
   const backgroundJobs = await readJsonRecordsFromDirectory(path.join(stateRoot, "background-jobs"));
 
-  const activeSessions = sessions
-    .filter((session) => session?.activeTurnId)
-    .sort((left, right) => String(right.updatedAt ?? "").localeCompare(String(left.updatedAt ?? "")));
+  const activeSessions = sessions.filter((session) => session?.activeTurnId).sort((left, right) => String(right.updatedAt ?? "").localeCompare(String(left.updatedAt ?? "")));
 
-  const openInbound = inboundMessages
-    .filter((message) => message?.status === "pending" || message?.status === "inflight")
-    .sort((left, right) => String(left.updatedAt ?? "").localeCompare(String(right.updatedAt ?? "")));
+  const openInbound = inboundMessages.filter((message) => message?.status === "pending" || message?.status === "inflight").sort((left, right) => String(left.updatedAt ?? "").localeCompare(String(right.updatedAt ?? "")));
 
   const brokerLogs = await readLastJsonlLines(path.join(logsRoot, "broker.jsonl"), logLineLimit);
 
@@ -908,9 +854,7 @@ export async function readDetailedStateFromHost(dataRootSource, options = {}) {
     activeSessions: activeSessions.map(summarizeOpsSession),
     openInboundCount: openInbound.length,
     openInbound: openInbound.slice(0, openInboundLimit).map(summarizeOpsInboundMessage),
-    backgroundJobs: backgroundJobs
-      .sort((left, right) => String(right.updatedAt ?? "").localeCompare(String(left.updatedAt ?? "")))
-      .map(summarizeOpsBackgroundJob),
-    recentBrokerLogs: brokerLogs.map(sanitizeOpsBrokerLogRecord)
+    backgroundJobs: backgroundJobs.sort((left, right) => String(right.updatedAt ?? "").localeCompare(String(left.updatedAt ?? ""))).map(summarizeOpsBackgroundJob),
+    recentBrokerLogs: brokerLogs.map(sanitizeOpsBrokerLogRecord),
   };
 }

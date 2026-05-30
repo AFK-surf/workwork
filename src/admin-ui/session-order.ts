@@ -3,11 +3,7 @@ export interface SessionOrderState {
   readonly keys: readonly string[];
 }
 
-export function stableSessionOrder(
-  previous: SessionOrderState,
-  viewKey: string,
-  sortedKeys: readonly string[]
-): SessionOrderState {
+export function stableSessionOrder(previous: SessionOrderState, viewKey: string, sortedKeys: readonly string[]): SessionOrderState {
   if (previous.viewKey !== viewKey) {
     return { viewKey, keys: [...sortedKeys] };
   }
@@ -17,6 +13,6 @@ export function stableSessionOrder(
   const seen = new Set(kept);
   return {
     viewKey,
-    keys: kept.concat(sortedKeys.filter((key) => !seen.has(key)))
+    keys: kept.concat(sortedKeys.filter((key) => !seen.has(key))),
   };
 }

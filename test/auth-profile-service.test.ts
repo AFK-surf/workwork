@@ -15,9 +15,9 @@ describe("AuthProfileService", () => {
       tempDirs.splice(0).map((directory) =>
         fs.rm(directory, {
           recursive: true,
-          force: true
-        })
-      )
+          force: true,
+        }),
+      ),
     );
   });
 
@@ -28,7 +28,7 @@ describe("AuthProfileService", () => {
     const config = loadConfig({
       SLACK_APP_TOKEN: "xapp-test",
       SLACK_BOT_TOKEN: "xoxb-test",
-      DATA_ROOT: dataRoot
+      DATA_ROOT: dataRoot,
     } as NodeJS.ProcessEnv);
 
     await fs.mkdir(config.codexHome, { recursive: true });
@@ -39,13 +39,13 @@ describe("AuthProfileService", () => {
           auth_mode: "chatgpt",
           tokens: {
             access_token: "seed-access",
-            account_id: "seed-account"
-          }
+            account_id: "seed-account",
+          },
         },
         null,
-        2
+        2,
       ),
-      "utf8"
+      "utf8",
     );
 
     const profileService = new AuthProfileService({
@@ -58,9 +58,9 @@ describe("AuthProfileService", () => {
           account: {
             email: `${profileName}@example.com`,
             type: "chatgpt",
-            planType: "pro"
+            planType: "pro",
           },
-          requiresOpenaiAuth: false
+          requiresOpenaiAuth: false,
         },
         rateLimits: {
           ok: true,
@@ -70,19 +70,19 @@ describe("AuthProfileService", () => {
             primary: {
               usedPercent: 10,
               windowDurationMins: 300,
-              resetsAt: 1_743_307_200
+              resetsAt: 1_743_307_200,
             },
             secondary: {
               usedPercent: 20,
               windowDurationMins: 10_080,
-              resetsAt: 1_743_912_000
+              resetsAt: 1_743_912_000,
             },
             credits: null,
-            planType: "pro"
+            planType: "pro",
           },
-          rateLimitsByLimitId: {}
-        }
-      })
+          rateLimitsByLimitId: {},
+        },
+      }),
     });
 
     const initialStatus = await profileService.listProfilesStatus();
@@ -94,9 +94,9 @@ describe("AuthProfileService", () => {
         auth_mode: "chatgpt",
         tokens: {
           access_token: "backup-access",
-          account_id: "backup-account"
-        }
-      })
+          account_id: "backup-account",
+        },
+      }),
     });
     expect(addedProfile.name).toBe("backup-account");
 
@@ -105,9 +105,9 @@ describe("AuthProfileService", () => {
         auth_mode: "chatgpt",
         tokens: {
           access_token: "backup-access-2",
-          account_id: "backup-account"
-        }
-      })
+          account_id: "backup-account",
+        },
+      }),
     });
     expect(duplicateProfile.name).toBe("backup-account-2");
 
@@ -117,23 +117,18 @@ describe("AuthProfileService", () => {
         tokens: {
           id_token: jwtWithClaims({
             "https://api.openai.com/profile": {
-              email: "bot@example.com"
-            }
+              email: "bot@example.com",
+            },
           }),
           access_token: "jwt-access",
-          account_id: "jwt-account"
-        }
-      })
+          account_id: "jwt-account",
+        },
+      }),
     });
     expect(jwtNamedProfile.name).toBe("bot-example.com");
 
     const afterAdd = await profileService.listProfilesStatus();
-    expect(afterAdd.profiles.map((profile) => profile.name).sort()).toEqual([
-      "backup-account",
-      "backup-account-2",
-      "bot-example.com",
-      "primary"
-    ]);
+    expect(afterAdd.profiles.map((profile) => profile.name).sort()).toEqual(["backup-account", "backup-account-2", "bot-example.com", "primary"]);
 
     await profileService.deleteProfile("backup-account");
     await profileService.deleteProfile("backup-account-2");
@@ -150,7 +145,7 @@ describe("AuthProfileService", () => {
     const config = loadConfig({
       SLACK_APP_TOKEN: "xapp-test",
       SLACK_BOT_TOKEN: "xoxb-test",
-      DATA_ROOT: dataRoot
+      DATA_ROOT: dataRoot,
     } as NodeJS.ProcessEnv);
 
     await fs.mkdir(config.codexHome, { recursive: true });
@@ -165,9 +160,9 @@ describe("AuthProfileService", () => {
           account: {
             email: `${profileName}@example.com`,
             type: "chatgpt",
-            planType: "team"
+            planType: "team",
           },
-          requiresOpenaiAuth: false
+          requiresOpenaiAuth: false,
         },
         rateLimits: {
           ok: true,
@@ -177,11 +172,11 @@ describe("AuthProfileService", () => {
             primary: null,
             secondary: null,
             credits: null,
-            planType: "team"
+            planType: "team",
           },
-          rateLimitsByLimitId: {}
-        }
-      })
+          rateLimitsByLimitId: {},
+        },
+      }),
     });
 
     const initialStatus = await profileService.listProfilesStatus();
@@ -192,9 +187,9 @@ describe("AuthProfileService", () => {
         auth_mode: "chatgpt",
         tokens: {
           access_token: "first-access",
-          account_id: "first-account"
-        }
-      })
+          account_id: "first-account",
+        },
+      }),
     });
 
     expect(addedProfile.name).toBe("first-account");
@@ -206,9 +201,5 @@ describe("AuthProfileService", () => {
 });
 
 function jwtWithClaims(claims: Record<string, unknown>): string {
-  return [
-    Buffer.from(JSON.stringify({ alg: "none" })).toString("base64url"),
-    Buffer.from(JSON.stringify(claims)).toString("base64url"),
-    "signature"
-  ].join(".");
+  return [Buffer.from(JSON.stringify({ alg: "none" })).toString("base64url"), Buffer.from(JSON.stringify(claims)).toString("base64url"), "signature"].join(".");
 }

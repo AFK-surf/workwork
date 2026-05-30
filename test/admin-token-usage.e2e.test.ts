@@ -14,6 +14,7 @@ import { SlackInboundStore } from "../src/services/slack/slack-inbound-store.js"
 import { SlackTurnRunner } from "../src/services/slack/slack-turn-runner.js";
 import { StateStore } from "../src/store/state-store.js";
 import { MockCodexAppServer } from "./helpers/mock-codex-app-server.js";
+import { normalizeSourceWhitespace, readCompanionSource } from "./source-helpers.js";
 
 describe("admin token usage e2e", () => {
   const cleanups: Array<() => Promise<void>> = [];
@@ -40,9 +41,9 @@ describe("admin token usage e2e", () => {
           reasoning_tokens: 75,
           total_tokens: 1_725,
           model: "gpt-5.5",
-          effort: "xhigh"
+          effort: "xhigh",
         });
-      }
+      },
     });
     const codexUrl = await mockCodex.start();
     cleanups.push(async () => {
@@ -58,7 +59,7 @@ describe("admin token usage e2e", () => {
       ADMIN_LAUNCHD_LABEL: "admin.test",
       WORKER_LAUNCHD_LABEL: "worker.test",
       ADMIN_PLIST_PATH: path.join(dataRoot, "admin.plist"),
-      WORKER_PLIST_PATH: path.join(dataRoot, "worker.plist")
+      WORKER_PLIST_PATH: path.join(dataRoot, "worker.plist"),
     } as NodeJS.ProcessEnv);
     await fs.mkdir(config.codexHome, { recursive: true });
     await fs.mkdir(config.logDir, { recursive: true });
@@ -66,7 +67,7 @@ describe("admin token usage e2e", () => {
     const stateStore = new StateStore(config.stateDir, config.sessionsRoot);
     const sessions = new SessionManager({
       stateStore,
-      sessionsRoot: config.sessionsRoot
+      sessionsRoot: config.sessionsRoot,
     });
     await sessions.load();
     cleanups.push(async () => {
@@ -82,9 +83,9 @@ describe("admin token usage e2e", () => {
         listProfilesStatus: async () => ({
           managedRoot: path.join(dataRoot, "auth-profiles"),
           profilesRoot: path.join(dataRoot, "auth-profiles", "docker", "profiles"),
-          profiles: []
-        })
-      } as never
+          profiles: [],
+        }),
+      } as never,
     });
     await agentRuntime.start();
     cleanups.push(async () => {
@@ -95,19 +96,19 @@ describe("admin token usage e2e", () => {
       getUserIdentity: async () => ({
         userId: "U123",
         mention: "<@U123>",
-        realName: "User One"
+        realName: "User One",
       }),
-      downloadFileAttachment: async () => ({ bytes: Buffer.from(""), contentType: "image/png" })
+      downloadFileAttachment: async () => ({ bytes: Buffer.from(""), contentType: "image/png" }),
     } as never;
     const inboundStore = new SlackInboundStore({
       sessions,
-      slackApi
+      slackApi,
     });
     const runner = new SlackTurnRunner({
       agentRuntime,
       slackApi,
       sessions,
-      inboundStore
+      inboundStore,
     });
 
     let session = await sessions.ensureSession("C123", "111.222");
@@ -120,10 +121,10 @@ describe("admin token usage e2e", () => {
         {
           type: "text",
           text: "请检查 PR",
-          text_elements: []
-        }
+          text_elements: [],
+        },
       ],
-      messageTsList: []
+      messageTsList: [],
     });
 
     const adminService = new AdminService({
@@ -134,16 +135,16 @@ describe("admin token usage e2e", () => {
         listProfilesStatus: async () => ({
           managedRoot: path.join(dataRoot, "auth-profiles"),
           profilesRoot: path.join(dataRoot, "auth-profiles", "docker", "profiles"),
-          profiles: []
+          profiles: [],
         }),
         addProfile: async () => ({ name: "profile" }),
-        deleteProfile: async () => {}
+        deleteProfile: async () => {},
       } as never,
       githubAuthorMappings: {
         load: async () => {},
         listMappings: () => [],
         upsertManualMapping: async () => ({}),
-        deleteMapping: async () => {}
+        deleteMapping: async () => {},
       } as never,
       runtime: {
         restartRuntime: async () => {},
@@ -151,9 +152,9 @@ describe("admin token usage e2e", () => {
           account: {
             email: "usage@example.com",
             type: "chatgpt",
-            planType: "team"
+            planType: "team",
           },
-          requiresOpenaiAuth: false
+          requiresOpenaiAuth: false,
         }),
         readAccountRateLimits: async () => ({
           rateLimits: {
@@ -162,22 +163,22 @@ describe("admin token usage e2e", () => {
             primary: {
               usedPercent: 20,
               windowDurationMins: 300,
-              resetsAt: 1_777_777_777
+              resetsAt: 1_777_777_777,
             },
             secondary: null,
             credits: null,
-            planType: "team"
+            planType: "team",
           },
-          rateLimitsByLimitId: {}
-        })
-      } as never
+          rateLimitsByLimitId: {},
+        }),
+      } as never,
     });
 
     const server = http.createServer(
       createHttpHandler({
         adminService,
-        config
-      })
+        config,
+      }),
     );
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     cleanups.push(async () => {
@@ -208,7 +209,7 @@ describe("admin token usage e2e", () => {
         inputTokens: 1_200,
         cachedInputTokens: 300,
         outputTokens: 450,
-        reasoningTokens: 75
+        reasoningTokens: 75,
       },
       recentTurns: [
         {
@@ -218,24 +219,24 @@ describe("admin token usage e2e", () => {
           source: "exact",
           model: "gpt-5.5",
           effort: "xhigh",
-          totalTokens: 1_725
-        }
+          totalTokens: 1_725,
+        },
       ],
       bySession: [
         {
           sessionKey: "C123:111.222",
           totalTokens: 1_725,
-          turnCount: 1
-        }
-      ]
+          turnCount: 1,
+        },
+      ],
     });
 
     const status = await readJson(`${baseUrl}/admin/api/status`);
     expect(status).toMatchObject({
       usage: {
         totals: {
-          totalTokens: 1_725
-        }
+          totalTokens: 1_725,
+        },
       },
       state: {
         sessions: [
@@ -245,19 +246,19 @@ describe("admin token usage e2e", () => {
               totalTokens: 1_725,
               turnCount: 1,
               exactTurns: 1,
-              missingTurns: 0
-            }
-          }
-        ]
-      }
+              missingTurns: 0,
+            },
+          },
+        ],
+      },
     });
 
     const page = await fetch(`${baseUrl}/admin`);
     const html = await page.text();
-    const adminShellSource = await fs.readFile(new URL("../src/admin-ui/admin-shell.tsx", import.meta.url), "utf8");
-    const adminCssSource = await fs.readFile(new URL("../src/admin-ui/admin.css", import.meta.url), "utf8");
-    const sessionViewSource = await fs.readFile(new URL("../src/admin-ui/session-view.tsx", import.meta.url), "utf8");
-    expect(html).toContain('/admin/assets/admin-ui.js');
+    const adminShellSource = await readCompanionSource(new URL("../src/admin-ui/admin-shell.tsx", import.meta.url));
+    const adminCssSource = normalizeSourceWhitespace(await fs.readFile(new URL("../src/admin-ui/admin.css", import.meta.url), "utf8"));
+    const sessionViewSource = await readCompanionSource(new URL("../src/admin-ui/session-view.tsx", import.meta.url));
+    expect(html).toContain("/admin/assets/admin-ui.js");
     expect(adminShellSource).toContain("TopbarQuota");
     expect(adminShellSource).toContain("AdminSessionsView");
     expect(adminShellSource).not.toContain("session-react-root");
@@ -276,11 +277,11 @@ describe("admin token usage e2e", () => {
     expect(sessionViewSource).toContain('<UsageMetric label="非缓存输入"');
     expect(sessionViewSource).toContain("缓存覆盖");
     expect(sessionViewSource).toContain("modelRequestCount");
-    expect(sessionViewSource).toContain('<summary>原始计数</summary>');
+    expect(sessionViewSource).toContain("<summary>原始计数</summary>");
     expect(adminCssSource).toContain(".usage-metric");
     expect(sessionViewSource).toContain("session-side-column");
     expect(sessionViewSource).toContain("重置 Session");
-    expect(sessionViewSource).toContain("/admin/api/sessions/\" + encodeURIComponent(sessionKey) + \"/reset");
+    expect(sessionViewSource).toContain('/admin/api/sessions/" + encodeURIComponent(sessionKey) + "/reset');
     expect(adminCssSource).toContain(".session-reset-action");
     expect(sessionViewSource).not.toContain(`<div className="session-detail-actions">
           <AuthProfilePanel`);
@@ -301,7 +302,7 @@ describe("admin token usage e2e", () => {
 
 async function readJson(url: string): Promise<Record<string, any>> {
   const response = await fetch(url);
-  const payload = await response.json() as Record<string, any>;
+  const payload = (await response.json()) as Record<string, any>;
   expect(response.status).toBe(200);
   return payload;
 }

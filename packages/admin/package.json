@@ -2,19 +2,14 @@
   "name": "@agent-session-broker/admin",
   "version": "0.1.26",
   "description": "Admin service and UI for the agent session broker.",
+  "homepage": "https://github.com/HOOLC/slack-codex-broker#readme",
+  "bugs": {
+    "url": "https://github.com/HOOLC/slack-codex-broker/issues"
+  },
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/HOOLC/slack-codex-broker.git"
-  },
-  "bugs": {
-    "url": "https://github.com/HOOLC/slack-codex-broker/issues"
-  },
-  "homepage": "https://github.com/HOOLC/slack-codex-broker#readme",
-  "type": "module",
-  "publishConfig": {
-    "access": "public",
-    "registry": "https://registry.npmjs.org/"
   },
   "bin": {
     "agent-session-broker-macos-bootstrap": "./scripts/ops/macos-bootstrap.mjs"
@@ -29,13 +24,18 @@
     "README.md",
     "LICENSE"
   ],
-  "engines": {
-    "node": ">=22.5.0"
+  "type": "module",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.27.1",
     "react": "19.2.6",
     "react-dom": "19.2.6",
     "ws": "^8.18.3"
+  },
+  "engines": {
+    "node": ">=22.13.0"
   }
 }

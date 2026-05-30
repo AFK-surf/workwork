@@ -20,12 +20,12 @@ describe("chat routes", () => {
         bridge: {
           postChatMessage: async (payload: unknown) => {
             calls.push(payload);
-          }
+          },
         } as never,
         config: {
-          serviceName: "test-broker"
-        } as never
-      })
+          serviceName: "test-broker",
+        } as never,
+      }),
     );
     const baseUrl = await listen(server);
     cleanups.push(() => close(server));
@@ -33,15 +33,15 @@ describe("chat routes", () => {
     const response = await fetch(`${baseUrl}/chat/post-message`, {
       method: "POST",
       headers: {
-        "content-type": "application/json"
+        "content-type": "application/json",
       },
       body: JSON.stringify({
         platform: "slack",
         conversation_id: "C123",
         root_message_id: "111.222",
         text: "done",
-        kind: "final"
-      })
+        kind: "final",
+      }),
     });
 
     expect(response.status).toBe(200);
@@ -56,8 +56,8 @@ describe("chat routes", () => {
         reason: undefined,
         format: undefined,
         richText: undefined,
-        card: undefined
-      }
+        card: undefined,
+      },
     ]);
   });
 
@@ -68,12 +68,12 @@ describe("chat routes", () => {
         bridge: {
           postChatState: async (payload: unknown) => {
             calls.push(payload);
-          }
+          },
         } as never,
         config: {
-          serviceName: "test-broker"
-        } as never
-      })
+          serviceName: "test-broker",
+        } as never,
+      }),
     );
     const baseUrl = await listen(server);
     cleanups.push(() => close(server));
@@ -81,15 +81,15 @@ describe("chat routes", () => {
     const response = await fetch(`${baseUrl}/chat/post-state`, {
       method: "POST",
       headers: {
-        "content-type": "application/json"
+        "content-type": "application/json",
       },
       body: JSON.stringify({
         platform: "feishu",
         conversationId: "oc_group",
         rootMessageId: "om_root",
         kind: "wait",
-        reason: "waiting for approval"
-      })
+        reason: "waiting for approval",
+      }),
     });
 
     expect(response.status).toBe(200);
@@ -100,8 +100,8 @@ describe("chat routes", () => {
         conversationId: "oc_group",
         rootMessageId: "om_root",
         kind: "wait",
-        reason: "waiting for approval"
-      }
+        reason: "waiting for approval",
+      },
     ]);
   });
 
@@ -110,9 +110,9 @@ describe("chat routes", () => {
       createHttpHandler({
         bridge: {} as never,
         config: {
-          serviceName: "test-broker"
-        } as never
-      })
+          serviceName: "test-broker",
+        } as never,
+      }),
     );
     const baseUrl = await listen(server);
     cleanups.push(() => close(server));
@@ -120,25 +120,20 @@ describe("chat routes", () => {
     const response = await fetch(`${baseUrl}/chat/post-state`, {
       method: "POST",
       headers: {
-        "content-type": "application/json"
+        "content-type": "application/json",
       },
       body: JSON.stringify({
         platform: "feishu",
         kind: "wait",
-        reason: "waiting for approval"
-      })
+        reason: "waiting for approval",
+      }),
     });
 
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({
       ok: false,
       error: "missing_required_body",
-      required: [
-        "platform",
-        "conversationId (alias: conversation_id)",
-        "rootMessageId (alias: root_message_id)",
-        "kind"
-      ]
+      required: ["platform", "conversationId (alias: conversation_id)", "rootMessageId (alias: root_message_id)", "kind"],
     });
   });
 
@@ -151,7 +146,7 @@ describe("chat routes", () => {
             calls.push(["history", payload]);
             return {
               messages: [],
-              hasMore: false
+              hasMore: false,
             };
           },
           postChatMessage: async (payload: unknown) => {
@@ -164,14 +159,14 @@ describe("chat routes", () => {
             calls.push(["file", payload]);
             return {
               platform: "slack",
-              fileId: "F123"
+              fileId: "F123",
             };
-          }
+          },
         } as never,
         config: {
-          serviceName: "test-broker"
-        } as never
-      })
+          serviceName: "test-broker",
+        } as never,
+      }),
     );
     const baseUrl = await listen(server);
     cleanups.push(() => close(server));
@@ -179,26 +174,24 @@ describe("chat routes", () => {
     const expected = {
       ok: false,
       error: "invalid_platform",
-      allowed: ["slack", "feishu"]
+      allowed: ["slack", "feishu"],
     };
 
-    const history = await fetch(
-      `${baseUrl}/chat/thread-history?platform=teams&conversation_id=C123&root_message_id=111.222`
-    );
+    const history = await fetch(`${baseUrl}/chat/thread-history?platform=teams&conversation_id=C123&root_message_id=111.222`);
     expect(history.status).toBe(400);
     await expect(history.json()).resolves.toEqual(expected);
 
     const message = await fetch(`${baseUrl}/chat/post-message`, {
       method: "POST",
       headers: {
-        "content-type": "application/json"
+        "content-type": "application/json",
       },
       body: JSON.stringify({
         platform: "teams",
         conversationId: "C123",
         rootMessageId: "111.222",
-        text: "done"
-      })
+        text: "done",
+      }),
     });
     expect(message.status).toBe(400);
     await expect(message.json()).resolves.toEqual(expected);
@@ -206,14 +199,14 @@ describe("chat routes", () => {
     const nonStringPlatform = await fetch(`${baseUrl}/chat/post-message`, {
       method: "POST",
       headers: {
-        "content-type": "application/json"
+        "content-type": "application/json",
       },
       body: JSON.stringify({
         platform: 123,
         conversationId: "C123",
         rootMessageId: "111.222",
-        text: "done"
-      })
+        text: "done",
+      }),
     });
     expect(nonStringPlatform.status).toBe(400);
     await expect(nonStringPlatform.json()).resolves.toEqual(expected);
@@ -221,14 +214,14 @@ describe("chat routes", () => {
     const state = await fetch(`${baseUrl}/chat/post-state`, {
       method: "POST",
       headers: {
-        "content-type": "application/json"
+        "content-type": "application/json",
       },
       body: JSON.stringify({
         platform: "teams",
         conversationId: "C123",
         rootMessageId: "111.222",
-        kind: "final"
-      })
+        kind: "final",
+      }),
     });
     expect(state.status).toBe(400);
     await expect(state.json()).resolves.toEqual(expected);
@@ -236,14 +229,14 @@ describe("chat routes", () => {
     const file = await fetch(`${baseUrl}/chat/post-file`, {
       method: "POST",
       headers: {
-        "content-type": "application/json"
+        "content-type": "application/json",
       },
       body: JSON.stringify({
         platform: "teams",
         conversationId: "C123",
         rootMessageId: "111.222",
-        filePath: "/tmp/report.txt"
-      })
+        filePath: "/tmp/report.txt",
+      }),
     });
     expect(file.status).toBe(400);
     await expect(file.json()).resolves.toEqual(expected);
@@ -261,22 +254,20 @@ describe("chat routes", () => {
             return {
               messages: [],
               formattedText: "history text",
-              hasMore: false
+              hasMore: false,
             };
-          }
+          },
         } as never,
         config: {
           serviceName: "test-broker",
-          slackHistoryApiMaxLimit: 50
-        } as never
-      })
+          slackHistoryApiMaxLimit: 50,
+        } as never,
+      }),
     );
     const baseUrl = await listen(server);
     cleanups.push(() => close(server));
 
-    const response = await fetch(
-      `${baseUrl}/chat/thread-history?platform=slack&conversation_id=C123&root_message_id=111.222&before_message_id=111.221&limit=20&format=text`
-    );
+    const response = await fetch(`${baseUrl}/chat/thread-history?platform=slack&conversation_id=C123&root_message_id=111.222&before_message_id=111.221&limit=20&format=text`);
 
     expect(response.status).toBe(200);
     await expect(response.text()).resolves.toBe("history text");
@@ -287,8 +278,8 @@ describe("chat routes", () => {
         rootMessageId: "111.222",
         beforeMessageId: "111.221",
         beforeCursor: undefined,
-        limit: 20
-      }
+        limit: 20,
+      },
     ]);
   });
 
@@ -299,25 +290,23 @@ describe("chat routes", () => {
           readChatThreadHistory: async () => ({
             messages: [
               {
-                messageId: "om_history"
-              }
+                messageId: "om_history",
+              },
             ],
             hasMore: true,
-            nextCursor: "page_next"
-          })
+            nextCursor: "page_next",
+          }),
         } as never,
         config: {
           serviceName: "test-broker",
-          feishuHistoryApiMaxLimit: 20
-        } as never
-      })
+          feishuHistoryApiMaxLimit: 20,
+        } as never,
+      }),
     );
     const baseUrl = await listen(server);
     cleanups.push(() => close(server));
 
-    const response = await fetch(
-      `${baseUrl}/chat/thread-history?platform=feishu&conversation_id=oc_group&root_message_id=om_root&before_cursor=page_current&limit=20`
-    );
+    const response = await fetch(`${baseUrl}/chat/thread-history?platform=feishu&conversation_id=oc_group&root_message_id=om_root&before_cursor=page_current&limit=20`);
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
@@ -326,7 +315,7 @@ describe("chat routes", () => {
       returnedCount: 1,
       hasMore: true,
       nextCursor: "page_next",
-      maxLimit: 20
+      maxLimit: 20,
     });
   });
 
@@ -339,29 +328,27 @@ describe("chat routes", () => {
             calls.push(payload);
             return {
               messages: [],
-              hasMore: false
+              hasMore: false,
             };
-          }
+          },
         } as never,
         config: {
           serviceName: "test-broker",
-          feishuHistoryApiMaxLimit: 20
-        } as never
-      })
+          feishuHistoryApiMaxLimit: 20,
+        } as never,
+      }),
     );
     const baseUrl = await listen(server);
     cleanups.push(() => close(server));
 
     for (const limit of ["abc", "0", "-1", "1.5"]) {
-      const response = await fetch(
-        `${baseUrl}/chat/thread-history?platform=feishu&conversation_id=oc_group&root_message_id=om_root&limit=${encodeURIComponent(limit)}`
-      );
+      const response = await fetch(`${baseUrl}/chat/thread-history?platform=feishu&conversation_id=oc_group&root_message_id=om_root&limit=${encodeURIComponent(limit)}`);
 
       expect(response.status).toBe(400);
       await expect(response.json()).resolves.toEqual({
         ok: false,
         error: "invalid_limit",
-        message: "limit must be a positive integer"
+        message: "limit must be a positive integer",
       });
     }
 
@@ -377,29 +364,27 @@ describe("chat routes", () => {
             calls.push(payload);
             return {
               messages: [],
-              hasMore: false
+              hasMore: false,
             };
-          }
+          },
         } as never,
         config: {
           serviceName: "test-broker",
-          feishuHistoryApiMaxLimit: 20
-        } as never
-      })
+          feishuHistoryApiMaxLimit: 20,
+        } as never,
+      }),
     );
     const baseUrl = await listen(server);
     cleanups.push(() => close(server));
 
     for (const format of ["markdown", "JSON", ""]) {
-      const response = await fetch(
-        `${baseUrl}/chat/thread-history?platform=feishu&conversation_id=oc_group&root_message_id=om_root&format=${encodeURIComponent(format)}`
-      );
+      const response = await fetch(`${baseUrl}/chat/thread-history?platform=feishu&conversation_id=oc_group&root_message_id=om_root&format=${encodeURIComponent(format)}`);
 
       expect(response.status).toBe(400);
       await expect(response.json()).resolves.toEqual({
         ok: false,
         error: "invalid_format",
-        allowed: ["json", "text"]
+        allowed: ["json", "text"],
       });
     }
 
@@ -413,12 +398,12 @@ describe("chat routes", () => {
         bridge: {
           postChatMessage: async (payload: unknown) => {
             calls.push(payload);
-          }
+          },
         } as never,
         config: {
-          serviceName: "test-broker"
-        } as never
-      })
+          serviceName: "test-broker",
+        } as never,
+      }),
     );
     const baseUrl = await listen(server);
     cleanups.push(() => close(server));
@@ -426,7 +411,7 @@ describe("chat routes", () => {
     const response = await fetch(`${baseUrl}/chat/post-message`, {
       method: "POST",
       headers: {
-        "content-type": "application/json"
+        "content-type": "application/json",
       },
       body: JSON.stringify({
         platform: "feishu",
@@ -436,13 +421,13 @@ describe("chat routes", () => {
         format: "card",
         card: JSON.stringify({
           config: {
-            wide_screen_mode: true
+            wide_screen_mode: true,
           },
           header: {
-            title: "Deploy"
-          }
-        })
-      })
+            title: "Deploy",
+          },
+        }),
+      }),
     });
 
     expect(response.status).toBe(200);
@@ -459,13 +444,13 @@ describe("chat routes", () => {
         richText: undefined,
         card: {
           config: {
-            wide_screen_mode: true
+            wide_screen_mode: true,
           },
           header: {
-            title: "Deploy"
-          }
-        }
-      }
+            title: "Deploy",
+          },
+        },
+      },
     ]);
   });
 
@@ -476,12 +461,12 @@ describe("chat routes", () => {
         bridge: {
           postChatMessage: async (payload: unknown) => {
             calls.push(payload);
-          }
+          },
         } as never,
         config: {
-          serviceName: "test-broker"
-        } as never
-      })
+          serviceName: "test-broker",
+        } as never,
+      }),
     );
     const baseUrl = await listen(server);
     cleanups.push(() => close(server));
@@ -489,7 +474,7 @@ describe("chat routes", () => {
     const invalidRichText = await fetch(`${baseUrl}/chat/post-message`, {
       method: "POST",
       headers: {
-        "content-type": "application/json"
+        "content-type": "application/json",
       },
       body: JSON.stringify({
         platform: "feishu",
@@ -497,20 +482,20 @@ describe("chat routes", () => {
         rootMessageId: "om_root",
         text: "deploy ready",
         format: "rich_text",
-        richText: "{not json"
-      })
+        richText: "{not json",
+      }),
     });
     expect(invalidRichText.status).toBe(400);
     await expect(invalidRichText.json()).resolves.toEqual({
       ok: false,
       error: "invalid_json_field",
-      field: "richText (alias: rich_text)"
+      field: "richText (alias: rich_text)",
     });
 
     const invalidCard = await fetch(`${baseUrl}/chat/post-message`, {
       method: "POST",
       headers: {
-        "content-type": "application/json"
+        "content-type": "application/json",
       },
       body: JSON.stringify({
         platform: "feishu",
@@ -518,14 +503,14 @@ describe("chat routes", () => {
         rootMessageId: "om_root",
         text: "deploy ready",
         format: "card",
-        card: "{not json"
-      })
+        card: "{not json",
+      }),
     });
     expect(invalidCard.status).toBe(400);
     await expect(invalidCard.json()).resolves.toEqual({
       ok: false,
       error: "invalid_json_field",
-      field: "card"
+      field: "card",
     });
 
     expect(calls).toEqual([]);
@@ -539,12 +524,12 @@ describe("chat routes", () => {
           postChatMessage: async (payload: unknown) => {
             calls.push(payload);
             throw new Error("Feishu send failed");
-          }
+          },
         } as never,
         config: {
-          serviceName: "test-broker"
-        } as never
-      })
+          serviceName: "test-broker",
+        } as never,
+      }),
     );
     const baseUrl = await listen(server);
     cleanups.push(() => close(server));
@@ -552,21 +537,21 @@ describe("chat routes", () => {
     const response = await fetch(`${baseUrl}/chat/post-message`, {
       method: "POST",
       headers: {
-        "content-type": "application/json"
+        "content-type": "application/json",
       },
       body: JSON.stringify({
         platform: "feishu",
         conversation_id: "oc_group",
         root_message_id: "om_root",
         text: "done",
-        format: "text"
-      })
+        format: "text",
+      }),
     });
 
     expect(response.status).toBe(500);
     await expect(response.json()).resolves.toEqual({
       ok: false,
-      error: "Feishu send failed"
+      error: "Feishu send failed",
     });
     expect(calls).toEqual([
       {
@@ -578,8 +563,8 @@ describe("chat routes", () => {
         reason: undefined,
         format: "text",
         richText: undefined,
-        card: undefined
-      }
+        card: undefined,
+      },
     ]);
   });
 
@@ -590,12 +575,12 @@ describe("chat routes", () => {
         bridge: {
           postChatState: async (payload: unknown) => {
             calls.push(payload);
-          }
+          },
         } as never,
         config: {
-          serviceName: "test-broker"
-        } as never
-      })
+          serviceName: "test-broker",
+        } as never,
+      }),
     );
     const baseUrl = await listen(server);
     cleanups.push(() => close(server));
@@ -603,15 +588,15 @@ describe("chat routes", () => {
     const response = await fetch(`${baseUrl}/chat/post-state`, {
       method: "POST",
       headers: {
-        "content-type": "application/json"
+        "content-type": "application/json",
       },
       body: JSON.stringify({
         platform: "slack",
         conversation_id: "C123",
         root_message_id: "111.222",
         kind: "wait",
-        reason: "watching CI"
-      })
+        reason: "watching CI",
+      }),
     });
 
     expect(response.status).toBe(200);
@@ -622,8 +607,8 @@ describe("chat routes", () => {
         conversationId: "C123",
         rootMessageId: "111.222",
         kind: "wait",
-        reason: "watching CI"
-      }
+        reason: "watching CI",
+      },
     ]);
   });
 
@@ -637,14 +622,14 @@ describe("chat routes", () => {
             return {
               platform: "feishu",
               fileId: "file_uploaded",
-              title: "report.pdf"
+              title: "report.pdf",
             };
-          }
+          },
         } as never,
         config: {
-          serviceName: "test-broker"
-        } as never
-      })
+          serviceName: "test-broker",
+        } as never,
+      }),
     );
     const baseUrl = await listen(server);
     cleanups.push(() => close(server));
@@ -653,7 +638,7 @@ describe("chat routes", () => {
     const response = await fetch(`${baseUrl}/chat/post-file`, {
       method: "POST",
       headers: {
-        "content-type": "application/json"
+        "content-type": "application/json",
       },
       body: JSON.stringify({
         platform: "feishu",
@@ -662,8 +647,8 @@ describe("chat routes", () => {
         content_base64: contentBase64,
         filename: "report.pdf",
         content_type: "application/pdf",
-        title: "report"
-      })
+        title: "report",
+      }),
     });
 
     expect(response.status).toBe(200);
@@ -672,8 +657,8 @@ describe("chat routes", () => {
       file: {
         platform: "feishu",
         fileId: "file_uploaded",
-        title: "report.pdf"
-      }
+        title: "report.pdf",
+      },
     });
     expect(calls).toEqual([
       {
@@ -687,8 +672,8 @@ describe("chat routes", () => {
         initialComment: undefined,
         altText: undefined,
         snippetType: undefined,
-        contentType: "application/pdf"
-      }
+        contentType: "application/pdf",
+      },
     ]);
   });
 
@@ -702,14 +687,14 @@ describe("chat routes", () => {
             return {
               platform: "slack",
               fileId: "F123",
-              title: "report"
+              title: "report",
             };
-          }
+          },
         } as never,
         config: {
-          serviceName: "test-broker"
-        } as never
-      })
+          serviceName: "test-broker",
+        } as never,
+      }),
     );
     const baseUrl = await listen(server);
     cleanups.push(() => close(server));
@@ -717,7 +702,7 @@ describe("chat routes", () => {
     const response = await fetch(`${baseUrl}/chat/post-file`, {
       method: "POST",
       headers: {
-        "content-type": "application/json"
+        "content-type": "application/json",
       },
       body: JSON.stringify({
         platform: "slack",
@@ -725,8 +710,8 @@ describe("chat routes", () => {
         root_message_id: "111.222",
         file_path: "/tmp/report.txt",
         title: "report",
-        initial_comment: "see attached"
-      })
+        initial_comment: "see attached",
+      }),
     });
 
     expect(response.status).toBe(200);
@@ -735,8 +720,8 @@ describe("chat routes", () => {
       file: {
         platform: "slack",
         fileId: "F123",
-        title: "report"
-      }
+        title: "report",
+      },
     });
     expect(calls).toEqual([
       {
@@ -750,8 +735,8 @@ describe("chat routes", () => {
         initialComment: "see attached",
         altText: undefined,
         snippetType: undefined,
-        contentType: undefined
-      }
+        contentType: undefined,
+      },
     ]);
   });
 
@@ -760,9 +745,9 @@ describe("chat routes", () => {
       createHttpHandler({
         bridge: {} as never,
         config: {
-          serviceName: "test-broker"
-        } as never
-      })
+          serviceName: "test-broker",
+        } as never,
+      }),
     );
     const baseUrl = await listen(server);
     cleanups.push(() => close(server));
@@ -770,23 +755,20 @@ describe("chat routes", () => {
     const response = await fetch(`${baseUrl}/chat/post-file`, {
       method: "POST",
       headers: {
-        "content-type": "application/json"
+        "content-type": "application/json",
       },
       body: JSON.stringify({
         platform: "feishu",
         conversationId: "oc_group",
-        rootMessageId: "om_root"
-      })
+        rootMessageId: "om_root",
+      }),
     });
 
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({
       ok: false,
       error: "provide_exactly_one_file_source",
-      required: [
-        "filePath (alias: file_path)",
-        "contentBase64 (alias: content_base64)"
-      ]
+      required: ["filePath (alias: file_path)", "contentBase64 (alias: content_base64)"],
     });
   });
 
@@ -799,14 +781,14 @@ describe("chat routes", () => {
             calls.push(payload);
             return {
               platform: "feishu",
-              fileId: "file_uploaded"
+              fileId: "file_uploaded",
             };
-          }
+          },
         } as never,
         config: {
-          serviceName: "test-broker"
-        } as never
-      })
+          serviceName: "test-broker",
+        } as never,
+      }),
     );
     const baseUrl = await listen(server);
     cleanups.push(() => close(server));
@@ -814,14 +796,14 @@ describe("chat routes", () => {
     const response = await fetch(`${baseUrl}/chat/post-file`, {
       method: "POST",
       headers: {
-        "content-type": "application/json"
+        "content-type": "application/json",
       },
       body: JSON.stringify({
         platform: "feishu",
         conversationId: "oc_group",
         rootMessageId: "om_root",
-        contentBase64: Buffer.from("pdf").toString("base64")
-      })
+        contentBase64: Buffer.from("pdf").toString("base64"),
+      }),
     });
 
     expect(response.status).toBe(400);
@@ -829,7 +811,7 @@ describe("chat routes", () => {
       ok: false,
       error: "missing_required_body",
       message: "filename is required when using contentBase64 (alias: content_base64)",
-      required: ["filename"]
+      required: ["filename"],
     });
     expect(calls).toEqual([]);
   });
@@ -843,14 +825,14 @@ describe("chat routes", () => {
             calls.push(payload);
             return {
               platform: "feishu",
-              fileId: "file_uploaded"
+              fileId: "file_uploaded",
             };
-          }
+          },
         } as never,
         config: {
-          serviceName: "test-broker"
-        } as never
-      })
+          serviceName: "test-broker",
+        } as never,
+      }),
     );
     const baseUrl = await listen(server);
     cleanups.push(() => close(server));
@@ -858,15 +840,15 @@ describe("chat routes", () => {
     const response = await fetch(`${baseUrl}/chat/post-file`, {
       method: "POST",
       headers: {
-        "content-type": "application/json"
+        "content-type": "application/json",
       },
       body: JSON.stringify({
         platform: "feishu",
         conversationId: "oc_group",
         rootMessageId: "om_root",
         contentBase64: "!!!!",
-        filename: "report.pdf"
-      })
+        filename: "report.pdf",
+      }),
     });
 
     expect(response.status).toBe(400);
@@ -874,7 +856,7 @@ describe("chat routes", () => {
       ok: false,
       error: "invalid_content_base64",
       message: "contentBase64 (alias: content_base64) must decode to non-empty file content",
-      required: ["contentBase64 (alias: content_base64)"]
+      required: ["contentBase64 (alias: content_base64)"],
     });
     expect(calls).toEqual([]);
   });

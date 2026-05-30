@@ -1,10 +1,4 @@
-import type {
-  ChatAttachment,
-  ChatInboundSource,
-  ChatInputMessage,
-  ChatSender,
-  ChatUserIdentity
-} from "../chat/chat-types.js";
+import type { ChatAttachment, ChatInboundSource, ChatInputMessage, ChatSender, ChatUserIdentity } from "../chat/chat-types.js";
 import type { JsonLike } from "../../types.js";
 
 export interface FeishuBotIdentity {
@@ -20,10 +14,7 @@ export interface ParsedFeishuMessageEvent {
   readonly input: ChatInputMessage;
 }
 
-export type FeishuIgnoredReason =
-  | "ignored_invalid_event"
-  | "ignored_private_chat"
-  | "ignored_self";
+export type FeishuIgnoredReason = "ignored_invalid_event" | "ignored_private_chat" | "ignored_self";
 
 export interface IgnoredFeishuMessageEvent {
   readonly route: "ignored";
@@ -46,7 +37,7 @@ export function parseFeishuReceiveMessageEvent(
   payload: unknown,
   options?: {
     readonly botIdentity?: FeishuBotIdentity | undefined;
-  }
+  },
 ): ParsedFeishuMessageEvent | null {
   const routed = routeFeishuReceiveMessageEvent(payload, options);
   return routed.route === "accepted" ? routed.parsed : null;
@@ -56,7 +47,7 @@ export function routeFeishuReceiveMessageEvent(
   payload: unknown,
   options?: {
     readonly botIdentity?: FeishuBotIdentity | undefined;
-  }
+  },
 ): RoutedFeishuMessageEvent {
   const event = unwrapFeishuEvent(payload);
   const message = asRecord(event?.message);
@@ -67,7 +58,7 @@ export function routeFeishuReceiveMessageEvent(
       route: "ignored",
       ignoredReason: "ignored_invalid_event",
       conversationKind: "unknown",
-      eventId: readEventId(payload)
+      eventId: readEventId(payload),
     };
   }
 
@@ -80,7 +71,7 @@ export function routeFeishuReceiveMessageEvent(
       conversationKind: chatType === "p2p" ? "direct" : "unknown",
       messageId: readString(message.message_id),
       eventId: readEventId(payload),
-      senderKind: buildSender(senderPayload).kind
+      senderKind: buildSender(senderPayload).kind,
     };
   }
 
@@ -94,7 +85,7 @@ export function routeFeishuReceiveMessageEvent(
       conversationKind: "group",
       messageId,
       eventId: readEventId(payload),
-      senderKind: buildSender(senderPayload).kind
+      senderKind: buildSender(senderPayload).kind,
     };
   }
 
@@ -107,7 +98,7 @@ export function routeFeishuReceiveMessageEvent(
       conversationKind: "group",
       messageId,
       eventId: readEventId(payload),
-      senderKind: sender.kind
+      senderKind: sender.kind,
     };
   }
 
@@ -120,11 +111,7 @@ export function routeFeishuReceiveMessageEvent(
   const mentionedUsers = mentions.map((mention) => mention.identity);
   const mentionedUserIds = mentionedUsers.map((identity) => identity.userId);
   const mentionedBot = mentions.some((mention) => mentionMatchesBot(mention, options?.botIdentity));
-  const source: ChatInboundSource = mentionedBot
-    ? "bot_mention"
-    : parentMessageId || rootMessageId !== messageId
-      ? "thread_reply"
-      : "group_message";
+  const source: ChatInboundSource = mentionedBot ? "bot_mention" : parentMessageId || rootMessageId !== messageId ? "thread_reply" : "group_message";
   const text = formatFeishuMessageText(messageType, content);
   const controlText = removeBotMentions(text, mentions, options?.botIdentity).trim();
 
@@ -150,9 +137,9 @@ export function routeFeishuReceiveMessageEvent(
         mentionedUserIds,
         mentionedUsers,
         attachments: buildAttachments(messageType, content, messageId),
-        rawMessage: normalizeJson(message)
-      }
-    }
+        rawMessage: normalizeJson(message),
+      },
+    },
   };
 }
 
@@ -173,18 +160,13 @@ function readEventId(payload: unknown): string | undefined {
 
 function buildSender(senderPayload: Record<string, unknown>): ChatSender {
   const senderId = asRecord(senderPayload.sender_id);
-  const userId =
-    readString(senderId?.open_id) ??
-    readString(senderId?.user_id) ??
-    readString(senderId?.union_id) ??
-    readString(senderId?.app_id) ??
-    "unknown:feishu-message";
+  const userId = readString(senderId?.open_id) ?? readString(senderId?.user_id) ?? readString(senderId?.union_id) ?? readString(senderId?.app_id) ?? "unknown:feishu-message";
   const senderType = readString(senderPayload.sender_type);
 
   return {
     kind: senderType === "user" ? "user" : senderType === "bot" ? "bot" : senderType === "app" ? "app" : "unknown",
     userId,
-    appId: readString(senderId?.app_id)
+    appId: readString(senderId?.app_id),
   };
 }
 
@@ -197,12 +179,7 @@ function isBotSelf(sender: ChatSender, botIdentity?: FeishuBotIdentity): boolean
     return false;
   }
 
-  return Boolean(
-    (botIdentity.openId && sender.userId === botIdentity.openId) ||
-      (botIdentity.userId && sender.userId === botIdentity.userId) ||
-      (botIdentity.unionId && sender.userId === botIdentity.unionId) ||
-      (sender.kind !== "user" && botIdentity.appId && sender.appId === botIdentity.appId)
-  );
+  return Boolean((botIdentity.openId && sender.userId === botIdentity.openId) || (botIdentity.userId && sender.userId === botIdentity.userId) || (botIdentity.unionId && sender.userId === botIdentity.unionId) || (sender.kind !== "user" && botIdentity.appId && sender.appId === botIdentity.appId));
 }
 
 function senderMatchesBotIdentity(senderPayload: Record<string, unknown>, botIdentity?: FeishuBotIdentity): boolean {
@@ -213,9 +190,9 @@ function senderMatchesBotIdentity(senderPayload: Record<string, unknown>, botIde
   const senderId = asRecord(senderPayload.sender_id);
   return Boolean(
     (botIdentity.openId && readString(senderId?.open_id) === botIdentity.openId) ||
-      (botIdentity.userId && readString(senderId?.user_id) === botIdentity.userId) ||
-      (botIdentity.unionId && readString(senderId?.union_id) === botIdentity.unionId) ||
-      (botIdentity.appId && readString(senderId?.app_id) === botIdentity.appId)
+    (botIdentity.userId && readString(senderId?.user_id) === botIdentity.userId) ||
+    (botIdentity.unionId && readString(senderId?.union_id) === botIdentity.unionId) ||
+    (botIdentity.appId && readString(senderId?.app_id) === botIdentity.appId),
   );
 }
 
@@ -251,15 +228,14 @@ function formatFeishuMessageText(messageType: string, content: JsonLike | undefi
 
   if (messageType === "post") {
     const title = readString(contentRecord?.title);
-    const body = extractTextFragments(contentRecord?.content ?? content).join("").trim();
+    const body = extractTextFragments(contentRecord?.content ?? content)
+      .join("")
+      .trim();
     return [title, body].filter(Boolean).join("\n") || "[Feishu rich text message]";
   }
 
   if (messageType === "interactive") {
-    const title =
-      readString(asJsonRecord(asJsonRecord(asJsonRecord(contentRecord?.config)?.header)?.title)?.content) ??
-      readString(asJsonRecord(contentRecord?.header)?.title) ??
-      readString(contentRecord?.title);
+    const title = readString(asJsonRecord(asJsonRecord(asJsonRecord(contentRecord?.config)?.header)?.title)?.content) ?? readString(asJsonRecord(contentRecord?.header)?.title) ?? readString(contentRecord?.title);
     return title ? `[Feishu card: ${title}]` : "[Feishu interactive card]";
   }
 
@@ -274,11 +250,7 @@ function formatFeishuMessageText(messageType: string, content: JsonLike | undefi
   return extractTextFragments(content).join("").trim() || `[Feishu ${messageType} message]`;
 }
 
-function buildAttachments(
-  messageType: string,
-  content: JsonLike | undefined,
-  messageId: string
-): readonly ChatAttachment[] {
+function buildAttachments(messageType: string, content: JsonLike | undefined, messageId: string): readonly ChatAttachment[] {
   const contentRecord = asJsonRecord(content);
 
   if (messageType === "image") {
@@ -294,8 +266,8 @@ function buildAttachments(
         kind: "image",
         messageId,
         resourceKey: imageKey,
-        rawAttachment: content
-      }
+        rawAttachment: content,
+      },
     ];
   }
 
@@ -313,8 +285,8 @@ function buildAttachments(
         messageId,
         name: readString(contentRecord?.file_name),
         resourceKey: fileKey,
-        rawAttachment: content
-      }
+        rawAttachment: content,
+      },
     ];
   }
 
@@ -334,11 +306,7 @@ function readMentions(value: unknown): readonly FeishuMention[] {
   return value.flatMap((entry): FeishuMention[] => {
     const mention = asRecord(entry);
     const id = asRecord(mention?.id);
-    const userId =
-      readString(id?.open_id) ??
-      readString(id?.user_id) ??
-      readString(id?.union_id) ??
-      readString(mention?.id);
+    const userId = readString(id?.open_id) ?? readString(id?.user_id) ?? readString(id?.union_id) ?? readString(mention?.id);
     if (!mention || !userId) {
       return [];
     }
@@ -352,9 +320,9 @@ function readMentions(value: unknown): readonly FeishuMention[] {
           userId,
           mention: name ? `@${name}` : `@${userId}`,
           displayName: name,
-          rawUser: normalizeJson(mention)
-        }
-      }
+          rawUser: normalizeJson(mention),
+        },
+      },
     ];
   });
 }
@@ -366,18 +334,10 @@ function mentionMatchesBot(mention: FeishuMention, botIdentity?: FeishuBotIdenti
 
   const rawUser = asJsonRecord(mention.identity.rawUser);
   const id = asJsonRecord(rawUser?.id);
-  return Boolean(
-    (botIdentity.openId && mention.identity.userId === botIdentity.openId) ||
-      (botIdentity.userId && readString(id?.user_id) === botIdentity.userId) ||
-      (botIdentity.unionId && readString(id?.union_id) === botIdentity.unionId)
-  );
+  return Boolean((botIdentity.openId && mention.identity.userId === botIdentity.openId) || (botIdentity.userId && readString(id?.user_id) === botIdentity.userId) || (botIdentity.unionId && readString(id?.union_id) === botIdentity.unionId));
 }
 
-function removeBotMentions(
-  text: string,
-  mentions: readonly FeishuMention[],
-  botIdentity?: FeishuBotIdentity
-): string {
+function removeBotMentions(text: string, mentions: readonly FeishuMention[], botIdentity?: FeishuBotIdentity): string {
   let normalized = text;
 
   for (const mention of mentions) {
@@ -413,7 +373,7 @@ function extractTextFragments(value: unknown): string[] {
     ...current,
     ...Object.entries(record)
       .filter(([key]) => key !== "text" && key !== "tag")
-      .flatMap(([, entry]) => extractTextFragments(entry))
+      .flatMap(([, entry]) => extractTextFragments(entry)),
   ];
 }
 
@@ -422,18 +382,12 @@ function normalizeJson(value: unknown): JsonLike | undefined {
     return null;
   }
 
-  if (
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean"
-  ) {
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
     return value;
   }
 
   if (Array.isArray(value)) {
-    return value
-      .map((entry) => normalizeJson(entry))
-      .filter((entry): entry is JsonLike => entry !== undefined);
+    return value.map((entry) => normalizeJson(entry)).filter((entry): entry is JsonLike => entry !== undefined);
   }
 
   const record = asRecord(value);
@@ -444,7 +398,7 @@ function normalizeJson(value: unknown): JsonLike | undefined {
   return Object.fromEntries(
     Object.entries(record)
       .map(([key, entry]) => [key, normalizeJson(entry)] as const)
-      .filter(([, entry]) => entry !== undefined)
+      .filter(([, entry]) => entry !== undefined),
   ) as Record<string, JsonLike>;
 }
 

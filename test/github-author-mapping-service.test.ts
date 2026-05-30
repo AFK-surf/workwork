@@ -10,10 +10,14 @@ describe("GitHubAuthorMappingService", () => {
   const tempDirs: string[] = [];
 
   afterEach(async () => {
-    await Promise.all(tempDirs.splice(0).map((directory) => fs.rm(directory, {
-      recursive: true,
-      force: true
-    })));
+    await Promise.all(
+      tempDirs.splice(0).map((directory) =>
+        fs.rm(directory, {
+          recursive: true,
+          force: true,
+        }),
+      ),
+    );
   });
 
   it("infers mappings from Slack profile email and preserves manual overrides", async () => {
@@ -21,7 +25,7 @@ describe("GitHubAuthorMappingService", () => {
     tempDirs.push(stateDir);
 
     const service = new GitHubAuthorMappingService({
-      stateDir
+      stateDir,
     });
     await service.load();
 
@@ -31,22 +35,22 @@ describe("GitHubAuthorMappingService", () => {
       username: "alice",
       displayName: "Alice Slack",
       realName: "Alice Example",
-      email: "alice@example.com"
+      email: "alice@example.com",
     });
     expect(inferred).toMatchObject({
       slackUserId: "U123",
       githubAuthor: "Alice Example <alice@example.com>",
-      source: "slack_inferred"
+      source: "slack_inferred",
     });
 
     const manual = await service.upsertManualMapping({
       slackUserId: "U123",
-      githubAuthor: "Alice Manual <manual@example.com>"
+      githubAuthor: "Alice Manual <manual@example.com>",
     });
     expect(manual).toMatchObject({
       slackUserId: "U123",
       githubAuthor: "Alice Manual <manual@example.com>",
-      source: "manual"
+      source: "manual",
     });
 
     const afterManual = await service.recordObservedIdentity({
@@ -55,7 +59,7 @@ describe("GitHubAuthorMappingService", () => {
       username: "alice-updated",
       displayName: "Alice Updated",
       realName: "Alice Updated",
-      email: "alice-updated@example.com"
+      email: "alice-updated@example.com",
     });
     expect(afterManual).toMatchObject({
       platform: "slack",
@@ -65,12 +69,12 @@ describe("GitHubAuthorMappingService", () => {
       identity: {
         platform: "slack",
         userId: "U123",
-        email: "alice-updated@example.com"
+        email: "alice-updated@example.com",
       },
       slackIdentity: {
         userId: "U123",
-        email: "alice-updated@example.com"
-      }
+        email: "alice-updated@example.com",
+      },
     });
   });
 
@@ -79,14 +83,14 @@ describe("GitHubAuthorMappingService", () => {
     tempDirs.push(stateDir);
 
     const service = new GitHubAuthorMappingService({
-      stateDir
+      stateDir,
     });
     await service.load();
 
     const slack = await service.upsertManualMapping({
       platform: "slack",
       userId: "same-user",
-      githubAuthor: "Slack User <slack@example.com>"
+      githubAuthor: "Slack User <slack@example.com>",
     });
     const feishu = await service.upsertManualMapping({
       platform: "feishu",
@@ -96,8 +100,8 @@ describe("GitHubAuthorMappingService", () => {
         platform: "feishu",
         userId: "same-user",
         mention: "@same-user",
-        displayName: "Feishu User"
-      }
+        displayName: "Feishu User",
+      },
     });
 
     expect(slack).toMatchObject({
@@ -107,8 +111,8 @@ describe("GitHubAuthorMappingService", () => {
       githubAuthor: "Slack User <slack@example.com>",
       identity: {
         platform: "slack",
-        userId: "same-user"
-      }
+        userId: "same-user",
+      },
     });
     expect(feishu).toMatchObject({
       platform: "feishu",
@@ -118,17 +122,19 @@ describe("GitHubAuthorMappingService", () => {
       identity: {
         platform: "feishu",
         userId: "same-user",
-        displayName: "Feishu User"
-      }
+        displayName: "Feishu User",
+      },
     });
     expect(service.getMapping("same-user")?.githubAuthor).toBe("Slack User <slack@example.com>");
-    expect(service.getMappingForUser({
-      platform: "feishu",
-      userId: "same-user"
-    })?.githubAuthor).toBe("Feishu User <feishu@example.com>");
+    expect(
+      service.getMappingForUser({
+        platform: "feishu",
+        userId: "same-user",
+      })?.githubAuthor,
+    ).toBe("Feishu User <feishu@example.com>");
 
     const reloaded = new GitHubAuthorMappingService({
-      stateDir
+      stateDir,
     });
     await reloaded.load();
     expect(reloaded.listMappings()).toEqual(
@@ -136,14 +142,14 @@ describe("GitHubAuthorMappingService", () => {
         expect.objectContaining({
           platform: "slack",
           userId: "same-user",
-          githubAuthor: "Slack User <slack@example.com>"
+          githubAuthor: "Slack User <slack@example.com>",
         }),
         expect.objectContaining({
           platform: "feishu",
           userId: "same-user",
-          githubAuthor: "Feishu User <feishu@example.com>"
-        })
-      ])
+          githubAuthor: "Feishu User <feishu@example.com>",
+        }),
+      ]),
     );
   });
 });

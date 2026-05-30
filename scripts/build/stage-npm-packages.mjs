@@ -12,22 +12,14 @@ const packageTargets = [
     source: path.join(repoRoot, "packages", "admin"),
     destination: path.join(stageRoot, "admin"),
     includeAdminUi: true,
-    scripts: [
-      "lib.mjs",
-      "macos-bootstrap.mjs",
-      "macos-launchd-launcher.mjs",
-      "macos-launchd-restart.mjs"
-    ]
+    scripts: ["lib.mjs", "macos-bootstrap.mjs", "macos-launchd-launcher.mjs", "macos-launchd-restart.mjs"],
   },
   {
     source: path.join(repoRoot, "packages", "worker"),
     destination: path.join(stageRoot, "worker"),
     includeAdminUi: false,
-    scripts: [
-      "macos-launchd-launcher.mjs",
-      "macos-launchd-restart.mjs"
-    ]
-  }
+    scripts: ["macos-launchd-launcher.mjs", "macos-launchd-restart.mjs"],
+  },
 ];
 
 await fs.rm(stageRoot, { force: true, recursive: true });
@@ -46,10 +38,7 @@ async function stagePackage(target) {
     await copyDirectory(path.join(repoRoot, "dist", "admin-ui"), path.join(target.destination, "dist", "admin-ui"));
   }
   for (const script of target.scripts) {
-    await copyFile(
-      path.join(repoRoot, "scripts", "ops", script),
-      path.join(target.destination, "scripts", "ops", script)
-    );
+    await copyFile(path.join(repoRoot, "scripts", "ops", script), path.join(target.destination, "scripts", "ops", script));
   }
 }
 

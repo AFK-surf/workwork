@@ -5,14 +5,7 @@ import path from "node:path";
 import { AppServerClient } from "./app-server-client.js";
 import { AppServerProcess } from "./app-server-process.js";
 import type { SlackSessionRecord, SlackUserIdentity } from "../../types.js";
-import type {
-  AppServerAccountSummary,
-  CodexInputItem,
-  AppServerRateLimitsResponse,
-  ReadTurnResultOptions,
-  ReadTurnResult,
-  StartedTurn
-} from "./app-server-client.js";
+import type { AppServerAccountSummary, CodexInputItem, AppServerRateLimitsResponse, ReadTurnResultOptions, ReadTurnResult, StartedTurn } from "./app-server-client.js";
 import { logger } from "../../logger.js";
 import { getPersonalMemoryPath } from "./codex-home.js";
 
@@ -58,7 +51,7 @@ export class CodexBroker extends EventEmitter {
     this.#codexAppServerUrl = options.codexAppServerUrl;
     this.#personalMemoryFilePath = choosePersonalMemoryFilePath({
       codexHome: options.codexHome,
-      teamCodexHomePath: options.teamCodexHomePath
+      teamCodexHomePath: options.teamCodexHomePath,
     });
     this.#reposRoot = options.reposRoot;
     this.#codexGeneratedImagesRoot = path.join(options.codexHome, "generated_images");
@@ -82,7 +75,7 @@ export class CodexBroker extends EventEmitter {
       geminiHttpProxy: options.geminiHttpProxy,
       geminiHttpsProxy: options.geminiHttpsProxy,
       geminiAllProxy: options.geminiAllProxy,
-      openAiApiKey: options.openAiApiKey
+      openAiApiKey: options.openAiApiKey,
     });
     this.#client = this.#createClient(this.#appServerProcess.url);
     this.#bindClient(this.#client);
@@ -95,7 +88,7 @@ export class CodexBroker extends EventEmitter {
   async start(): Promise<void> {
     this.#stopping = false;
     await this.#queueConnectClient({
-      restartProcess: true
+      restartProcess: true,
     });
   }
 
@@ -125,9 +118,7 @@ export class CodexBroker extends EventEmitter {
       throw new Error(`Session ${session.key} has no Codex thread id`);
     }
 
-    return await this.#withRecovery(() =>
-      this.#client.startTurn(session.agentSessionId!, session.workspacePath, input)
-    );
+    return await this.#withRecovery(() => this.#client.startTurn(session.agentSessionId!, session.workspacePath, input));
   }
 
   async steer(session: SlackSessionRecord, input: readonly CodexInputItem[]): Promise<void> {
@@ -139,8 +130,8 @@ export class CodexBroker extends EventEmitter {
       this.#client.steerTurn({
         threadId: session.agentSessionId!,
         turnId: session.activeTurnId!,
-        input
-      })
+        input,
+      }),
     );
   }
 
@@ -152,11 +143,7 @@ export class CodexBroker extends EventEmitter {
     await this.#withRecovery(() => this.#client.interruptTurn(session.agentSessionId!, session.activeTurnId!));
   }
 
-  async readTurnResult(
-    session: SlackSessionRecord,
-    turnId: string,
-    options?: ReadTurnResultOptions
-  ): Promise<ReadTurnResult | null> {
+  async readTurnResult(session: SlackSessionRecord, turnId: string, options?: ReadTurnResultOptions): Promise<ReadTurnResult | null> {
     if (!session.agentSessionId) {
       return null;
     }
@@ -175,7 +162,7 @@ export class CodexBroker extends EventEmitter {
   async restartRuntime(reason = "admin runtime restart"): Promise<void> {
     await this.#queueConnectClient({
       restartProcess: true,
-      reason
+      reason,
     });
   }
 
@@ -187,7 +174,7 @@ export class CodexBroker extends EventEmitter {
       openAiApiKey: this.#openAiApiKey,
       personalMemoryFilePath: this.#personalMemoryFilePath,
       reposRoot: this.#reposRoot,
-      codexGeneratedImagesRoot: this.#codexGeneratedImagesRoot
+      codexGeneratedImagesRoot: this.#codexGeneratedImagesRoot,
     });
     client.setSlackBotIdentity(this.#slackBotIdentity);
     return client;
@@ -249,23 +236,22 @@ export class CodexBroker extends EventEmitter {
   async #recoverClient(error: Error): Promise<void> {
     if (!this.#reconnectPromise) {
       logger.warn("Recovering Codex app-server client", {
-        reason: error.message
+        reason: error.message,
       });
       this.#reconnectPromise = (async () => {
         try {
           await this.#queueConnectClient({
             restartProcess: false,
-            reason: error.message
+            reason: error.message,
           });
         } catch (reconnectError) {
           logger.warn("Reconnect to existing Codex app-server failed; restarting process", {
             reason: error.message,
-            reconnectError:
-              reconnectError instanceof Error ? reconnectError.message : String(reconnectError)
+            reconnectError: reconnectError instanceof Error ? reconnectError.message : String(reconnectError),
           });
           await this.#queueConnectClient({
             restartProcess: true,
-            reason: error.message
+            reason: error.message,
           });
         }
       })().finally(() => {
@@ -276,10 +262,7 @@ export class CodexBroker extends EventEmitter {
     await this.#reconnectPromise;
   }
 
-  async #queueConnectClient(options: {
-    readonly restartProcess: boolean;
-    readonly reason?: string | undefined;
-  }): Promise<void> {
+  async #queueConnectClient(options: { readonly restartProcess: boolean; readonly reason?: string | undefined }): Promise<void> {
     const run = this.#connectQueue
       .catch(() => {})
       .then(async () => {
@@ -289,14 +272,11 @@ export class CodexBroker extends EventEmitter {
     await run;
   }
 
-  async #performConnectClient(options: {
-    readonly restartProcess: boolean;
-    readonly reason?: string | undefined;
-  }): Promise<void> {
+  async #performConnectClient(options: { readonly restartProcess: boolean; readonly reason?: string | undefined }): Promise<void> {
     this.#loadedThreadIds.clear();
     logger.info("Connecting Codex app-server client", {
       restartProcess: options.restartProcess,
-      reason: options.reason ?? null
+      reason: options.reason ?? null,
     });
 
     await this.#retireCurrentClient();
@@ -315,7 +295,7 @@ export class CodexBroker extends EventEmitter {
     await nextClient.ensureAuthenticated();
     this.#client = nextClient;
     logger.info("Codex app-server client connected", {
-      url: this.#appServerProcess?.url ?? this.#codexAppServerUrl ?? null
+      url: this.#appServerProcess?.url ?? this.#codexAppServerUrl ?? null,
     });
   }
 
@@ -330,38 +310,25 @@ export class CodexBroker extends EventEmitter {
       await previousClient.close();
     } catch (error) {
       logger.warn("Failed to close previous Codex app-server client during reconnect", {
-        error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
       });
     }
   }
 }
 
-function choosePersonalMemoryFilePath(options: {
-  readonly codexHome: string;
-  readonly teamCodexHomePath?: string | undefined;
-}): string {
+function choosePersonalMemoryFilePath(options: { readonly codexHome: string; readonly teamCodexHomePath?: string | undefined }): string {
   if (!options.teamCodexHomePath) {
     return getPersonalMemoryPath(options.codexHome);
   }
 
   const teamMemoryPath = getPersonalMemoryPath(options.codexHome, {
-    teamCodexHomePath: options.teamCodexHomePath
+    teamCodexHomePath: options.teamCodexHomePath,
   });
-  const teamMemory = fs.existsSync(teamMemoryPath)
-    ? fs.readFileSync(teamMemoryPath, "utf8").trim()
-    : "";
+  const teamMemory = fs.existsSync(teamMemoryPath) ? fs.readFileSync(teamMemoryPath, "utf8").trim() : "";
   return teamMemory ? teamMemoryPath : getPersonalMemoryPath(options.codexHome);
 }
 
 export function isRecoverableCodexConnectionError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
-  return [
-    "Codex app-server websocket is not connected",
-    "WebSocket is not open",
-    "readyState 3",
-    "socket hang up",
-    "ECONNREFUSED",
-    "EPIPE",
-    "closed"
-  ].some((pattern) => message.includes(pattern));
+  return ["Codex app-server websocket is not connected", "WebSocket is not open", "readyState 3", "socket hang up", "ECONNREFUSED", "EPIPE", "closed"].some((pattern) => message.includes(pattern));
 }

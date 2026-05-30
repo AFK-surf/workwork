@@ -2,9 +2,7 @@ import http from "node:http";
 
 import type { JsonLike } from "../types.js";
 
-export type JsonLikeRequestFieldResult =
-  | { readonly ok: true; readonly value: JsonLike | undefined }
-  | { readonly ok: false; readonly field: string };
+export type JsonLikeRequestFieldResult = { readonly ok: true; readonly value: JsonLike | undefined } | { readonly ok: false; readonly field: string };
 
 export async function readFormBody(request: http.IncomingMessage): Promise<Record<string, string>> {
   const body = await readBodyAsText(request);
@@ -96,21 +94,17 @@ export function parseJsonLikeRequestField(value: unknown, field: string): JsonLi
   try {
     return {
       ok: true,
-      value: parseJsonLike(value)
+      value: parseJsonLike(value),
     };
   } catch {
     return {
       ok: false,
-      field
+      field,
     };
   }
 }
 
-export function respondJson(
-  response: http.ServerResponse,
-  statusCode: number,
-  body: Record<string, unknown>
-): void {
+export function respondJson(response: http.ServerResponse, statusCode: number, body: Record<string, unknown>): void {
   response.writeHead(statusCode, { "content-type": "application/json" });
   response.end(JSON.stringify(body));
 }

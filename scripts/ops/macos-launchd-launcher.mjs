@@ -8,7 +8,7 @@ function parseArgs(argv) {
   const options = {
     envFile: undefined,
     repoRoot: undefined,
-    entryPoint: undefined
+    entryPoint: undefined,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -74,10 +74,7 @@ function parseEnvFile(text) {
     }
 
     let value = rawValue;
-    if (
-      (value.startsWith("\"") && value.endsWith("\"")) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
       try {
         value = JSON.parse(value);
       } catch {

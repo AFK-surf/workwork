@@ -3,20 +3,16 @@
   "version": "0.1.26",
   "private": true,
   "description": "Slack + China Feishu broker that routes chat sessions into Codex app-server sessions with isolated workspaces.",
+  "homepage": "https://github.com/HOOLC/slack-codex-broker#readme",
+  "bugs": {
+    "url": "https://github.com/HOOLC/slack-codex-broker/issues"
+  },
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/HOOLC/slack-codex-broker.git"
   },
-  "bugs": {
-    "url": "https://github.com/HOOLC/slack-codex-broker/issues"
-  },
-  "homepage": "https://github.com/HOOLC/slack-codex-broker#readme",
   "type": "module",
-  "packageManager": "pnpm@10.33.0",
-  "engines": {
-    "node": ">=22.5.0"
-  },
   "scripts": {
     "build": "pnpm build:admin-ui && tsc -p tsconfig.json && node scripts/build/copy-static-assets.mjs",
     "build:admin-ui": "vp build",
@@ -26,6 +22,11 @@
     "dev:admin:server": "tsx watch src/admin-index.ts",
     "dev:admin-ui": "vp dev --host 127.0.0.1 --port 5173",
     "dev:worker": "tsx watch src/worker-index.ts",
+    "format": "oxfmt --write .",
+    "format:check": "oxfmt --check .",
+    "hooks:install": "lefthook install",
+    "lint": "oxlint . --deny-warnings",
+    "lint:fix": "oxlint . --fix --deny-warnings",
     "ops:check:real": "node scripts/ops/check-real.mjs",
     "ops:auth:real": "node scripts/ops/auth-real.mjs",
     "ops:auth:profiles": "node scripts/ops/auth-profiles.mjs",
@@ -38,7 +39,7 @@
     "start": "node dist/src/index.js",
     "start:admin": "node dist/src/admin-index.js",
     "start:worker": "node dist/src/worker-index.js",
-    "test": "vitest run",
+    "test": "vitest run --no-file-parallelism",
     "test:e2e:mock": "tsx test/manual/run-mock-e2e.ts",
     "test:e2e:feishu-mock": "vitest run test/feishu-codex-bridge.test.ts test/feishu-platform-adapter.test.ts test/feishu-fixture-replay.test.ts test/dual-platform-runtime.test.ts",
     "manual:test": "tsx test/manual/run-real-codex-smoke.ts",
@@ -60,10 +61,18 @@
     "@types/react-dom": "19.2.3",
     "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "6.0.1",
+    "lefthook": "^2.1.9",
+    "oxfmt": "^0.52.0",
+    "oxlint": "^1.67.0",
+    "oxlint-tsgolint": "^0.22.1",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2",
     "vite": "8.0.11",
     "vite-plus": "0.1.20",
     "vitest": "^3.2.4"
-  }
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "packageManager": "pnpm@10.33.0"
 }

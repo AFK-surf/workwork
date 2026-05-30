@@ -4,23 +4,23 @@ This file contains the implementation-facing architecture detail for [RFC 0001](
 
 ## One-Screen Summary
 
-| Decision area | Current contract |
-| --- | --- |
-| Product target | China Feishu group support beside existing Slack; global Lark and Feishu private chats stay out of scope. |
-| Runtime shape | Slack and Feishu share one broker process through platform-aware adapters, session coordinates, and `/chat/*` APIs. |
-| Session rule | New session identity includes `platform`; legacy Slack keys remain readable and are never reinterpreted as Feishu. |
-| Feishu routing | Group @bot starts/resumes; non-@ group follow-up needs an active session plus verified all-message delivery or bounded recovery; private/self/bot/app events do not create sessions. |
-| Content rule | Text, rich `post`, interactive cards, images, and files preserve enough structure/raw references for current behavior and later UX polish. |
-| Release blocker | Slack compatibility and platform isolation must remain provable while Feishu is added. |
+| Decision area   | Current contract                                                                                                                                                                     |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Product target  | China Feishu group support beside existing Slack; global Lark and Feishu private chats stay out of scope.                                                                            |
+| Runtime shape   | Slack and Feishu share one broker process through platform-aware adapters, session coordinates, and `/chat/*` APIs.                                                                  |
+| Session rule    | New session identity includes `platform`; legacy Slack keys remain readable and are never reinterpreted as Feishu.                                                                   |
+| Feishu routing  | Group @bot starts/resumes; non-@ group follow-up needs an active session plus verified all-message delivery or bounded recovery; private/self/bot/app events do not create sessions. |
+| Content rule    | Text, rich `post`, interactive cards, images, and files preserve enough structure/raw references for current behavior and later UX polish.                                           |
+| Release blocker | Slack compatibility and platform isolation must remain provable while Feishu is added.                                                                                               |
 
 ## Read Layers
 
-| Layer | Use when | Expand |
-| --- | --- | --- |
-| 1 | You need the architecture decision in a few minutes. | Read this summary and the [entry RFC](../0001-slack-feishu-dual-platform.md). |
-| 2 | You are reviewing product scope or routing. | Expand "Product and architecture contract". |
-| 3 | You are implementing API/session/prompt code. | Expand "Implementation-facing reference". |
-| 4 | You are debugging failure isolation. | Expand "Failure isolation". |
+| Layer | Use when                                             | Expand                                                                        |
+| ----- | ---------------------------------------------------- | ----------------------------------------------------------------------------- |
+| 1     | You need the architecture decision in a few minutes. | Read this summary and the [entry RFC](../0001-slack-feishu-dual-platform.md). |
+| 2     | You are reviewing product scope or routing.          | Expand "Product and architecture contract".                                   |
+| 3     | You are implementing API/session/prompt code.        | Expand "Implementation-facing reference".                                     |
+| 4     | You are debugging failure isolation.                 | Expand "Failure isolation".                                                   |
 
 <details>
 <summary>Layer 2: Product and architecture contract</summary>
@@ -71,26 +71,26 @@ The design must add Feishu without turning Slack into a compatibility afterthoug
 
 ## Requirement Matrix
 
-| Requirement | Contract | Evidence |
-| --- | --- | --- |
-| China Feishu first | `FEISHU_DOMAIN=feishu`; defer `lark` | Config tests, setup docs, real smoke |
-| Bot identity | At least one `FEISHU_BOT_*` identity is configured for @bot matching | Config tests, setup docs, preflight |
-| No private chats | Ignore `chat_type != group`; no p2p session creation | Parser tests and mock e2e |
-| All group messages | Request `im:message.group_msg`; expose `all` vs `at_only` | Permission checklist, admin health, non-@ smoke |
-| Rich text + cards | Preserve `post` and `interactive` raw payloads | Fixture, formatter, card callback tests |
-| Simultaneous Slack + Feishu | Platform-aware runtime and health | Dual-platform mock e2e plus Slack regression |
+| Requirement                 | Contract                                                             | Evidence                                        |
+| --------------------------- | -------------------------------------------------------------------- | ----------------------------------------------- |
+| China Feishu first          | `FEISHU_DOMAIN=feishu`; defer `lark`                                 | Config tests, setup docs, real smoke            |
+| Bot identity                | At least one `FEISHU_BOT_*` identity is configured for @bot matching | Config tests, setup docs, preflight             |
+| No private chats            | Ignore `chat_type != group`; no p2p session creation                 | Parser tests and mock e2e                       |
+| All group messages          | Request `im:message.group_msg`; expose `all` vs `at_only`            | Permission checklist, admin health, non-@ smoke |
+| Rich text + cards           | Preserve `post` and `interactive` raw payloads                       | Fixture, formatter, card callback tests         |
+| Simultaneous Slack + Feishu | Platform-aware runtime and health                                    | Dual-platform mock e2e plus Slack regression    |
 
 ## Terminology
 
-| Term | Meaning |
-| --- | --- |
-| `platform` | `slack` or `feishu`. Required on new shared contracts. |
-| `conversationId` | Slack channel ID or Feishu chat ID. |
-| `rootMessageId` | Platform root for a session: Slack `thread_ts` or Feishu root/message/thread coordinate chosen by adapter. |
-| `messageId` | Platform message identifier used for idempotency. |
-| `sessionKey` | Canonical key derived from `platform`, `conversationId`, and `rootMessageId`. |
-| `all` mode | Feishu mode expecting all group messages through `im:message.group_msg`. |
-| `at_only` mode | Degraded Feishu mode assuming only @bot delivery. |
+| Term             | Meaning                                                                                                    |
+| ---------------- | ---------------------------------------------------------------------------------------------------------- |
+| `platform`       | `slack` or `feishu`. Required on new shared contracts.                                                     |
+| `conversationId` | Slack channel ID or Feishu chat ID.                                                                        |
+| `rootMessageId`  | Platform root for a session: Slack `thread_ts` or Feishu root/message/thread coordinate chosen by adapter. |
+| `messageId`      | Platform message identifier used for idempotency.                                                          |
+| `sessionKey`     | Canonical key derived from `platform`, `conversationId`, and `rootMessageId`.                              |
+| `all` mode       | Feishu mode expecting all group messages through `im:message.group_msg`.                                   |
+| `at_only` mode   | Degraded Feishu mode assuming only @bot delivery.                                                          |
 
 ## Target Architecture
 
@@ -172,16 +172,16 @@ Explicitly unsupported in MVP:
 
 Inbound Feishu events should normalize into one of these routes:
 
-| Event | Route | Session behavior |
-| --- | --- | --- |
-| group @bot text | `accepted_start_or_resume` | Create or resume session |
-| group non-@ text in `all` mode with active session | `accepted_followup` | Queue or steer into active turn; if no Feishu root/thread coordinate matches, use the latest active session in the same group |
-| group non-@ text without active session | `ignored_no_active_session` | No session |
-| private chat | `ignored_private_chat` | No session |
-| bot/app/self message | `ignored_self` | No session |
-| duplicate `message_id` | `deduped` | No duplicate turn/reply |
-| rich `post` | `accepted_rich` when group route matches | Preserve raw payload and readable summary |
-| interactive card callback | `accepted_card_callback` | Ack quickly, enqueue session action |
+| Event                                              | Route                                    | Session behavior                                                                                                              |
+| -------------------------------------------------- | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| group @bot text                                    | `accepted_start_or_resume`               | Create or resume session                                                                                                      |
+| group non-@ text in `all` mode with active session | `accepted_followup`                      | Queue or steer into active turn; if no Feishu root/thread coordinate matches, use the latest active session in the same group |
+| group non-@ text without active session            | `ignored_no_active_session`              | No session                                                                                                                    |
+| private chat                                       | `ignored_private_chat`                   | No session                                                                                                                    |
+| bot/app/self message                               | `ignored_self`                           | No session                                                                                                                    |
+| duplicate `message_id`                             | `deduped`                                | No duplicate turn/reply                                                                                                       |
+| rich `post`                                        | `accepted_rich` when group route matches | Preserve raw payload and readable summary                                                                                     |
+| interactive card callback                          | `accepted_card_callback`                 | Ack quickly, enqueue session action                                                                                           |
 
 Rules:
 
@@ -205,22 +205,22 @@ History recovery is bounded and permission-aware.
 
 Inbound Feishu messages:
 
-| Feishu type | Codex summary | Raw retention |
-| --- | --- | --- |
-| `text` | Plain text after mention cleanup | Original text payload |
-| `post` | Markdown-ish summary from rich text nodes | Full rich text JSON |
-| `interactive` | Compact card summary: title, actions, key fields | Full card JSON |
-| `image` | Metadata plus Codex image input when download succeeds | Resource identifiers, metadata, and transfer status |
-| `file` | Metadata plus visible transfer status | Resource identifiers and metadata |
+| Feishu type   | Codex summary                                          | Raw retention                                       |
+| ------------- | ------------------------------------------------------ | --------------------------------------------------- |
+| `text`        | Plain text after mention cleanup                       | Original text payload                               |
+| `post`        | Markdown-ish summary from rich text nodes              | Full rich text JSON                                 |
+| `interactive` | Compact card summary: title, actions, key fields       | Full card JSON                                      |
+| `image`       | Metadata plus Codex image input when download succeeds | Resource identifiers, metadata, and transfer status |
+| `file`        | Metadata plus visible transfer status                  | Resource identifiers and metadata                   |
 
 Outbound messages:
 
-| Broker format | Feishu target | Fallback |
-| --- | --- | --- |
-| `text` | text message | none |
-| `markdown` | text or `post` | text fallback |
-| `rich_text` | `post` | text fallback |
-| `card` | `interactive` | safe text fallback only |
+| Broker format | Feishu target  | Fallback                |
+| ------------- | -------------- | ----------------------- |
+| `text`        | text message   | none                    |
+| `markdown`    | text or `post` | text fallback           |
+| `rich_text`   | `post`         | text fallback           |
+| `card`        | `interactive`  | safe text fallback only |
 
 ## Session and Storage Model
 
@@ -312,12 +312,12 @@ Initial Feishu support keeps co-author data platform-aware and uses Feishu cards
 
 ## Failure Isolation
 
-| Failure | Required behavior |
-| --- | --- |
-| Feishu startup fails with strict startup | Process fails fast. |
-| Feishu startup fails with degraded startup | Slack remains ready; Feishu health is degraded/failed. |
-| Feishu send fails | Slack health remains independent; outbound failure is logged with Feishu coordinates. |
-| Feishu `all` mode misses non-@ smoke | Admin warns that all-message assumptions are unverified. |
-| Slack regression occurs | Feishu project is not releasable. |
+| Failure                                    | Required behavior                                                                     |
+| ------------------------------------------ | ------------------------------------------------------------------------------------- |
+| Feishu startup fails with strict startup   | Process fails fast.                                                                   |
+| Feishu startup fails with degraded startup | Slack remains ready; Feishu health is degraded/failed.                                |
+| Feishu send fails                          | Slack health remains independent; outbound failure is logged with Feishu coordinates. |
+| Feishu `all` mode misses non-@ smoke       | Admin warns that all-message assumptions are unverified.                              |
+| Slack regression occurs                    | Feishu project is not releasable.                                                     |
 
 </details>

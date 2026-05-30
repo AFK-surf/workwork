@@ -29,10 +29,12 @@ export function createHttpHandler(options: {
         }
 
         response.writeHead(500, { "content-type": "application/json" });
-        response.end(JSON.stringify({
-          ok: false,
-          error: error instanceof Error ? error.message : String(error)
-        }));
+        response.end(
+          JSON.stringify({
+            ok: false,
+            error: error instanceof Error ? error.message : String(error),
+          }),
+        );
       });
     });
   };
@@ -47,7 +49,7 @@ async function handleHttpRequest(
     readonly isolatedMcp?: IsolatedMcpService | undefined;
     readonly jobManager?: JobManager | undefined;
     readonly config: AppConfig;
-  }
+  },
 ): Promise<void> {
   const method = request.method ?? "GET";
   const url = new URL(request.url ?? "/", "http://127.0.0.1");
@@ -62,7 +64,7 @@ async function handleHttpRequest(
     options.bridge &&
     (await handleChatRequest(method, url, request, response, {
       bridge: options.bridge,
-      config: options.config
+      config: options.config,
     }))
   ) {
     return;
@@ -72,7 +74,7 @@ async function handleHttpRequest(
     options.bridge &&
     (await handleSlackRequest(method, url, request, response, {
       bridge: options.bridge,
-      config: options.config
+      config: options.config,
     }))
   ) {
     return;

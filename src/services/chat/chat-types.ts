@@ -1,53 +1,26 @@
-import type {
-  BackgroundJobEventPayload,
-  JsonLike,
-  UnexpectedTurnStopPayload
-} from "../../types.js";
+import type { BackgroundJobEventPayload, JsonLike, UnexpectedTurnStopPayload } from "../../types.js";
 
 export type ChatPlatform = "slack" | "feishu";
 
 export const CHAT_PLATFORM_VALUES = ["slack", "feishu"] as const;
 
-export type ChatConversationKind =
-  | "channel"
-  | "group"
-  | "direct"
-  | "thread"
-  | "unknown";
+export type ChatConversationKind = "channel" | "group" | "direct" | "thread" | "unknown";
 
-export type ChatSenderKind =
-  | "user"
-  | "bot"
-  | "app"
-  | "system"
-  | "unknown";
+export type ChatSenderKind = "user" | "bot" | "app" | "system" | "unknown";
 
-export type ChatInboundSource =
-  | "bot_mention"
-  | "direct_message"
-  | "thread_reply"
-  | "group_message"
-  | "background_job_event"
-  | "unexpected_turn_stop"
-  | "recovered_thread_batch";
+export type ChatInboundSource = "bot_mention" | "direct_message" | "thread_reply" | "group_message" | "background_job_event" | "unexpected_turn_stop" | "recovered_thread_batch";
 
 export type ChatTurnSignalKind = "progress" | "final" | "block" | "wait";
 
 export type ChatMessageFormat = "text" | "markdown" | "rich_text" | "card";
 
-export const CHAT_FILE_SOURCE_FIELD_DESCRIPTIONS = [
-  "filePath (alias: file_path)",
-  "contentBase64 (alias: content_base64)"
-] as const;
+export const CHAT_FILE_SOURCE_FIELD_DESCRIPTIONS = ["filePath (alias: file_path)", "contentBase64 (alias: content_base64)"] as const;
 
-export const CHAT_FILE_SOURCE_REQUIREMENT_MESSAGE =
-  "Provide exactly one file source: filePath (alias: file_path) or contentBase64 (alias: content_base64)";
+export const CHAT_FILE_SOURCE_REQUIREMENT_MESSAGE = "Provide exactly one file source: filePath (alias: file_path) or contentBase64 (alias: content_base64)";
 
-export const CHAT_INLINE_FILE_FILENAME_REQUIREMENT_MESSAGE =
-  "filename is required when using contentBase64 (alias: content_base64)";
+export const CHAT_INLINE_FILE_FILENAME_REQUIREMENT_MESSAGE = "filename is required when using contentBase64 (alias: content_base64)";
 
-export const CHAT_INLINE_FILE_CONTENT_REQUIREMENT_MESSAGE =
-  "contentBase64 (alias: content_base64) must decode to non-empty file content";
+export const CHAT_INLINE_FILE_CONTENT_REQUIREMENT_MESSAGE = "contentBase64 (alias: content_base64) must decode to non-empty file content";
 
 export function isNonEmptyBase64Content(value: string): boolean {
   const normalized = value.replace(/\s+/gu, "");

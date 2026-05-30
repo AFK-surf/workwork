@@ -30,7 +30,7 @@ export function parseGitHubAuthor(value: string): ParsedGitHubAuthor | null {
 
   return {
     name,
-    email
+    email,
   };
 }
 
@@ -48,7 +48,7 @@ export function appendCoAuthorTrailers(
   options: {
     readonly coAuthors: readonly string[];
     readonly primaryAuthorEmail?: string | undefined;
-  }
+  },
 ): string {
   const newline = commitMessage.includes("\r\n") ? "\r\n" : "\n";
   const existingLines = commitMessage.split(/\r?\n/u);
@@ -58,7 +58,7 @@ export function appendCoAuthorTrailers(
       .filter((value): value is string => Boolean(value))
       .map((value) => parseGitHubAuthor(value))
       .filter((value): value is ParsedGitHubAuthor => value !== null)
-      .map((value) => value.email)
+      .map((value) => value.email),
   );
   const primaryAuthorEmail = normalizeEmail(options.primaryAuthorEmail);
   const additions: string[] = [];

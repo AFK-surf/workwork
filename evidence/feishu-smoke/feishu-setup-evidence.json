@@ -33,9 +33,5 @@
       "evidence": "飞书开放平台权限管理中图片或文件资源上传下载权限显示为已开通"
     }
   },
-  "notes": [
-    "飞书开放平台应用名为 codex-broker，应用类型为正式应用，应用仍需创建版本并发布后配置生效。",
-    "本文件只记录控制台标签和权限姿态，不包含 App Secret、access token、消息正文、用户邮箱或原始机器人标识。",
-    "Bot identity 的原始 open_id、user_id 或 union_id 只允许写入本机环境变量或私有 secret store。"
-  ]
+  "notes": ["飞书开放平台应用名为 codex-broker，应用类型为正式应用，应用仍需创建版本并发布后配置生效。", "本文件只记录控制台标签和权限姿态，不包含 App Secret、access token、消息正文、用户邮箱或原始机器人标识。", "Bot identity 的原始 open_id、user_id 或 union_id 只允许写入本机环境变量或私有 secret store。"]
 }

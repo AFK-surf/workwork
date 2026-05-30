@@ -5,11 +5,7 @@ import path from "node:path";
 import type { Readable } from "node:stream";
 
 import { logger } from "../logger.js";
-import type {
-  BackgroundJobEventPayload,
-  JsonLike,
-  PersistedBackgroundJob
-} from "../types.js";
+import type { BackgroundJobEventPayload, JsonLike, PersistedBackgroundJob } from "../types.js";
 import { ensureDir } from "../utils/fs.js";
 import { resolveRuntimeToolPath } from "../utils/runtime-paths.js";
 import { SessionManager } from "./session-manager.js";
@@ -37,12 +33,7 @@ export class JobManager {
   readonly #brokerHttpBaseUrl: string;
   readonly #maxRuntimeMs: number;
   readonly #runtimeJobs = new Map<string, RuntimeBackgroundJob>();
-  readonly #onEvent: (event: {
-    readonly platform: ChatPlatform;
-    readonly conversationId: string;
-    readonly rootMessageId: string;
-    readonly payload: BackgroundJobEventPayload;
-  }) => Promise<void>;
+  readonly #onEvent: (event: { readonly platform: ChatPlatform; readonly conversationId: string; readonly rootMessageId: string; readonly payload: BackgroundJobEventPayload }) => Promise<void>;
 
   constructor(options: {
     readonly sessions: SessionManager;
@@ -50,12 +41,7 @@ export class JobManager {
     readonly reposRoot: string;
     readonly brokerHttpBaseUrl: string;
     readonly maxRuntimeMs?: number | undefined;
-    readonly onEvent: (event: {
-      readonly platform: ChatPlatform;
-      readonly conversationId: string;
-      readonly rootMessageId: string;
-      readonly payload: BackgroundJobEventPayload;
-    }) => Promise<void>;
+    readonly onEvent: (event: { readonly platform: ChatPlatform; readonly conversationId: string; readonly rootMessageId: string; readonly payload: BackgroundJobEventPayload }) => Promise<void>;
   }) {
     this.#sessions = options.sessions;
     this.#jobsRoot = options.jobsRoot;
@@ -85,7 +71,7 @@ export class JobManager {
     await Promise.all(
       [...this.#runtimeJobs.keys()].map(async (jobId) => {
         await this.#stopRuntimeJob(jobId);
-      })
+      }),
     );
   }
 
@@ -118,7 +104,7 @@ export class JobManager {
     await ensureDir(jobDir);
     await fs.writeFile(scriptPath, normalizeScript(options.script, shell), {
       encoding: "utf8",
-      mode: 0o755
+      mode: 0o755,
     });
     await fs.chmod(scriptPath, 0o755);
 
@@ -138,7 +124,7 @@ export class JobManager {
       restartOnBoot: options.restartOnBoot ?? true,
       status: "registered",
       createdAt,
-      updatedAt: createdAt
+      updatedAt: createdAt,
     };
 
     await this.#sessions.upsertBackgroundJob(job);
@@ -151,7 +137,7 @@ export class JobManager {
     const job = this.#authorizeJob(id, token);
     return await this.#persistJob({
       ...job,
-      heartbeatAt: new Date().toISOString()
+      heartbeatAt: new Date().toISOString(),
     });
   }
 
@@ -163,20 +149,20 @@ export class JobManager {
       readonly summary: string;
       readonly detailsText?: string | undefined;
       readonly detailsJson?: JsonLike | undefined;
-    }
+    },
   ): Promise<PersistedBackgroundJob> {
     const job = this.#authorizeJob(id, token);
     const updated = await this.#persistJob({
       ...job,
       lastEventAt: new Date().toISOString(),
       lastEventKind: payload.eventKind,
-      lastEventSummary: payload.summary.trim()
+      lastEventSummary: payload.summary.trim(),
     });
 
     if (this.#shouldSuppressEventForFinalizedSession(updated)) {
       await this.cancelJob(updated.id, undefined, {
         skipTokenCheck: true,
-        skipEvent: true
+        skipEvent: true,
       });
       return this.#requireJob(updated.id);
     }
@@ -187,7 +173,7 @@ export class JobManager {
       eventKind: payload.eventKind,
       summary: payload.summary.trim(),
       detailsText: payload.detailsText?.trim() || undefined,
-      detailsJson: payload.detailsJson
+      detailsJson: payload.detailsJson,
     });
 
     return updated;
@@ -200,7 +186,7 @@ export class JobManager {
       readonly summary?: string | undefined;
       readonly detailsText?: string | undefined;
       readonly detailsJson?: JsonLike | undefined;
-    }
+    },
   ): Promise<PersistedBackgroundJob> {
     const job = this.#authorizeJob(id, token);
     const now = new Date().toISOString();
@@ -209,7 +195,7 @@ export class JobManager {
       status: "completed",
       completedAt: now,
       lastEventKind: payload?.summary?.trim() ? "job_completed" : job.lastEventKind,
-      lastEventSummary: payload?.summary?.trim() || job.lastEventSummary
+      lastEventSummary: payload?.summary?.trim() || job.lastEventSummary,
     });
 
     if (payload?.summary?.trim() && !this.#shouldSuppressEventForFinalizedSession(updated)) {
@@ -219,7 +205,7 @@ export class JobManager {
         eventKind: "job_completed",
         summary: payload.summary.trim(),
         detailsText: payload.detailsText?.trim() || undefined,
-        detailsJson: payload.detailsJson
+        detailsJson: payload.detailsJson,
       });
     }
 
@@ -235,7 +221,7 @@ export class JobManager {
       readonly error?: string | undefined;
       readonly detailsText?: string | undefined;
       readonly detailsJson?: JsonLike | undefined;
-    }
+    },
   ): Promise<PersistedBackgroundJob> {
     const job = this.#authorizeJob(id, token);
     const now = new Date().toISOString();
@@ -243,7 +229,7 @@ export class JobManager {
       ...job,
       status: "failed",
       completedAt: now,
-      error: payload.error?.trim() || payload.summary?.trim() || job.error
+      error: payload.error?.trim() || payload.summary?.trim() || job.error,
     });
 
     await this.#emitEvent(updated, {
@@ -252,7 +238,7 @@ export class JobManager {
       eventKind: "job_failed",
       summary: payload.summary?.trim() || `Background job ${updated.id} failed.`,
       detailsText: payload.detailsText?.trim() || payload.error?.trim() || undefined,
-      detailsJson: payload.detailsJson
+      detailsJson: payload.detailsJson,
     });
 
     await this.#stopRuntimeJob(updated.id);
@@ -266,7 +252,7 @@ export class JobManager {
       readonly skipTokenCheck?: boolean | undefined;
       readonly skipEvent?: boolean | undefined;
       readonly expectedSessionKey?: string | undefined;
-    }
+    },
   ): Promise<PersistedBackgroundJob> {
     const job = options?.skipTokenCheck ? this.#requireJob(id) : this.#authorizeJob(id, token);
     if (options?.expectedSessionKey && job.sessionKey !== options.expectedSessionKey) {
@@ -277,7 +263,7 @@ export class JobManager {
       ...job,
       status: "cancelled",
       cancelledAt: now,
-      completedAt: now
+      completedAt: now,
     });
 
     if (!options?.skipEvent) {
@@ -285,7 +271,7 @@ export class JobManager {
         jobId: updated.id,
         jobKind: updated.kind,
         eventKind: "job_cancelled",
-        summary: `Background job ${updated.id} was cancelled.`
+        summary: `Background job ${updated.id} was cancelled.`,
       });
     }
 
@@ -297,7 +283,7 @@ export class JobManager {
     id: string,
     options: {
       readonly sessionKey: string;
-    }
+    },
   ): Promise<PersistedBackgroundJob> {
     const job = this.#requireJob(id);
     if (job.sessionKey !== options.sessionKey) {
@@ -309,7 +295,7 @@ export class JobManager {
     return await this.cancelJob(id, undefined, {
       skipTokenCheck: true,
       skipEvent: true,
-      expectedSessionKey: options.sessionKey
+      expectedSessionKey: options.sessionKey,
     });
   }
 
@@ -317,7 +303,7 @@ export class JobManager {
     job: PersistedBackgroundJob,
     options: {
       readonly respectExistingRuntimeAge: boolean;
-    }
+    },
   ): Promise<void> {
     if (this.#runtimeJobs.has(job.id)) {
       return;
@@ -346,7 +332,7 @@ export class JobManager {
       SESSION_WORKSPACE: session?.workspacePath ?? job.cwd,
       REPOS_ROOT: this.#reposRoot,
       WORKTREE_PATH: session?.workspacePath ?? job.cwd,
-      BACKGROUND_JOB_KIND: job.kind
+      BACKGROUND_JOB_KIND: job.kind,
     };
 
     try {
@@ -354,7 +340,7 @@ export class JobManager {
         cwd: job.cwd,
         env,
         detached: process.platform !== "win32",
-        stdio: ["ignore", "pipe", "pipe"]
+        stdio: ["ignore", "pipe", "pipe"],
       });
       await new Promise<void>((resolve, reject) => {
         child.once("spawn", () => resolve());
@@ -365,14 +351,14 @@ export class JobManager {
         process: child,
         timeoutTimer: this.#createTimeoutTimer(job, options),
         stderrTail: "",
-        stopping: false
+        stopping: false,
       };
       this.#runtimeJobs.set(job.id, runtime);
 
       child.stdout.on("data", (chunk: Buffer) => {
         logger.debug("background job stdout", {
           jobId: job.id,
-          text: chunk.toString()
+          text: chunk.toString(),
         });
       });
       child.stderr.on("data", (chunk: Buffer) => {
@@ -380,13 +366,13 @@ export class JobManager {
         runtime.stderrTail = `${runtime.stderrTail}${text}`.slice(-8_000);
         logger.warn("background job stderr", {
           jobId: job.id,
-          text
+          text,
         });
       });
       child.once("error", (error) => {
         logger.warn("background job process error", {
           jobId: job.id,
-          error: error instanceof Error ? error.message : String(error)
+          error: error instanceof Error ? error.message : String(error),
         });
       });
       child.once("exit", (code, signal) => {
@@ -398,31 +384,27 @@ export class JobManager {
         status: "running",
         startedAt: new Date().toISOString(),
         exitCode: undefined,
-        error: undefined
+        error: undefined,
       });
     } catch (error) {
       const failed = await this.#persistJob({
         ...job,
         status: "failed",
         completedAt: new Date().toISOString(),
-        error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
       });
       await this.#emitEvent(failed, {
         jobId: failed.id,
         jobKind: failed.kind,
         eventKind: "job_failed",
         summary: `Background job ${failed.id} failed to start.`,
-        detailsText: failed.error
+        detailsText: failed.error,
       });
       throw error;
     }
   }
 
-  async #handleJobExit(
-    jobId: string,
-    code: number | null,
-    signal: NodeJS.Signals | null
-  ): Promise<void> {
+  async #handleJobExit(jobId: string, code: number | null, signal: NodeJS.Signals | null): Promise<void> {
     const runtime = this.#runtimeJobs.get(jobId);
     if (runtime) {
       clearTimeout(runtime.timeoutTimer);
@@ -440,7 +422,7 @@ export class JobManager {
     if (job.status === "completed" || job.status === "failed" || job.status === "cancelled") {
       await this.#persistJob({
         ...job,
-        exitCode
+        exitCode,
       });
       return;
     }
@@ -454,30 +436,26 @@ export class JobManager {
         ...job,
         status: "completed",
         completedAt: new Date().toISOString(),
-        exitCode
+        exitCode,
       });
       return;
     }
 
-    const errorText = [
-      exitCode != null ? `exit code ${exitCode}` : undefined,
-      signalText ? `signal ${signalText}` : undefined,
-      runtime?.stderrTail?.trim() || undefined
-    ].filter(Boolean).join("; ");
+    const errorText = [exitCode != null ? `exit code ${exitCode}` : undefined, signalText ? `signal ${signalText}` : undefined, runtime?.stderrTail?.trim() || undefined].filter(Boolean).join("; ");
 
     const failed = await this.#persistJob({
       ...job,
       status: "failed",
       completedAt: new Date().toISOString(),
       exitCode,
-      error: errorText || job.error
+      error: errorText || job.error,
     });
     await this.#emitEvent(failed, {
       jobId: failed.id,
       jobKind: failed.kind,
       eventKind: "job_failed",
       summary: `Background job ${failed.id} exited unexpectedly.`,
-      detailsText: failed.error
+      detailsText: failed.error,
     });
   }
 
@@ -512,12 +490,9 @@ export class JobManager {
     job: PersistedBackgroundJob,
     options: {
       readonly respectExistingRuntimeAge: boolean;
-    }
+    },
   ): ReturnType<typeof setTimeout> {
-    const delayMs = Math.max(
-      0,
-      options.respectExistingRuntimeAge ? this.#jobRuntimeRemainingMs(job) : this.#maxRuntimeMs
-    );
+    const delayMs = Math.max(0, options.respectExistingRuntimeAge ? this.#jobRuntimeRemainingMs(job) : this.#maxRuntimeMs);
     const timeoutTimer = setTimeout(() => {
       void this.#handleJobTimeout(job.id);
     }, delayMs);
@@ -536,7 +511,7 @@ export class JobManager {
     } catch (error) {
       logger.warn("Failed to stop background job after runtime limit", {
         jobId,
-        error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
       });
     }
   }
@@ -553,7 +528,7 @@ export class JobManager {
       status: "cancelled",
       cancelledAt: now,
       completedAt: now,
-      error: summary
+      error: summary,
     });
 
     if (!this.#shouldSuppressEventForFinalizedSession(updated)) {
@@ -561,7 +536,7 @@ export class JobManager {
         jobId: updated.id,
         jobKind: updated.kind,
         eventKind: "job_cancelled",
-        summary
+        summary,
       });
     }
 
@@ -580,23 +555,20 @@ export class JobManager {
     return this.#maxRuntimeMs - (Date.now() - createdAtMs);
   }
 
-  async #emitEvent(
-    job: PersistedBackgroundJob,
-    payload: BackgroundJobEventPayload
-  ): Promise<void> {
+  async #emitEvent(job: PersistedBackgroundJob, payload: BackgroundJobEventPayload): Promise<void> {
     const coordinates = coordinatesForJob(job);
     await this.#onEvent({
       platform: coordinates.platform,
       conversationId: coordinates.conversationId,
       rootMessageId: coordinates.rootMessageId,
-      payload
+      payload,
     });
   }
 
   async #persistJob(job: PersistedBackgroundJob): Promise<PersistedBackgroundJob> {
     const updated: PersistedBackgroundJob = {
       ...job,
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
     };
     await this.#sessions.upsertBackgroundJob(updated);
     return updated;
@@ -630,13 +602,7 @@ export class JobManager {
   }
 }
 
-function resolveBackgroundJobCoordinates(options: {
-  readonly platform?: ChatPlatform | undefined;
-  readonly conversationId?: string | undefined;
-  readonly rootMessageId?: string | undefined;
-  readonly channelId?: string | undefined;
-  readonly rootThreadTs?: string | undefined;
-}): BackgroundJobCoordinates {
+function resolveBackgroundJobCoordinates(options: { readonly platform?: ChatPlatform | undefined; readonly conversationId?: string | undefined; readonly rootMessageId?: string | undefined; readonly channelId?: string | undefined; readonly rootThreadTs?: string | undefined }): BackgroundJobCoordinates {
   const platform = options.platform ?? "slack";
   const conversationId = options.conversationId ?? (platform === "slack" ? options.channelId : undefined);
   const rootMessageId = options.rootMessageId ?? (platform === "slack" ? options.rootThreadTs : undefined);
@@ -648,7 +614,7 @@ function resolveBackgroundJobCoordinates(options: {
   return {
     platform,
     conversationId,
-    rootMessageId
+    rootMessageId,
   };
 }
 
@@ -656,7 +622,7 @@ function coordinatesForJob(job: PersistedBackgroundJob): BackgroundJobCoordinate
   return {
     platform: job.platform ?? "slack",
     conversationId: job.conversationId ?? job.channelId,
-    rootMessageId: job.rootMessageId ?? job.rootThreadTs
+    rootMessageId: job.rootMessageId ?? job.rootThreadTs,
   };
 }
 
@@ -671,9 +637,7 @@ function normalizeScript(script: string, shell: string): string {
   }
 
   const interpreter = path.basename(shell) || "sh";
-  const shebang = interpreter === "sh"
-    ? "#!/bin/sh"
-    : `#!/usr/bin/env ${interpreter}`;
+  const shebang = interpreter === "sh" ? "#!/bin/sh" : `#!/usr/bin/env ${interpreter}`;
 
   return `${shebang}\n${normalized}\n`;
 }
@@ -684,9 +648,7 @@ function resolveJobCwd(workspacePath: string, cwd?: string | undefined): string 
   }
 
   const trimmed = cwd.trim();
-  return path.isAbsolute(trimmed)
-    ? path.resolve(trimmed)
-    : path.resolve(workspacePath, trimmed);
+  return path.isAbsolute(trimmed) ? path.resolve(trimmed) : path.resolve(workspacePath, trimmed);
 }
 
 function isCancellableJobStatus(status: PersistedBackgroundJob["status"]): boolean {
@@ -712,10 +674,7 @@ function formatRuntimeLimit(limitMs: number): string {
   return `${minutes} minute${minutes === 1 ? "" : "s"}`;
 }
 
-function killRuntimeJobProcess(
-  child: ChildProcessByStdio<null, Readable, Readable>,
-  signal: NodeJS.Signals
-): void {
+function killRuntimeJobProcess(child: ChildProcessByStdio<null, Readable, Readable>, signal: NodeJS.Signals): void {
   if (process.platform !== "win32" && child.pid) {
     try {
       process.kill(-child.pid, signal);
@@ -731,16 +690,10 @@ function killRuntimeJobProcess(
 }
 
 function isMissingProcessError(error: unknown): boolean {
-  return typeof error === "object"
-    && error !== null
-    && "code" in error
-    && (error as { readonly code?: unknown }).code === "ESRCH";
+  return typeof error === "object" && error !== null && "code" in error && (error as { readonly code?: unknown }).code === "ESRCH";
 }
 
-async function waitForChildExit(
-  child: ChildProcessByStdio<null, Readable, Readable>,
-  timeoutMs: number
-): Promise<boolean> {
+async function waitForChildExit(child: ChildProcessByStdio<null, Readable, Readable>, timeoutMs: number): Promise<boolean> {
   if (child.exitCode !== null || child.signalCode !== null) {
     return true;
   }
