@@ -6,6 +6,7 @@ import { REQUIRED_FEISHU_LOG_FIELDS } from "./manual/run-real-feishu-smoke.js";
 
 const repoRoot = process.cwd();
 const rfcEntry = path.join(repoRoot, "docs/rfcs/0001-slack-feishu-dual-platform.md");
+const rfc0002Entry = path.join(repoRoot, "docs/rfcs/0002-feishu-ux-parity-from-codex-feishu-bot.md");
 const rfcDir = path.join(repoRoot, "docs/rfcs/0001-slack-feishu-dual-platform");
 const docsRoot = path.join(repoRoot, "docs");
 
@@ -44,6 +45,29 @@ describe("RFC 0001 documentation", () => {
       expect(layerSummaries.length).toBeGreaterThanOrEqual(2);
       expect(content).toContain("</details>");
     }
+  });
+
+  it("keeps RFC 0002 usable as a progressive long-running self-regression task", async () => {
+    const content = await fs.readFile(rfc0002Entry, "utf8");
+    const layerSummaries = content.match(/<summary id="[^"]+">Layer \d:/gu) ?? [];
+
+    expect(content).toContain("## How to read this RFC");
+    expect(content).toContain("## Long-running task readiness");
+    expect(content).toContain("## Acceptance gates");
+    expect(layerSummaries.length).toBeGreaterThanOrEqual(4);
+    expect(content).toContain("Layer 5: Automation, evidence, migration, and open questions");
+    expect(content).toContain("## Automated self-regression design");
+    expect(content).toContain("## Trigger matrix");
+    expect(content).toContain("## Self-regression evidence checklist");
+    expect(content).toContain("Slack self-regression evidence bundle is present");
+    expect(content).toContain("Feishu self-regression evidence bundle is present");
+    expect(content).toContain("Self-regression reports are sanitized, replayable, and safe to attach to a");
+    expect(content).toContain("Slack auto-drive must create a controlled inbound message");
+    expect(content).toContain("Feishu self-regression is not fully unattended with app-only bot credentials");
+    expect(content).toContain("message to itself does not prove user inbound");
+    expect(content).toContain("pnpm manual:self-regression -- --platform slack --drive");
+    expect(content).toContain("pnpm manual:self-regression -- --platform feishu --observe");
+    expect(content).toContain("These command names are intentionally proposed, not claimed as already wired.");
   });
 
   it("keeps completion evidence progressive after real-tenant signoff", async () => {

@@ -12,13 +12,13 @@ divergence.
 
 ## How to read this RFC
 
-| Layer | Reader need                             | Read                                                                                      |
-| ----- | --------------------------------------- | ----------------------------------------------------------------------------------------- |
-| 1     | You need the decision and goal.         | Read this page through [Acceptance gates](#acceptance-gates).                             |
-| 2     | You need product context.               | Expand [Product gap and prior art](#product-gap-and-prior-art).                           |
-| 3     | You need to prevent Slack/Feishu drift. | Expand [Convergence contract](#convergence-contract).                                     |
-| 4     | You are implementing the work.          | Expand [Implementation slices](#implementation-slices).                                   |
-| 5     | You are reviewing evidence and risks.   | Expand [Evidence, migration, and open questions](#evidence-migration-and-open-questions). |
+| Layer | Reader need                             | Read                                                                                                             |
+| ----- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| 1     | You need the decision and goal.         | Read this page through [Acceptance gates](#acceptance-gates).                                                    |
+| 2     | You need product context.               | Expand [Product gap and prior art](#product-gap-and-prior-art).                                                  |
+| 3     | You need to prevent Slack/Feishu drift. | Expand [Convergence contract](#convergence-contract).                                                            |
+| 4     | You are implementing the work.          | Expand [Implementation slices](#implementation-slices).                                                          |
+| 5     | You are reviewing automation/evidence.  | Expand [Automation, evidence, migration, and open questions](#automation-evidence-migration-and-open-questions). |
 
 ## Layer 1: Decision summary
 
@@ -56,6 +56,32 @@ Build Feishu-native work visibility while reducing long-term platform fork:
 - Open Platform setup docs should distinguish CLI-assisted steps from manual
   admin gates
 
+## Long-running task readiness
+
+This RFC is usable as a long-running task only if implementation is tracked as
+three parallel workstreams:
+
+1. Shared chat boundary: prevent new Slack/Feishu forks while Feishu UX improves.
+2. Feishu-native UX: status card, projection, card patching, and artifact
+   display.
+3. Automated self-regression: repeatable Slack/Feishu evidence that survives
+   handoff, rebases, and long review cycles.
+
+Current verdict:
+
+- The product and architecture direction is long-running-task ready.
+- Slack self-regression can become mostly auto-driven because a real test
+  channel and Slack user/bot/app credentials can produce controlled inbound and
+  outbound evidence.
+- Feishu self-regression is not fully unattended with app-only bot credentials:
+  the app can observe and reply, but it cannot impersonate a human group member
+  to create the required `@bot` and non-`@` inbound messages. Feishu needs either
+  a test-user driver credential, a browser/desktop driver, or a manual action
+  step followed by automated observation.
+- RFC completion must distinguish automated evidence from manually triggered
+  evidence. Do not call the Feishu gate "automatic" until the driver limitation
+  is resolved.
+
 ## Non-goals
 
 - Do not migrate the old repository wholesale.
@@ -78,6 +104,12 @@ Build Feishu-native work visibility while reducing long-term platform fork:
 - [ ] No new platform-generic behavior is exposed only through a Slack-named
       method.
 - [ ] Any shared helper touched by Slack has Slack regression coverage.
+- [ ] Automated self-regression commands are documented and wired for local
+      preflight, saved-evidence replay, and platform drive where credentials
+      allow it.
+- [ ] Self-regression reports are sanitized, replayable, and safe to attach to a
+      PR without leaking tokens, raw message bodies, user emails, raw bot IDs, or
+      host filesystem paths.
 - [ ] Slack self-regression evidence bundle is present for the current Slack
       auth/app installation.
 - [ ] Feishu self-regression evidence bundle is present for the current China
@@ -338,9 +370,64 @@ Acceptance:
 </details>
 
 <details>
-<summary id="evidence-migration-and-open-questions">Layer 5: Evidence, migration, and open questions</summary>
+<summary id="automation-evidence-migration-and-open-questions">Layer 5: Automation, evidence, migration, and open questions</summary>
 
-## Real tenant evidence checklist
+## Automated self-regression design
+
+Self-regression should have explicit maturity levels so long-running agents do
+not confuse "the checker passed" with "the platform was driven end-to-end."
+
+| Level | Name            | What it proves                                             | Slack target                                                               | Feishu target                                                                       |
+| ----- | --------------- | ---------------------------------------------------------- | -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| 0     | Local static    | docs/scripts/tests are present and wired                   | `pnpm test`, RFC doc tests                                                 | `pnpm test`, RFC doc tests                                                          |
+| 1     | Preflight       | required env posture is set and raw logging is safe        | Slack auth and channel are configured locally                              | Feishu app credentials, domain, group mode, raw logging posture                     |
+| 2     | Observe/replay  | saved admin status and logs satisfy evidence checks        | replay saved Slack evidence bundle                                         | `manual:feishu-smoke -- --status-file ...`                                          |
+| 3     | Auto-drive      | test runner creates inbound work and observes broker reply | user token posts in configured test channel, bot replies in thread/channel | requires a Feishu test-user/browser driver; app-only bot credentials are not enough |
+| 4     | Scheduled guard | repeated unattended regression catches drift               | scheduled Slack self-regression against the test channel                   | scheduled only after Feishu auto-drive exists                                       |
+
+Proposed command shape:
+
+- `pnpm manual:self-regression -- --platform slack --preflight --env-file .env.local --json`
+- `pnpm manual:self-regression -- --platform slack --drive --channel "$SLACK_SELF_REGRESSION_CHANNEL" --output-dir evidence/self-regression/slack --json`
+- `pnpm manual:self-regression -- --platform feishu --preflight --env-file .env.local --json`
+- `pnpm manual:self-regression -- --platform feishu --observe --setup-evidence-file evidence/feishu-smoke/feishu-setup-evidence.json --output-dir evidence/self-regression/feishu --json`
+- `pnpm manual:self-regression -- --status-file evidence/self-regression/<platform>/admin-status.json --output-dir evidence/self-regression/<platform> --json`
+
+These command names are intentionally proposed, not claimed as already wired.
+The implementation PR must either add them or update this RFC with the actual
+runner names before claiming the automated self-regression gate.
+
+Automation rules:
+
+- [ ] The runner must load secrets only from local env files, process env, or
+      operator memory. It must never require tokens in git-tracked fixtures.
+- [ ] The Slack driver must use a configured test channel, not an arbitrary
+      production channel. The current local channel is private operator
+      configuration, not an RFC constant.
+- [ ] Slack auto-drive must create a controlled inbound message, observe the
+      broker reply/state update, and write a sanitized evidence bundle.
+- [ ] Feishu observe mode may be accepted as interim evidence only if it clearly
+      says which human/browser action produced the inbound event.
+- [ ] Feishu auto-drive requires a separate driver design. A bot sending a
+      message to itself does not prove user inbound, active follow-up, or
+      self-sender filtering.
+- [ ] Saved evidence replay must fail closed when required checks are missing,
+      stale, unsafe, or only implied by broad admin health.
+- [ ] Every evidence bundle must include a manifest with platform, mode
+      (`preflight`, `observe`, `drive`, or `replay`), checkedAt, command,
+      sanitized source files, and pass/fail checks.
+
+## Trigger matrix
+
+| Change type                             | Required before PR update                              | Required before final acceptance                                     |
+| --------------------------------------- | ------------------------------------------------------ | -------------------------------------------------------------------- |
+| Feishu renderer/card-only change        | Feishu unit/mock tests, Feishu observe or saved replay | Feishu real smoke evidence                                           |
+| Shared chat projection/delivery change  | Slack regression tests and Feishu mock tests           | Slack drive evidence plus Feishu observe/drive evidence              |
+| Slack conversation/turn behavior change | Slack unit/e2e tests                                   | Slack drive evidence in the configured test channel                  |
+| Setup/runbook-only change               | RFC doc tests and preflight docs                       | No real platform drive unless the runbook changes evidence semantics |
+| Secret/evidence sanitizer change        | sanitizer unit tests and saved unsafe fixture tests    | one sanitized Slack or Feishu evidence bundle reviewed for leaks     |
+
+## Self-regression evidence checklist
 
 Both platforms need self-regression evidence before this RFC can be accepted.
 These runs are not substitutes for unit tests; they prove that the configured
@@ -370,6 +457,8 @@ Feishu self-regression evidence must show:
   turn
 - Feishu file/artifact posting path is exercised or explicitly marked
   unavailable by tenant permission
+
+## Real tenant evidence checklist
 
 The real tenant smoke evidence must show:
 
@@ -409,5 +498,10 @@ architecture.
       not approve upload/download permissions?
 - [ ] Should the projector become shared immediately, or stay Feishu-local until
       Slack has an actual product reason to consume it?
+- [ ] Which Feishu driver should unlock unattended auto-drive: test user access
+      token, browser automation, desktop automation, or a controlled external
+      harness?
+- [ ] Should Slack self-regression live as a standalone runner or as a platform
+      mode inside a shared `manual:self-regression` runner?
 
 </details>
