@@ -1,0 +1,351 @@
+# RFC 0002: Feishu UX parity from codex-feishu-bot prior art
+
+Status: Draft for review
+Last updated: 2026-05-30
+
+This RFC is a follow-up to [RFC 0001](./0001-slack-feishu-dual-platform.md).
+RFC 0001 establishes the Slack + Feishu dual-platform broker baseline. This RFC
+narrows the next step: copy the useful Feishu product patterns from the older
+[HOOLC/codex-feishu-bot](https://github.com/HOOLC/codex-feishu-bot) repository
+without importing its Feishu-only architecture.
+
+## TL;DR
+
+Copy the interaction model, not the runtime. The old Feishu bot has good product
+ideas for Feishu-native progress cards, stable output projection, card updates,
+and operator-friendly setup. The current PR already has the shared broker
+foundation; the missing part is a Feishu experience that feels less like a Slack
+adapter with Feishu transport and more like a native Feishu work surface.
+
+The design constraint is: improve Feishu without creating a second permanent
+conversation runtime. Feishu-specific code may own native rendering and Feishu
+transport details, but turn lifecycle, recovery, output intent modeling,
+dedupe/debounce policy, and file/artifact intent should converge toward
+platform-neutral `src/services/chat/` primitives.
+
+## Source prior art
+
+Useful patterns to copy:
+
+- updateable Feishu cards for active work instead of posting many independent
+  progress messages
+- a projector model that maps Codex commentary, tool calls, final answers, and
+  artifacts into stable UI slots
+- debounced delivery with content hashing so repeated partial updates do not
+  spam the group
+- per-message/card update queues to avoid out-of-order Feishu patch operations
+- folded tool/detail cards so long tool output is available without dominating
+  the group
+- file/artifact publishing helpers that make Feishu uploads a first-class path
+- Open Platform/bootstrap notes that reduce the amount of manual Feishu setup
+  guessing
+
+Do not copy:
+
+- the Feishu-only runtime shape
+- JSON snapshot state as the broker source of truth
+- the old Codex worker/app-server flow
+- Docker-first deployment assumptions
+- private-chat product behavior
+- node:test-only test structure
+- one-off parsing shortcuts that bypass the current shared broker contracts
+
+## Goals
+
+- [ ] Give Feishu an active-turn status card that visibly represents
+      `queued`, `thinking`, `running tool`, `waiting`, `blocked`, `final`, and
+      `failed` states.
+- [ ] Update the same Feishu card/message during one active turn when possible,
+      instead of emitting noisy progress message streams.
+- [ ] Project Codex output into stable Feishu UI slots: request context,
+      commentary, current tool/action, artifact/file links, final answer, and
+      failure/recovery guidance.
+- [ ] Add hash/debounce/update-queue protection around Feishu card patches so
+      rapid app-server events do not reorder or duplicate visible output.
+- [ ] Keep Slack behavior unchanged unless a shared abstraction is explicitly
+      extracted and covered by regression tests.
+- [ ] Reduce platform divergence by moving reusable turn/projection/file intent
+      logic into chat-domain primitives instead of growing a parallel Feishu
+      runtime.
+- [ ] Make Feishu file/artifact publishing clear enough to test through the
+      existing `/chat/post-file` path or a platform-generic wrapper around it.
+- [ ] Extend RFC 0001 evidence so real Feishu smoke records status-card updates,
+      final-card state, and file/artifact behavior.
+- [ ] Document the Open Platform setup steps that remain manual versus the parts
+      that can be assisted by CLI/bootstrap tooling.
+
+## Non-goals
+
+- [ ] Do not replace `SlackAgentBridge` / `SessionManager` / `CodexBroker` in
+      this RFC.
+- [ ] Do not migrate the old repository wholesale.
+- [ ] Do not make private chat a supported product surface.
+- [ ] Do not require native Feishu read receipts or typing APIs for acceptance;
+      use a Feishu-visible status card as the product-equivalent signal.
+- [ ] Do not support Lark international tenant behavior here. This remains
+      China Feishu only.
+- [ ] Do not introduce a distributed worker/state model. The broker remains
+      single-process unless a later RFC changes that assumption.
+
+## Product gap in RFC 0001
+
+| Area                   | RFC 0001 baseline                                                              | RFC 0002 target                                                       |
+| ---------------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------------- |
+| Active work visibility | Feishu can run a session and reply, but progress UX is thin.                   | Feishu group sees one evolving active-turn card.                      |
+| Typing/status parity   | Slack has more natural typing/status affordances.                              | Feishu uses card state as the product-equivalent signal.              |
+| Tool progress          | Tool output can be surfaced, but not yet shaped as a stable Feishu card model. | Current tool/action is folded into a stable card slot.                |
+| Message noise          | Multiple progress events may become multiple visible messages.                 | Debounced card patching keeps the group readable.                     |
+| Artifact/file path     | File support exists but needs clearer product-level evidence.                  | File/artifact links are first-class card sections and smoke evidence. |
+| Operator setup         | RFC 0001 documents required credentials/evidence.                              | Setup docs distinguish CLI-assisted steps from manual admin gates.    |
+
+## Divergence reduction strategy
+
+Current RFC 0001 implementation already has a shared `ChatPlatformAdapter`
+contract, but meaningful behavior is still uneven:
+
+- Slack has mature conversation service / turn runner paths.
+- Feishu has its own bridge for group follow-up, steering, stop, recovery, and
+  outbound queueing.
+- HTTP routes and admin routes still expose Slack-named bridge methods in
+  several places, even when the endpoint is already chat-platform generic.
+- Feishu status output is currently a thin adapter hook rather than a real
+  platform-neutral status/projection model.
+
+RFC 0002 should not make this worse. The target split is:
+
+| Layer                 | Shared responsibility                                                 | Platform responsibility                                     |
+| --------------------- | --------------------------------------------------------------------- | ----------------------------------------------------------- |
+| Inbound normalization | `ChatInputMessage`, identity, coordinates, attachment intent          | Slack Events API shape, Feishu long-connection event shape  |
+| Turn lifecycle        | active turn state, stop, steer, recovery, bounded history policy      | native message/thread ids and platform history fetch limits |
+| Output intent         | status, commentary, tool progress, final answer, file/artifact intent | Slack blocks/mrkdwn, Feishu cards/rich text/files           |
+| Delivery policy       | hash/no-op suppression, debounce windows, per-target ordering         | API-specific retry/error mapping and rate-limit ceilings    |
+| Admin/evidence        | platform-neutral session state and smoke result schema                | platform-specific setup/admin status fields                 |
+
+Convergence rules:
+
+- [ ] New Feishu behavior starts behind `ChatPlatformAdapter` or a
+      `src/services/chat/` intent type whenever the behavior is not inherently
+      Feishu-specific.
+- [ ] Feishu-native card JSON stays in `src/services/feishu/`, but the data that
+      feeds it should be a shared `ChatTurnProjection`-style model.
+- [ ] If Feishu needs logic that Slack already has in `SlackTurnRunner` or
+      `SlackConversationService`, first decide whether the shared concept should
+      move to `src/services/chat/` instead of copying the Slack implementation.
+- [ ] No new Slack-named API should be added for behavior that is already
+      platform-generic. Existing Slack-named compatibility methods may remain
+      until a later cleanup.
+- [ ] Any extraction that touches Slack must include Slack regression tests;
+      Feishu product work must not silently change Slack UX.
+- [ ] Platform-specific branches need a short reason: native capability, API
+      limitation, permission model, or product difference.
+
+## Proposed work slices
+
+### 0. Shared chat boundary check
+
+Implementation targets:
+
+- `src/services/chat/chat-platform-adapter.ts`
+- `src/services/chat/` new projection/delivery intent modules if needed
+- `src/services/slack/slack-turn-runner.ts`
+- `src/services/slack/slack-conversation-service*.ts`
+- `src/services/feishu/feishu-codex-bridge.ts`
+- `src/http/chat-routes.ts`
+
+Checklist:
+
+- [ ] Identify the minimum shared model for turn state, output projection, file
+      intent, delivery ordering, and recovery outcome.
+- [ ] Keep native rendering out of the shared layer: Slack blocks and Feishu card
+      JSON remain adapter concerns.
+- [ ] Prefer additive shared helpers over renaming large Slack classes in this
+      RFC; broad class renames can wait for a cleanup-only PR.
+- [ ] Replace or wrap any new Slack-named API with a chat-platform-neutral name.
+- [ ] Add one cross-platform test that proves the same logical turn projection
+      can render into Slack and Feishu without sharing native renderer code.
+
+Acceptance:
+
+- [ ] RFC 0002 implementation has an explicit shared-vs-platform map in its PR
+      summary.
+- [ ] New Feishu status/projection tests exercise shared intent objects, not only
+      Feishu card JSON.
+- [ ] Slack regression tests cover any extracted helper used by Slack.
+
+### 1. Feishu updateable card API
+
+Implementation targets:
+
+- `src/services/feishu/feishu-api.ts`
+- `src/services/feishu/feishu-platform-adapter.ts`
+- `test/feishu-api.test.ts`
+- `test/feishu-platform-adapter.test.ts`
+
+Checklist:
+
+- [ ] Add Feishu API coverage for card/message update or patch endpoints.
+- [ ] Model update failure modes explicitly: missing message id, expired card,
+      permission failure, and retryable transport failure.
+- [ ] Add adapter method such as `updateThreadState` / `updateCard` without
+      leaking Feishu endpoint details into the bridge.
+- [ ] Keep patch/update endpoint selection Feishu-local, but expose only a
+      logical chat state/projection update to shared callers.
+- [ ] Preserve current send-message and callback behavior.
+
+Acceptance:
+
+- [ ] Unit tests prove the request body, auth headers, and error mapping for
+      update/patch calls.
+- [ ] Existing Feishu send-message tests still pass.
+- [ ] Slack tests are unchanged and green.
+
+### 2. Feishu turn status card
+
+Implementation targets:
+
+- `src/services/feishu/feishu-codex-bridge.ts`
+- `src/services/feishu/feishu-card-renderer.ts` or equivalent
+- `test/feishu-codex-bridge.test.ts`
+- `test/feishu-real-smoke.test.ts`
+
+Checklist:
+
+- [ ] Create an initial active-turn card when Feishu starts or resumes a Codex
+      turn.
+- [ ] Patch that card as the turn moves through queued/thinking/tool/final/error
+      states.
+- [ ] Represent `waiting for user`, `blocked`, and `stop requested` distinctly.
+- [ ] Keep the final answer readable in the group even if card patching fails.
+
+Acceptance:
+
+- [ ] Mock Feishu tests observe the card state lifecycle for success, failure,
+      and stop.
+- [ ] Real smoke evidence records at least one active card update and final card
+      state.
+
+### 3. Stable progress projector
+
+Implementation targets:
+
+- `src/services/chat/` for platform-neutral projection intent
+- `src/services/feishu/` for Feishu card rendering
+- `src/services/slack/` only for regression coverage or later reuse
+
+Checklist:
+
+- [ ] Convert app-server events into stable Feishu presentation slots.
+- [ ] Represent those slots as a platform-neutral projection before rendering
+      Feishu card JSON.
+- [ ] Hash rendered slot content and skip no-op card patches.
+- [ ] Debounce rapid partial updates.
+- [ ] Serialize patch operations per active Feishu card.
+- [ ] Fold verbose tool details behind card sections rather than dumping every
+      detail into the main group message.
+
+Acceptance:
+
+- [ ] Tests cover rapid commentary/tool/final sequences without duplicate
+      patches.
+- [ ] Tests cover out-of-order async patch completion without regressing the
+      final visible state.
+- [ ] At least one test proves the projection model is independent from Feishu
+      card JSON.
+
+### 4. File and artifact publishing UX
+
+Implementation targets:
+
+- existing `/chat/post-file` route
+- shared chat file/artifact intent model if `/chat/post-file` is too route-bound
+- Feishu file upload helpers
+- `test/manual/run-real-feishu-smoke.ts`
+
+Checklist:
+
+- [ ] Keep a platform-generic helper path for posting files from Codex output.
+- [ ] Render uploaded files/artifacts as card sections or stable message links.
+- [ ] Record file evidence in smoke output without logging sensitive content.
+- [ ] Avoid duplicating Slack file routing semantics inside Feishu bridge code;
+      use a shared file intent where possible.
+
+Acceptance:
+
+- [ ] Mock test proves Feishu file upload and card/link rendering.
+- [ ] Real smoke captures file/artifact evidence when credentials and tenant
+      permissions are available.
+
+### 5. Open Platform setup runbook
+
+Implementation targets:
+
+- `docs/feishu-setup.md` or a focused RFC 0002 runbook appendix
+- existing smoke/audit evidence docs
+
+Checklist:
+
+- [ ] Document which steps CLI can assist: app creation metadata, config checks,
+      local preflight, smoke evidence template.
+- [ ] Document which steps remain manual: sensitive permission approval,
+      app publish/release, tenant install, adding bot to group.
+- [ ] Include the exact permission rationale for `im:message.group_msg` and
+      card action callbacks.
+- [ ] Keep secret handling out of git-tracked examples.
+
+Acceptance:
+
+- [ ] A new operator can identify the next manual gate without reading chat
+      history.
+- [ ] The runbook maps directly to smoke/audit evidence fields.
+
+## Acceptance gates
+
+- [ ] `pnpm test` passes.
+- [ ] `pnpm rfc:feishu-audit -- --json` passes after any audit criteria changes.
+- [ ] `pnpm rfc:feishu-test-plan -- --json` passes after test-plan updates.
+- [ ] Shared-vs-platform boundary is documented in the implementation PR.
+- [ ] No new platform-generic behavior is exposed only through a Slack-named
+      method.
+- [ ] Any shared helper touched by Slack has Slack regression coverage.
+- [ ] Feishu mock tests cover active status card lifecycle, patch debounce,
+      patch ordering, final state, failure state, and file/artifact display.
+- [ ] Real tenant smoke evidence bundle is present.
+
+The real tenant smoke evidence must show:
+
+- bot added to a China Feishu group
+- `@bot` creates or resumes a session
+- non-`@` follow-up enters the same active session when
+  `FEISHU_GROUP_MESSAGE_MODE=all`
+- active card changes state during a real Codex coding task
+- final answer is visible in the same Feishu group
+- file/artifact path is exercised or explicitly marked unavailable by tenant
+  permission
+- Slack + Feishu are ready in the same process
+
+## Migration boundaries
+
+The safest implementation order is Feishu-first and extraction-second:
+
+1. Define the shared intent boundary before writing Feishu card code.
+2. Build the Feishu-native status/card/projector path using that boundary.
+3. Stabilize it with mock and real smoke evidence.
+4. Extract additional shared chat primitives only where Slack can reuse them
+   without changing Slack product behavior.
+
+This avoids forcing Slack into Feishu card semantics while still leaving a clear
+path toward a future symmetric `ChatRuntime -> SlackAdapter / FeishuAdapter`
+architecture.
+
+## Open questions
+
+- [ ] Which Feishu update endpoint is most reliable for the exact card type used
+      by the current adapter: message patch, card update, or a different
+      interactive-card API?
+- [ ] How long can an active Feishu card remain patchable in the target tenant?
+- [ ] Should final answers remain inside the status card, be sent as a normal
+      group message, or both?
+- [ ] What is the minimum file/artifact evidence required when the tenant does
+      not approve upload/download permissions?
+- [ ] Should the projector become shared immediately, or stay Feishu-local until
+      Slack has an actual product reason to consume it?
