@@ -78,6 +78,10 @@ Build Feishu-native work visibility while reducing long-term platform fork:
 - [ ] No new platform-generic behavior is exposed only through a Slack-named
       method.
 - [ ] Any shared helper touched by Slack has Slack regression coverage.
+- [ ] Slack self-regression evidence bundle is present for the current Slack
+      auth/app installation.
+- [ ] Feishu self-regression evidence bundle is present for the current China
+      Feishu self-built app installation.
 - [ ] Feishu mock tests cover active status card lifecycle, patch debounce,
       patch ordering, final state, failure state, and file/artifact display.
 - [ ] Real tenant smoke evidence bundle is present.
@@ -337,6 +341,35 @@ Acceptance:
 <summary id="evidence-migration-and-open-questions">Layer 5: Evidence, migration, and open questions</summary>
 
 ## Real tenant evidence checklist
+
+Both platforms need self-regression evidence before this RFC can be accepted.
+These runs are not substitutes for unit tests; they prove that the configured
+real Slack app and real Feishu app still work after shared chat-layer changes.
+
+Slack self-regression evidence must show:
+
+- current Slack bot/user/app-level auth is loaded from local secrets, not
+  committed fixtures
+- Slack app starts and reports ready in the broker
+- Slack can create or resume a session from a real channel/message surface
+- Slack can send normal replies and state/status updates through the existing
+  product path
+- Slack file/artifact posting path is exercised or explicitly marked unavailable
+  by workspace permission
+- Slack behavior remains unchanged by any shared chat-layer extraction
+
+Feishu self-regression evidence must show:
+
+- current China Feishu self-built app credentials are loaded from local secrets,
+  not committed fixtures
+- Feishu long-connection adapter starts and reports ready in the broker
+- Feishu `@bot` creates or resumes a session in a real group
+- Feishu non-`@` follow-up enters the same active session when
+  `FEISHU_GROUP_MESSAGE_MODE=all`
+- Feishu status-card or product-equivalent state update is visible during a real
+  turn
+- Feishu file/artifact posting path is exercised or explicitly marked
+  unavailable by tenant permission
 
 The real tenant smoke evidence must show:
 
