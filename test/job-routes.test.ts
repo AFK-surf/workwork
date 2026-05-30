@@ -158,6 +158,72 @@ describe("job routes", () => {
     ]);
   });
 
+  it("accepts legacy Slack job coordinates when platform is explicitly slack", async () => {
+    const calls: unknown[] = [];
+    const server = http.createServer(
+      createHttpHandler({
+        jobManager: {
+          registerJob: async (payload: unknown) => {
+            calls.push(payload);
+            return {
+              id: "job-slack",
+              token: "secret-token",
+              sessionKey: "C123:111.222",
+              platform: "slack",
+              conversationId: "C123",
+              rootMessageId: "111.222",
+              channelId: "C123",
+              rootThreadTs: "111.222",
+              kind: "watch_ci",
+              shell: "sh",
+              cwd: "/tmp/workspace",
+              scriptPath: "/tmp/jobs/job-slack/run.sh",
+              restartOnBoot: true,
+              status: "running",
+              createdAt: "2026-05-29T00:00:00.000Z",
+              updatedAt: "2026-05-29T00:00:00.000Z",
+            };
+          },
+        } as never,
+        config: {
+          serviceName: "test-broker",
+        } as never,
+      }),
+    );
+    const baseUrl = await listen(server);
+    cleanups.push(() => close(server));
+
+    const response = await fetch(`${baseUrl}/jobs/register`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        platform: "slack",
+        channel_id: "C123",
+        thread_ts: "111.222",
+        kind: "watch_ci",
+        script: "sleep 30",
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(calls).toEqual([
+      {
+        platform: "slack",
+        conversationId: undefined,
+        rootMessageId: undefined,
+        channelId: "C123",
+        rootThreadTs: "111.222",
+        kind: "watch_ci",
+        script: "sleep 30",
+        cwd: undefined,
+        shell: undefined,
+        restartOnBoot: true,
+      },
+    ]);
+  });
+
   it("documents generic job coordinates in missing-field errors", async () => {
     const server = http.createServer(
       createHttpHandler({

@@ -214,18 +214,20 @@ export class FeishuPlatformAdapter implements ChatPlatformAdapter {
       cardMsgContentType: "user_card_content",
     });
 
-    const messages = (result.items ?? []).flatMap((item) => {
-      const routed = routeFeishuReceiveMessageEvent(
-        {
-          message: feishuHistoryItemToEventMessage(item),
-          sender: feishuHistoryItemToEventSender(item),
-        },
-        {
-          botIdentity: this.#botIdentity,
-        },
-      );
-      return routed.route === "accepted" ? [routed.parsed.input] : [];
-    });
+    const messages = (result.items ?? [])
+      .filter((item) => feishuHistoryItemMatchesThreadQuery(item, query))
+      .flatMap((item) => {
+        const routed = routeFeishuReceiveMessageEvent(
+          {
+            message: feishuHistoryItemToEventMessage(item),
+            sender: feishuHistoryItemToEventSender(item),
+          },
+          {
+            botIdentity: this.#botIdentity,
+          },
+        );
+        return routed.route === "accepted" ? [routed.parsed.input] : [];
+      });
 
     return {
       messages,
@@ -731,6 +733,14 @@ function feishuHistoryItemToEventMessage(item: FeishuMessageData): Record<string
     message_type: item.msg_type,
     content: item.body?.content,
   };
+}
+
+function feishuHistoryItemMatchesThreadQuery(item: FeishuMessageData, query: ChatThreadQuery): boolean {
+  if (query.platformThreadId) {
+    return true;
+  }
+
+  return item.message_id === query.rootMessageId || item.root_id === query.rootMessageId || item.parent_id === query.rootMessageId;
 }
 
 function feishuHistoryItemToEventSender(item: FeishuMessageData): Record<string, unknown> {
