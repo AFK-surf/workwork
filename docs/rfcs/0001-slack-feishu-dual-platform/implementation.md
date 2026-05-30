@@ -7,8 +7,8 @@ This file contains the execution contract for [RFC 0001](../0001-slack-feishu-du
 | Question | Answer |
 | --- | --- |
 | How to implement | Ship vertical TDD slices, each with RED, GREEN, OBSERVE, and REGRESSION evidence. |
-| Current local state | Phases 1-5 are locally implemented or documented, with mock/unit/doc gates covering Slack compatibility, Feishu parsing, sessions, rich/cards/files, admin health, and co-author cards. |
-| Still not complete | Real tenant setup, real Feishu smoke, and rollout-runtime evidence remain unchecked completion gates. |
+| Current state | Phases 1-5 are implemented, documented, and covered by mock/unit/doc gates plus saved real-tenant evidence. |
+| Completion evidence | Real tenant setup, real Feishu smoke, rollout-runtime evidence, and RFC audit all pass in the saved evidence bundle. |
 | Safe PR size | Cite one phase/ticket, one behavior, and the minimum evidence bundle needed for that behavior. |
 | Evidence boundary | Mock e2e proves broker behavior; real smoke proves Feishu tenant permissions and client delivery. |
 
@@ -37,7 +37,7 @@ This file contains the execution contract for [RFC 0001](../0001-slack-feishu-du
 - [x] Split RFC into progressive-disclosure entry point plus deep dives.
 - [x] Add RFC markdown/link regression tests for the progressive-disclosure docs.
 - [x] Add PR template prompts for RFC trace, TDD slice, observability, and real-smoke evidence.
-- [ ] Accept open-question gates before production rollout.
+- [x] Accept open-question gates before production rollout.
 
 ### Phase 1: Platform-neutral foundation, Slack unchanged
 
@@ -225,9 +225,7 @@ Phase 5:
 
 ## RFC maintenance
 
-- [ ] No RFC update needed because this PR stays within current invariants.
-- [ ] RFC updated in this PR because a contract/default/gate changed.
-- [ ] Follow-up issue linked for deferred compatible work.
+- State whether no RFC update was needed, the RFC was updated, or a follow-up issue was linked for deferred compatible work.
 ```
 
 </details>
@@ -301,20 +299,20 @@ Requirement evidence:
 
 ## Real Smoke Checklist
 
-- [ ] Broker connects via Feishu long connection.
-- [ ] Group @bot text emits an ordered `chat.message.accepted route=bot_mention msgType=text -> chat.session.created|resumed` transition that starts or resumes a Codex session whose `sessionKey`, `conversationId`, and `rootMessageId` match admin session state, with no same-message ignored log.
-- [ ] Bot/app/self sender fixture or captured event emits `chat.message.ignored ignoredReason=ignored_self` with no same-message accepted/session/turn dispatch log.
-- [ ] Non-@ group text follow-up enters the same active group @ session in `all` mode, proven by an ordered `chat.message.accepted route=group_message msgType=text -> chat.turn.steered|chat.session.resumed` transition with matching `messageId`, transition session coordinates matching admin session state, and no same-message ignored log; include a rootless group message if the Feishu client delivers that shape outside a message thread.
-- [ ] Bounded history is visible to Codex with same-session `chat.turn.steered source=history_recovery` for active turns or `chat.turn.started source=history_recovery` for recently active sessions, plus `chat.history.recovered recoveredCount > 0` and session coordinates matching admin session state; missing cursor evidence must be degraded instead of counted as recovered.
-- [ ] Final text reply posts to the same group @ session with `chat.outbound.posted format=text` and session coordinates matching admin session state.
-- [ ] Final Feishu turn completion emits an ordered same-session `chat.turn.started|steered -> chat.outbound.posted format=text -> chat.turn.completed` chain, with completion after the text reply and `turnId` / `batchId` matching the non-history-recovery turn start/steer log.
-- [ ] `-stop` proof targets the same group @ session and includes an ordered `chat.message.accepted -> chat.session.resumed -> chat.turn.stopped` chain with matching stop `messageId`, `hadActiveTurn=true`, an active `turnId`, no same-message ignored log, and session coordinates matching admin session state.
-- [ ] Feishu co-author confirmation card emits an ordered same-session `chat.outbound.posted format=card -> chat.card.callback.received -> chat.coauthor.confirmed` chain whose callback `messageId` matches the outbound card when Feishu supplies one, otherwise ordered same-session/root coordinates plus callback `eventId`/`payloadRef` prove the tie, callback and confirmation share `candidateRevision`, confirmation includes `confirmedCount > 0`, and session coordinates match admin session state.
-- [ ] Duplicate delivery/replay emits `chat.message.deduped` with the same `messageId` and `conversationId` as the original accepted event, with no later same-message accepted/session/turn dispatch.
-- [ ] Controlled degraded/failure evidence includes `chat.platform.degraded` and one failed-behavior event; coordinate-bearing send/download failures must match admin session state and carry their required failure fields, and detached handler failures must name a known Feishu handler (`message` or `interactive`) plus `errorClass`.
-- [ ] Slack still starts and responds in the same process with ordered Slack `chat.message.accepted -> chat.outbound.posted format=text` evidence that includes accepted/reply `messageId` values and shares the same `sessionKey`, `conversationId`, and `rootMessageId`.
-- [ ] Admin health shows both platform states.
-- [ ] `pnpm manual:feishu-smoke` passes against the rollout runtime.
+- [x] Broker connects via Feishu long connection.
+- [x] Group @bot text emits an ordered `chat.message.accepted route=bot_mention msgType=text -> chat.session.created|resumed` transition that starts or resumes a Codex session whose `sessionKey`, `conversationId`, and `rootMessageId` match admin session state, with no same-message ignored log.
+- [x] Bot/app/self sender fixture or captured event emits `chat.message.ignored ignoredReason=ignored_self` with no same-message accepted/session/turn dispatch log.
+- [x] Non-@ group text follow-up enters the same active group @ session in `all` mode, proven by an ordered `chat.message.accepted route=group_message msgType=text -> chat.turn.steered|chat.session.resumed` transition with matching `messageId`, transition session coordinates matching admin session state, and no same-message ignored log; include a rootless group message if the Feishu client delivers that shape outside a message thread.
+- [x] Bounded history is visible to Codex with same-session `chat.turn.steered source=history_recovery` for active turns or `chat.turn.started source=history_recovery` for recently active sessions, plus `chat.history.recovered recoveredCount > 0` and session coordinates matching admin session state; missing cursor evidence must be degraded instead of counted as recovered.
+- [x] Final text reply posts to the same group @ session with `chat.outbound.posted format=text` and session coordinates matching admin session state.
+- [x] Final Feishu turn completion emits an ordered same-session `chat.turn.started|steered -> chat.outbound.posted format=text -> chat.turn.completed` chain, with completion after the text reply and `turnId` / `batchId` matching the non-history-recovery turn start/steer log.
+- [x] `-stop` proof targets the same group @ session and includes an ordered `chat.message.accepted -> chat.session.resumed -> chat.turn.stopped` chain with matching stop `messageId`, `hadActiveTurn=true`, an active `turnId`, no same-message ignored log, and session coordinates matching admin session state.
+- [x] Feishu co-author confirmation card emits an ordered same-session `chat.outbound.posted format=card -> chat.card.callback.received -> chat.coauthor.confirmed` chain whose callback `messageId` matches the outbound card when Feishu supplies one, otherwise ordered same-session/root coordinates plus callback `eventId`/`payloadRef` prove the tie, callback and confirmation share `candidateRevision`, confirmation includes `confirmedCount > 0`, and session coordinates match admin session state.
+- [x] Duplicate delivery/replay emits `chat.message.deduped` with the same `messageId` and `conversationId` as the original accepted event, with no later same-message accepted/session/turn dispatch.
+- [x] Controlled degraded/failure evidence includes `chat.platform.degraded` and one failed-behavior event; coordinate-bearing send/download failures must match admin session state and carry their required failure fields, and detached handler failures must name a known Feishu handler (`message` or `interactive`) plus `errorClass`.
+- [x] Slack still starts and responds in the same process with ordered Slack `chat.message.accepted -> chat.outbound.posted format=text` evidence that includes accepted/reply `messageId` values and shares the same `sessionKey`, `conversationId`, and `rootMessageId`.
+- [x] Admin health shows both platform states.
+- [x] `pnpm manual:feishu-smoke` passes against the rollout runtime.
 
 </details>
 
@@ -323,13 +321,13 @@ Requirement evidence:
 
 ## Risks
 
-- [ ] `im:message.group_msg` may be denied or delayed.
-- [ ] Long connection is cluster-style delivery, not broadcast.
-- [ ] Feishu handlers must ack quickly and queue Codex work.
-- [ ] Feishu message tree semantics may differ from Slack threads.
-- [ ] Rich text/card payloads can hit size limits faster than plain text.
-- [ ] Resource download does not support every message/resource type.
-- [ ] Co-author identity may need extra identity permissions.
+- `im:message.group_msg` may be denied or delayed in other tenants.
+- Long connection is cluster-style delivery, not broadcast.
+- Feishu handlers must ack quickly and queue Codex work.
+- Feishu message tree semantics may differ from Slack threads.
+- Rich text/card payloads can hit size limits faster than plain text.
+- Resource download does not support every message/resource type.
+- Co-author identity may need extra identity permissions.
 
 ## Open Question Gates
 
@@ -346,19 +344,19 @@ Requirement evidence:
 
 Update this RFC set in the same PR when:
 
-- [ ] A PR changes an invariant, API contract, session/storage shape, permission assumption, log event, required log field, phase gate, or completion evidence.
-- [ ] A real fixture contradicts the content model, routing rules, history/recovery, or permission strategy.
-- [ ] A tracer bullet needs to be split, reordered, or pointed at a different public interface.
-- [ ] A degraded behavior becomes default beyond development or limited pilot.
-- [ ] An open question is resolved or a default assumption changes.
+- A PR changes an invariant, API contract, session/storage shape, permission assumption, log event, required log field, phase gate, or completion evidence.
+- A real fixture contradicts the content model, routing rules, history/recovery, or permission strategy.
+- A tracer bullet needs to be split, reordered, or pointed at a different public interface.
+- A degraded behavior becomes default beyond development or limited pilot.
+- An open question is resolved or a default assumption changes.
 
 Stop and re-review when:
 
-- [ ] China Feishu is no longer first target.
-- [ ] Private chat support becomes required for first implementation.
-- [ ] `im:message.group_msg` is unavailable but production parity is still requested.
-- [ ] Slack compatibility requires breaking `/slack/*`, persisted Slack sessions, or Slack mock e2e behavior.
-- [ ] Raw rich/card/file payloads cannot be preserved.
-- [ ] Deployment topology invalidates the one-process dual-platform assumption.
+- China Feishu is no longer first target.
+- Private chat support becomes required for first implementation.
+- `im:message.group_msg` is unavailable but production parity is still requested.
+- Slack compatibility requires breaking `/slack/*`, persisted Slack sessions, or Slack mock e2e behavior.
+- Raw rich/card/file payloads cannot be preserved.
+- Deployment topology invalidates the one-process dual-platform assumption.
 
 </details>

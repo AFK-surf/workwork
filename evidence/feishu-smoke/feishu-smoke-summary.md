@@ -1,14 +1,14 @@
 # Feishu Smoke Evidence
 
-- source: http://127.0.0.1:3001
-- checked_at: 2026-05-30T09:30:41.761Z
+- source: status-file:admin-status.json
+- checked_at: 2026-05-30T10:22:44.793Z
 - status: PASS
 
 ## Checks
 
 | Status | Required | Check | Evidence |
 | --- | --- | --- | --- |
-| pass | yes | scope.china_feishu: China Feishu is the configured Feishu-family target | FEISHU_DOMAIN=feishu |
+| pass | yes | scope.china_feishu: China Feishu is the configured Feishu-family target | FEISHU_DOMAIN=feishu(default) |
 | pass | yes | runtime.feishu_enabled: Feishu is enabled in the broker runtime | platforms.feishu.enabled=true |
 | pass | yes | runtime.feishu_ready: Feishu reports ready in the shared runtime | platforms.feishu.state=ready |
 | pass | yes | runtime.slack_ready: Slack still reports ready in the shared runtime | platforms.slack.state=ready |

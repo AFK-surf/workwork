@@ -101,7 +101,7 @@ Verification output should be captured in PR evidence, setup docs, or smoke chec
 Implementation requirements:
 
 - [x] Add setup docs with the current documented Feishu console/API label map.
-- [ ] During real app setup, confirm the exact tenant console labels in sanitized rollout notes or PR evidence, without raw App Secret, access tokens, message bodies, user emails, or raw bot IDs.
+- [x] During real app setup, confirm the exact tenant console labels in sanitized rollout notes or PR evidence, without raw App Secret, access tokens, message bodies, user emails, or raw bot IDs.
 - [x] Add startup health output listing granted/assumed capabilities where feasible.
 - [x] Add `FEISHU_GROUP_MESSAGE_MODE=all | at_only`.
 - [x] When mode is `all`, warn loudly if non-@ follow-up smoke fails.

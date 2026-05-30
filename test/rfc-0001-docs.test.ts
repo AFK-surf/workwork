@@ -59,19 +59,19 @@ describe("RFC 0001 documentation", () => {
     }
   });
 
-  it("keeps completion evidence progressive without checking real-tenant gates locally", async () => {
+  it("keeps completion evidence progressive after real-tenant signoff", async () => {
     const reviewGates = await fs.readFile(path.join(rfcDir, "review-gates.md"), "utf8");
 
     expect(reviewGates).toContain("## Completion Evidence Ledger");
     expect(reviewGates).toContain("Local evidence now");
     expect(reviewGates).toContain("Real tenant gate still required");
     expect(reviewGates).toContain("pnpm rfc:feishu-audit");
-    expect(reviewGates).toContain("local RFC assets, implementation surfaces, test slices, behavior evidence probes, and script gates can pass while real setup/preflight/smoke evidence remains missing");
-    expect(reviewGates).toContain("Do not turn audit boxes into checked boxes");
+    expect(reviewGates).toContain("local gates and saved real-tenant evidence pass");
+    expect(reviewGates).toContain("future drift should be treated as incomplete until both sides pass again");
     expect(reviewGates).toContain("pnpm test:e2e:feishu-mock");
     expect(reviewGates).toContain("pnpm manual:feishu-smoke");
-    expect(reviewGates).toContain("- [ ] Real Feishu smoke passes.");
-    expect(reviewGates).toContain("- [ ] Feishu mock e2e passes.");
+    expect(reviewGates).toContain("- [x] Real Feishu smoke passes.");
+    expect(reviewGates).toContain("- [x] Feishu mock e2e passes.");
     expect(reviewGates).toContain("callback smoke matches the same group @ session after a broker-posted card");
     expect(reviewGates).toContain("using `messageId` when Feishu supplies one and callback `eventId`/`payloadRef` otherwise");
   });

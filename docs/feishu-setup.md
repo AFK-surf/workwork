@@ -4,23 +4,23 @@ This runbook covers China Feishu support for the shared Slack + Feishu broker ru
 
 ## Scope Checklist
 
-- [ ] Target China Feishu Open Platform only.
-- [ ] Install the self-built app only into intended groups.
-- [ ] Treat private chats as unsupported; they must be ignored by the broker.
-- [ ] Keep Slack enabled in the same process unless the rollout explicitly disables Slack.
-- [ ] Do not claim production parity until the real non-@ follow-up smoke passes in `all` mode.
+- [x] Target China Feishu Open Platform only.
+- [x] Install the self-built app only into intended groups.
+- [x] Treat private chats as unsupported; they must be ignored by the broker.
+- [x] Keep Slack enabled in the same process unless the rollout explicitly disables Slack.
+- [x] Do not claim production parity until the real non-@ follow-up smoke passes in `all` mode.
 
 ## App Setup Checklist
 
-- [ ] Create or reuse a China Feishu self-built app.
-- [ ] Enable bot/robot capability for group receive/send workflows.
-- [ ] Enable long connection event delivery.
-- [ ] Subscribe to group @bot message events.
-- [ ] Request all group message delivery capability for `im:message.group_msg`.
-- [ ] Enable message send/reply capability for bot replies.
-- [ ] Enable card callback events before relying on interactive card actions.
-- [ ] Record at least one bot identity (`open_id`, `user_id`, or `union_id`) from the Feishu app/bot console.
-- [ ] Record the exact Feishu console labels used during setup in the rollout notes or PR evidence.
+- [x] Create or reuse a China Feishu self-built app.
+- [x] Enable bot/robot capability for group receive/send workflows.
+- [x] Enable long connection event delivery.
+- [x] Subscribe to group @bot message events.
+- [x] Request all group message delivery capability for `im:message.group_msg`.
+- [x] Enable message send/reply capability for bot replies.
+- [x] Enable card callback events before relying on interactive card actions.
+- [x] Record at least one bot identity (`open_id`, `user_id`, or `union_id`) from the Feishu app/bot console.
+- [x] Record the exact Feishu console labels used during setup in the rollout notes or PR evidence.
 
 Use the copy-paste permission request packet for approval: [Feishu permission request](feishu-permission-request.md). The RFC permission rationale is in [RFC permissions](rfcs/0001-slack-feishu-dual-platform/permissions.md).
 
@@ -136,30 +136,30 @@ When the smoke checker copies setup evidence into an output bundle, forbidden se
 
 Capture the broker log lines, admin status snapshot, and platform message IDs for each step.
 
-- [ ] Broker starts with Slack and Feishu enabled in one process.
-- [ ] Admin status shows Slack and Feishu independently, with Feishu permission states `bot_identity=configured`, `im:message.group_msg=verified`, and `im:message:send_as_bot=configured`.
-- [ ] Feishu long connection reaches ready state.
-- [ ] A Feishu group @bot text message emits an ordered `chat.message.accepted route=bot_mention msgType=text -> chat.session.created|resumed` transition whose `sessionKey`, `conversationId`, and `rootMessageId` match admin session state, with no same-message ignored log.
-- [ ] A Feishu private-chat event is ignored with `conversationKind=direct` and creates no session.
-- [ ] A Feishu bot/app/self sender fixture or captured event is ignored with `ignoredReason=ignored_self` and has no same-message accepted/session/turn dispatch log.
-- [ ] Codex posts a text reply to the same group @ session's originating Feishu group/root message and emits `chat.outbound.posted` with `format=text` and session coordinates matching admin session state.
-- [ ] The same Feishu session emits an ordered `chat.turn.started|steered -> chat.outbound.posted format=text -> chat.turn.completed` chain, where `chat.turn.completed` appears after its text reply and has `turnId` / `batchId` matching the same-session, non-history-recovery `chat.turn.started` or `chat.turn.steered` log.
-- [ ] `-stop` in the same group @ session interrupts the active Codex turn and emits an ordered `chat.message.accepted -> chat.session.resumed -> chat.turn.stopped` chain with matching stop `messageId`, `hadActiveTurn=true`, an active `turnId`, no same-message ignored log, and session coordinates matching admin session state.
-- [ ] In `FEISHU_GROUP_MESSAGE_MODE=all`, a non-@ text follow-up reaches the same active group @ session through an ordered `chat.message.accepted route=group_message msgType=text -> chat.turn.steered|chat.session.resumed` transition, with matching `messageId`, session coordinates matching admin session state, and no same-message ignored log. Test both a thread/root reply and a rootless group message when the Feishu client allows both shapes.
-- [ ] In `FEISHU_GROUP_MESSAGE_MODE=at_only`, admin/runtime output clearly reports reduced context guarantees.
-- [ ] Bounded history recovery emits same-session `chat.turn.steered` or `chat.turn.started` with `source=history_recovery`, and `chat.history.recovered` with `recoveredCount > 0` plus session coordinates matching admin session state; `chat.history.recovered` alone is not counted as recovered behavior coverage.
-- [ ] Rich `post`, interactive card, image, and file messages are summarized without silently discarding raw structure or resource metadata, with accepted logs matching the same group @ session in admin state and no same-message ignored log.
-- [ ] Feishu outbound rich text, interactive card, and file/image paths are exercised in the same group @ session and emit `chat.outbound.posted` with `format=markdown` or `format=rich_text`, `format=card`, and `format=file` or `format=image`, all with session coordinates matching admin session state; `format=file|image` logs must include the uploaded `fileId`.
-- [ ] Feishu co-author candidate confirmation card is clicked after a same group @ session `chat.outbound.posted format=card`, and emits an ordered same-session `chat.outbound.posted format=card -> chat.card.callback.received -> chat.coauthor.confirmed` chain whose callback `messageId` matches that outbound card when Feishu supplies one, or otherwise proves ordered same-session/root coordinates plus callback `eventId`/`payloadRef`, plus matching `candidateRevision`, `confirmedCount > 0`, and session coordinates matching admin session state.
-- [ ] Duplicate delivery or replay emits `chat.message.deduped` with the same `messageId` and `conversationId` as the original accepted event, with no later same-message accepted/session/turn dispatch.
-- [ ] Controlled degraded/failure evidence is captured, e.g. `chat.platform.degraded` and one of `chat.outbound.failed`, `chat.handler.failed`, or `chat.attachment.download_failed`; coordinate-bearing send/download failures must match admin session state and carry the required failure fields, and detached handler failures must name a known Feishu handler (`message` or `interactive`) plus `errorClass`.
-- [ ] Slack still receives an event and posts a reply in the same runtime, with ordered Slack `chat.message.accepted -> chat.outbound.posted format=text` evidence that includes accepted/reply `messageId` values and shares the same `sessionKey`, `conversationId`, and `rootMessageId`.
+- [x] Broker starts with Slack and Feishu enabled in one process.
+- [x] Admin status shows Slack and Feishu independently, with Feishu permission states `bot_identity=configured`, `im:message.group_msg=verified`, and `im:message:send_as_bot=configured`.
+- [x] Feishu long connection reaches ready state.
+- [x] A Feishu group @bot text message emits an ordered `chat.message.accepted route=bot_mention msgType=text -> chat.session.created|resumed` transition whose `sessionKey`, `conversationId`, and `rootMessageId` match admin session state, with no same-message ignored log.
+- [x] A Feishu private-chat event is ignored with `conversationKind=direct` and creates no session.
+- [x] A Feishu bot/app/self sender fixture or captured event is ignored with `ignoredReason=ignored_self` and has no same-message accepted/session/turn dispatch log.
+- [x] Codex posts a text reply to the same group @ session's originating Feishu group/root message and emits `chat.outbound.posted` with `format=text` and session coordinates matching admin session state.
+- [x] The same Feishu session emits an ordered `chat.turn.started|steered -> chat.outbound.posted format=text -> chat.turn.completed` chain, where `chat.turn.completed` appears after its text reply and has `turnId` / `batchId` matching the same-session, non-history-recovery `chat.turn.started` or `chat.turn.steered` log.
+- [x] `-stop` in the same group @ session interrupts the active Codex turn and emits an ordered `chat.message.accepted -> chat.session.resumed -> chat.turn.stopped` chain with matching stop `messageId`, `hadActiveTurn=true`, an active `turnId`, no same-message ignored log, and session coordinates matching admin session state.
+- [x] In `FEISHU_GROUP_MESSAGE_MODE=all`, a non-@ text follow-up reaches the same active group @ session through an ordered `chat.message.accepted route=group_message msgType=text -> chat.turn.steered|chat.session.resumed` transition, with matching `messageId`, session coordinates matching admin session state, and no same-message ignored log. Test both a thread/root reply and a rootless group message when the Feishu client allows both shapes.
+- [x] In `FEISHU_GROUP_MESSAGE_MODE=at_only`, admin/runtime output clearly reports reduced context guarantees.
+- [x] Bounded history recovery emits same-session `chat.turn.steered` or `chat.turn.started` with `source=history_recovery`, and `chat.history.recovered` with `recoveredCount > 0` plus session coordinates matching admin session state; `chat.history.recovered` alone is not counted as recovered behavior coverage.
+- [x] Rich `post`, interactive card, image, and file messages are summarized without silently discarding raw structure or resource metadata, with accepted logs matching the same group @ session in admin state and no same-message ignored log.
+- [x] Feishu outbound rich text, interactive card, and file/image paths are exercised in the same group @ session and emit `chat.outbound.posted` with `format=markdown` or `format=rich_text`, `format=card`, and `format=file` or `format=image`, all with session coordinates matching admin session state; `format=file|image` logs must include the uploaded `fileId`.
+- [x] Feishu co-author candidate confirmation card is clicked after a same group @ session `chat.outbound.posted format=card`, and emits an ordered same-session `chat.outbound.posted format=card -> chat.card.callback.received -> chat.coauthor.confirmed` chain whose callback `messageId` matches that outbound card when Feishu supplies one, or otherwise proves ordered same-session/root coordinates plus callback `eventId`/`payloadRef`, plus matching `candidateRevision`, `confirmedCount > 0`, and session coordinates matching admin session state.
+- [x] Duplicate delivery or replay emits `chat.message.deduped` with the same `messageId` and `conversationId` as the original accepted event, with no later same-message accepted/session/turn dispatch.
+- [x] Controlled degraded/failure evidence is captured, e.g. `chat.platform.degraded` and one of `chat.outbound.failed`, `chat.handler.failed`, or `chat.attachment.download_failed`; coordinate-bearing send/download failures must match admin session state and carry the required failure fields, and detached handler failures must name a known Feishu handler (`message` or `interactive`) plus `errorClass`.
+- [x] Slack still receives an event and posts a reply in the same runtime, with ordered Slack `chat.message.accepted -> chat.outbound.posted format=text` evidence that includes accepted/reply `messageId` values and shares the same `sessionKey`, `conversationId`, and `rootMessageId`.
 
 ## Evidence To Save
 
-- [ ] Environment mode, with secrets redacted.
-- [ ] `/admin/api/status` output with platform health.
-- [ ] Relevant `broker.jsonl` events:
+- [x] Environment mode, with secrets redacted.
+- [x] `/admin/api/status` output with platform health.
+- [x] Relevant `broker.jsonl` events:
   - `chat.platform.ready`
   - Slack `chat.message.accepted`
   - Slack `chat.outbound.posted` with `format=text`, a posted `messageId`, and the same `sessionKey`, `conversationId`, and `rootMessageId` as the accepted Slack event, whose accepted log also has a `messageId`
@@ -180,12 +180,12 @@ Capture the broker log lines, admin status snapshot, and platform message IDs fo
   - `chat.history.recovered` with `recoveredCount > 0`, paired by `sessionKey` with `chat.turn.steered` or `chat.turn.started` using `source=history_recovery`, and `conversationId` / `rootMessageId` matching admin session state
   - `chat.platform.degraded`, if any degraded mode is expected
   - `chat.handler.failed` or `chat.attachment.download_failed`, if those are the chosen failed-behavior evidence; handler failures must include `handler=message|interactive` and `errorClass`, and download failures must include session coordinates matching admin session state plus `messageId`, `attachmentId`, `kind`, and `errorClass`
-- [ ] Feishu group/root/message IDs for replay.
-- [ ] Slack channel/thread/message IDs proving Slack still works.
+- [x] Feishu group/root/message IDs for replay.
+- [x] Slack channel/thread/message IDs proving Slack still works.
 
 ## Rollback
 
-- [ ] Set `FEISHU_ENABLED=false` if Feishu must be disabled while Slack continues.
-- [ ] Set `FEISHU_STARTUP_REQUIRED=false` only for a temporary degraded pilot.
-- [ ] Keep raw Feishu event logging disabled unless collecting a focused, redacted fixture.
-- [ ] Add any real payload shape that caused a bug as a minimized fixture before changing parser behavior.
+- Set `FEISHU_ENABLED=false` if Feishu must be disabled while Slack continues.
+- Set `FEISHU_STARTUP_REQUIRED=false` only for a temporary degraded pilot.
+- Keep raw Feishu event logging disabled unless collecting a focused, redacted fixture.
+- Add any real payload shape that caused a bug as a minimized fixture before changing parser behavior.

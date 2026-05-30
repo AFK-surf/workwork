@@ -523,7 +523,7 @@ export const RFC0001_REQUIRED_LOCAL_EVIDENCE_PATTERNS: ReadonlyArray<{
     id: "docs.progressive_gates",
     file: "test/rfc-0001-docs.test.ts",
     snippets: [
-      "keeps completion evidence progressive without checking real-tenant gates locally",
+      "keeps completion evidence progressive after real-tenant signoff",
       "keeps the README aligned with the Slack + Feishu user-facing surface"
     ]
   }
