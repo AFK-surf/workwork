@@ -7,6 +7,7 @@ import type { IsolatedMcpService } from "../services/codex/isolated-mcp-service.
 import type { JobManager } from "../services/job-manager.js";
 import type { SlackAgentBridge } from "../services/slack/slack-agent-bridge.js";
 import { handleAdminRequest } from "./admin-routes.js";
+import { handleChatRequest } from "./chat-routes.js";
 import { handleIntegrationRequest } from "./integration-routes.js";
 import { handleJobRequest } from "./job-routes.js";
 import { runWithResponseDeferredTasks } from "./response-deferred-tasks.js";
@@ -56,6 +57,16 @@ async function handleHttpRequest(
   if (method === "GET" && url.pathname === "/readyz") {
     response.writeHead(200, { "content-type": "application/json" });
     response.end(JSON.stringify({ ok: true, service: options.config.serviceName }));
+    return;
+  }
+
+  if (
+    options.bridge &&
+    (await handleChatRequest(method, url, request, response, {
+      bridge: options.bridge,
+      config: options.config,
+    }))
+  ) {
     return;
   }
 

@@ -13,6 +13,7 @@ describe("logger raw payload limits", () => {
     configureLogger({
       level: "info",
       rawSlackEvents: false,
+      rawFeishuEvents: false,
       rawCodexRpc: false,
       rawHttpRequests: false,
     });
@@ -26,6 +27,7 @@ describe("logger raw payload limits", () => {
       logDir,
       level: "info",
       rawSlackEvents: true,
+      rawFeishuEvents: false,
       rawCodexRpc: false,
       rawHttpRequests: false,
       rawMaxBytes: 120,

@@ -235,6 +235,96 @@ describe("AdminService", () => {
     expect(permalinkCalls).toEqual([{ channelId: "C123", messageTs: "111.222" }]);
   });
 
+  it("exposes Feishu sessions without Slack-only thread links", async () => {
+    const dataRoot = await fs.mkdtemp(path.join(os.tmpdir(), "admin-service-feishu-session-"));
+    tempDirs.push(dataRoot);
+
+    const config = loadConfig({
+      SLACK_APP_TOKEN: "xapp-test",
+      SLACK_BOT_TOKEN: "xoxb-test",
+      DATA_ROOT: dataRoot,
+    } as NodeJS.ProcessEnv);
+
+    await fs.mkdir(config.codexHome, { recursive: true });
+    await fs.mkdir(config.logDir, { recursive: true });
+
+    const stateStore = new StateStore(config.stateDir, config.sessionsRoot);
+    const sessions = new SessionManager({
+      stateStore,
+      sessionsRoot: config.sessionsRoot,
+    });
+    await sessions.load();
+    const feishuSession = await sessions.ensureChatSession(
+      {
+        platform: "feishu",
+        conversationId: "oc_group",
+        rootMessageId: "om_root",
+      },
+      {
+        conversationKind: "group",
+        platformThreadId: "om_root",
+      },
+    );
+
+    const permalinkCalls: Array<Record<string, string>> = [];
+    const service = new AdminService({
+      config,
+      startedAt: new Date("2026-03-19T00:00:00.000Z"),
+      sessions,
+      authProfiles: {
+        listProfilesStatus: async () => ({
+          managedRoot: path.join(dataRoot, "auth-profiles"),
+          profilesRoot: path.join(dataRoot, "auth-profiles", "docker", "profiles"),
+          profiles: [],
+        }),
+      } as never,
+      githubAuthorMappings: {
+        load: async () => {},
+        listMappings: () => [],
+      } as never,
+      runtime: {
+        restartRuntime: async () => {},
+        readAccountSummary: async () => ({
+          account: null,
+          requiresOpenaiAuth: true,
+        }),
+        readAccountRateLimits: async () => ({
+          rateLimits: null,
+          rateLimitsByLimitId: {},
+        }),
+      } as never,
+      slackConversations: {
+        getConversationInfo: async () => null,
+        getPermalink: async (options) => {
+          permalinkCalls.push(options);
+          return "https://workspace.slack.com/archives/C123/p111222";
+        },
+      },
+    });
+
+    const summaries = (await service.listSessionSummaries()) as Record<string, any>;
+    expect(summaries.sessions).toEqual([
+      expect.objectContaining({
+        key: feishuSession.key,
+        platform: "feishu",
+        conversationId: "oc_group",
+        conversationKind: "group",
+        rootMessageId: "om_root",
+        platformThreadId: "om_root",
+        channelId: "oc_group",
+        rootThreadTs: "om_root",
+        threadUrl: null,
+      }),
+    ]);
+    await expect(service.getSessionSlackThreadUrl(feishuSession.key)).resolves.toMatchObject({
+      ok: false,
+      error: "platform_permalink_unavailable",
+      platform: "feishu",
+      sessionKey: feishuSession.key,
+    });
+    expect(permalinkCalls).toEqual([]);
+  });
+
   it("exposes GitHub author mappings and OAuth bindings as unified GitHub accounts", async () => {
     const dataRoot = await fs.mkdtemp(path.join(os.tmpdir(), "admin-service-github-accounts-"));
     tempDirs.push(dataRoot);

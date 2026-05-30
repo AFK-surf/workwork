@@ -30,7 +30,9 @@ export async function startService(): Promise<{
   const bridge = createSlackBridge({
     config,
     sessions: sessionManager,
+    codex: codexBroker,
     agentRuntime,
+    githubAuthorMappings,
     githubPrIdentity,
   });
   const isolatedMcp = createIsolatedMcpService(config);

@@ -31,6 +31,7 @@ export interface MockTurnContext {
   readonly input: readonly CodexInputItem[];
   readonly thread: MockThreadRecord;
   complete: (message?: string, usage?: unknown) => void;
+  fail: (message: string) => void;
   interrupt: (message?: string) => void;
 }
 
@@ -371,6 +372,15 @@ export class MockCodexAppServer {
           }),
         );
       },
+      fail: (message) => {
+        if (turn.status !== "inProgress") {
+          return;
+        }
+
+        turn.status = "failed";
+        turn.errorMessage = message;
+        thread.activeTurnId = undefined;
+      },
       interrupt: (message = "") => {
         this.#interruptTurn(socket, thread, turn, message);
       },
@@ -380,6 +390,8 @@ export class MockCodexAppServer {
   async #runTurnStart(context: MockTurnContext, turn: MockTurnRecord): Promise<void> {
     try {
       await this.onTurnStart?.(context);
+    } catch (error) {
+      context.fail(error instanceof Error ? error.message : String(error));
     } finally {
       if (turn.status === "inProgress") {
         context.complete("");

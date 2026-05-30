@@ -450,14 +450,22 @@ describe.sequential("slack-codex-broker e2e", () => {
     cleanups.push(() => restarted.stop());
 
     try {
-      await waitFor(() => mockCodex.turnsStarted.length >= 2, "replacement turn after active input mismatch", 60_000);
+      await waitFor(
+        () => {
+          const deliveredTexts = [...mockCodex.turnsStarted.slice(1).map((turn) => collectTextInput(turn.input)), ...mockCodex.steers.map((steer) => collectTextInput(steer.input))];
+          return deliveredTexts.some((text) => text.includes("recovered_message_batch_json"));
+        },
+        "replacement turn after active input mismatch",
+        60_000,
+      );
     } catch (error) {
       console.error(restarted.logs.join("").slice(-8_000));
       throw error;
     }
     await waitForSessionIdle(tempRoot, sessionKey);
 
-    const recoveredTurnText = collectTextInput(mockCodex.turnsStarted[1]!.input);
+    const deliveredTexts = [...mockCodex.turnsStarted.slice(1).map((turn) => collectTextInput(turn.input)), ...mockCodex.steers.map((steer) => collectTextInput(steer.input))];
+    const recoveredTurnText = deliveredTexts.find((text) => text.includes("recovered_message_batch_json")) ?? "";
     expect(recoveredTurnText).toContain("recovered_message_batch_json");
     expect(recoveredTurnText).toContain("MISSED_AFTER_MISMATCH");
 

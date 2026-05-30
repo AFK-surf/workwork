@@ -63,6 +63,31 @@ describe("admin session row display", () => {
     expect(shouldShowSessionState({ rank: 10 })).toBe(false);
   });
 
+  it("marks Feishu sessions as a distinct dashboard platform", () => {
+    const meta = renderSessionMeta(
+      {
+        key: "feishu:b2NfZ3JvdXA:b21fcm9vdA",
+        platform: "feishu",
+        channelId: "oc_group",
+        channelLabel: "oc_group",
+        conversationKind: "group",
+        rootThreadTs: "om_root",
+        usage: {
+          turnCount: 1,
+          totalTokens: 900,
+        },
+      },
+      new Map(),
+    );
+
+    expect(meta.map((item) => item.label)).toEqual(["飞书", "oc_group", "Token 900"]);
+    expect(meta.at(0)).toMatchObject({
+      key: "platform",
+      tone: "good",
+      title: "Feishu session",
+    });
+  });
+
   it("only shows active job count and keeps distinct states visible", () => {
     const meta = renderSessionMeta(
       {

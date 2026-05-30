@@ -3,7 +3,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { checkContainer, createTempEnvFile, getRunArgumentsFromInspect, inspectContainer, readSessionStatsFromHost, repoRoot, runCommand, writeRolloutMetadata, getDataRootSource } from "./lib.mjs";
+import { checkContainer, createTempEnvFile, getRunArgumentsFromInspect, inspectContainer, readSessionStatsFromHost, repoRoot, runCommand, sanitizeOpsDockerLogsForEvidence, shouldRunFeishuPreflight, writeRolloutMetadata, getEnvObjectFromInspect, getDataRootSource, summarizeOpsEvidencePath } from "./lib.mjs";
 
 function parseArgs(argv) {
   const options = {
@@ -12,6 +12,7 @@ function parseArgs(argv) {
     skipBuild: false,
     skipTests: false,
     skipChecks: false,
+    skipFeishuPreflight: false,
     allowActive: false,
   };
 
@@ -39,12 +40,15 @@ function parseArgs(argv) {
       case "--skip-checks":
         options.skipChecks = true;
         break;
+      case "--skip-feishu-preflight":
+        options.skipFeishuPreflight = true;
+        break;
       case "--allow-active":
         options.allowActive = true;
         break;
       case "--help":
       case "-h":
-        console.log("Usage: node scripts/ops/rollout-real.mjs [--container <name>] [--image <name>] [--skip-build] [--skip-tests] [--skip-checks] [--allow-active]");
+        console.log("Usage: node scripts/ops/rollout-real.mjs [--container <name>] [--image <name>] [--skip-build] [--skip-tests] [--skip-checks] [--skip-feishu-preflight] [--allow-active]");
         process.exit(0);
       default:
         throw new Error(`Unknown argument: ${argument}`);
@@ -62,6 +66,34 @@ async function assertNoActiveSessions(containerName, allowActive) {
   }
 
   return sessionStats;
+}
+
+async function runFeishuPreflightIfEnabled(inspect, rolloutDir, skipFeishuPreflight) {
+  if (skipFeishuPreflight) {
+    return {
+      skipped: true,
+      reason: "skip_feishu_preflight",
+    };
+  }
+
+  if (!shouldRunFeishuPreflight(inspect)) {
+    return {
+      skipped: true,
+      reason: "feishu_disabled",
+    };
+  }
+
+  const outputDir = path.join(rolloutDir, "feishu-preflight");
+  const stdout = runCommand("pnpm", ["exec", "tsx", "test/manual/run-real-feishu-smoke.ts", "--preflight", "--output-dir", outputDir, "--json"], {
+    capture: true,
+    env: getEnvObjectFromInspect(inspect),
+  });
+
+  return {
+    skipped: false,
+    outputDir: summarizeOpsEvidencePath(outputDir),
+    report: JSON.parse(stdout),
+  };
 }
 
 const options = parseArgs(process.argv.slice(2));
@@ -83,22 +115,28 @@ const { mountArgs, portArgs, restartPolicy } = getRunArgumentsFromInspect(inspec
 
 const rolloutStamp = new Date().toISOString().replace(/[:.]/g, "-");
 const rolloutDir = path.join(repoRoot, ".backups", "rollouts", rolloutStamp);
+const rolloutDirSummary = summarizeOpsEvidencePath(rolloutDir);
+const feishuPreflight = await runFeishuPreflightIfEnabled(inspect, rolloutDir, options.skipFeishuPreflight);
 await writeRolloutMetadata(rolloutDir, {
   containerName: options.containerName,
   imageName: options.imageName,
+  rolloutDir: rolloutDirSummary,
   beforeStats,
   restartPolicy,
+  feishuPreflight,
   startedAt: new Date().toISOString(),
 });
-await fs.writeFile(path.join(rolloutDir, "logs-before.txt"), `${runCommand("docker", ["logs", "--tail", "200", options.containerName], { capture: true })}\n`);
+await fs.writeFile(path.join(rolloutDir, "logs-before.txt"), sanitizeOpsDockerLogsForEvidence(runCommand("docker", ["logs", "--tail", "200", options.containerName], { capture: true })));
 
 try {
   const latestStats = await assertNoActiveSessions(options.containerName, options.allowActive);
   await writeRolloutMetadata(rolloutDir, {
     containerName: options.containerName,
     imageName: options.imageName,
+    rolloutDir: rolloutDirSummary,
     beforeStats: latestStats,
     restartPolicy,
+    feishuPreflight,
     startedAt: new Date().toISOString(),
   });
 
@@ -113,10 +151,12 @@ try {
     await writeRolloutMetadata(rolloutDir, {
       containerName: options.containerName,
       imageName: options.imageName,
+      rolloutDir: rolloutDirSummary,
       beforeStats: latestStats,
       restartPolicy,
       startedAt: new Date().toISOString(),
       containerId,
+      feishuPreflight,
       checkSummary: summary,
     });
   }
@@ -125,7 +165,8 @@ try {
     JSON.stringify(
       {
         containerId,
-        rolloutDir,
+        rolloutDir: rolloutDirSummary,
+        feishuPreflight,
         checkSummary: summary,
       },
       null,

@@ -209,6 +209,93 @@ describe("AdminService", () => {
     expect((status.state as { recentBrokerLogs: unknown[] }).recentBrokerLogs).toEqual([{ message: "tail-1" }, { message: "tail-2" }]);
   });
 
+  it("includes independent Slack and Feishu platform health in status output", async () => {
+    const dataRoot = await fs.mkdtemp(path.join(os.tmpdir(), "admin-service-platforms-"));
+    tempDirs.push(dataRoot);
+
+    const config = loadConfig({
+      SLACK_APP_TOKEN: "xapp-test",
+      SLACK_BOT_TOKEN: "xoxb-test",
+      FEISHU_ENABLED: "true",
+      FEISHU_APP_ID: "cli_test",
+      FEISHU_APP_SECRET: "secret-test",
+      FEISHU_BOT_OPEN_ID: "ou_test",
+      FEISHU_GROUP_MESSAGE_MODE: "all",
+      FEISHU_ALL_MESSAGE_DELIVERY_VERIFIED: "true",
+      DATA_ROOT: dataRoot,
+    } as NodeJS.ProcessEnv);
+
+    await fs.mkdir(config.codexHome, { recursive: true });
+    await fs.mkdir(path.join(config.logDir, "broker"), { recursive: true });
+    await fs.writeFile(
+      path.join(config.logDir, "broker", "2026-03-19-00.jsonl"),
+      [JSON.stringify({ ts: "2026-03-19T00:00:01.000Z", message: "chat.platform.ready", meta: { platform: "slack", source: "socket_mode" } }), JSON.stringify({ ts: "2026-03-19T00:00:02.000Z", message: "chat.platform.ready", meta: { platform: "feishu", source: "long_connection", groupMessageMode: "all" } }), ""].join(
+        "\n",
+      ),
+      "utf8",
+    );
+
+    const service = new AdminService({
+      config,
+      startedAt: new Date("2026-03-19T00:00:00.000Z"),
+      sessions: {
+        listSessions: () => [],
+        listInboundMessages: () => [],
+        listBackgroundJobs: () => [],
+      } as never,
+      authProfiles: {
+        listProfilesStatus: async () => ({
+          managedRoot: path.join(dataRoot, "auth-profiles"),
+          profilesRoot: path.join(dataRoot, "auth-profiles", "docker", "profiles"),
+          profiles: [],
+        }),
+      } as never,
+      githubAuthorMappings: {
+        load: async () => {},
+        listMappings: () => [],
+      } as never,
+      runtime: {
+        restartRuntime: async () => {},
+        readAccountSummary: async () => ({
+          account: null,
+          requiresOpenaiAuth: true,
+        }),
+        readAccountRateLimits: async () => ({
+          rateLimits: null,
+          rateLimitsByLimitId: {},
+        }),
+      } as never,
+    });
+
+    const status = await service.getStatus();
+
+    expect(status.platforms).toMatchObject({
+      slack: {
+        platform: "slack",
+        enabled: true,
+        state: "ready",
+        connection: {
+          mode: "socket_mode",
+          connected: true,
+          lastConnectedAt: "2026-03-19T00:00:01.000Z",
+        },
+      },
+      feishu: {
+        platform: "feishu",
+        enabled: true,
+        state: "ready",
+        groupMessageMode: "all",
+        allMessageDeliveryVerified: true,
+        connection: {
+          mode: "long_connection",
+          connected: true,
+          lastConnectedAt: "2026-03-19T00:00:02.000Z",
+        },
+        permissions: expect.arrayContaining([expect.objectContaining({ name: "bot_identity", status: "configured" }), expect.objectContaining({ name: "im:message.group_msg", status: "verified" }), expect.objectContaining({ name: "im:message:send_as_bot", status: "configured" })]),
+      },
+    });
+  });
+
   it("reloads persisted session state before reporting status", async () => {
     const dataRoot = await fs.mkdtemp(path.join(os.tmpdir(), "admin-service-state-refresh-"));
     tempDirs.push(dataRoot);

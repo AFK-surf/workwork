@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { dockerExecNode, getDataRootSource, getPublishedPort, inspectContainer, readDetailedStateFromHost } from "./lib.mjs";
+import { dockerExecNode, getDataRootSource, getPublishedPort, inspectContainer, readDetailedStateFromHost, summarizeOpsHostPath } from "./lib.mjs";
 
 function parseArgs(argv) {
   const options = {
@@ -120,7 +120,7 @@ console.log(
         startedAt: inspect.State?.StartedAt ?? null,
         restartCount: inspect.RestartCount ?? 0,
         hostPort,
-        dataRootSource,
+        dataRootSource: summarizeOpsHostPath(dataRootSource),
       },
       health,
       ready,

@@ -2,6 +2,8 @@ import type { AppConfig } from "../../config.js";
 import { logger } from "../../logger.js";
 import type { BackgroundJobEventPayload, JsonLike, PersistedInboundMessage, ResolvedSlackThreadMessage, SlackSessionRecord, SlackUserIdentity } from "../../types.js";
 import type { AgentRuntime } from "../agent-runtime/types.js";
+import type { ChatOutboundFile, ChatOutboundMessage, ChatPlatform, ChatUploadedFile } from "../chat/chat-types.js";
+import type { FeishuCodexBridge } from "../feishu/feishu-codex-bridge.js";
 import type { GitHubPrIdentityService, GitHubPrTokenResolution } from "../github-pr-identity-service.js";
 import { SessionManager } from "../session-manager.js";
 import type { SessionChannelMetadata } from "../session-manager.js";
@@ -22,13 +24,14 @@ export class SlackAgentBridge {
   readonly #coauthors: SlackCoauthorService;
   readonly #githubPrIdentity: GitHubPrIdentityService;
   readonly #conversations: SlackConversationService;
+  readonly #feishuBridge?: FeishuCodexBridge | undefined;
   #botUserId = "";
   #botIdentity: SlackUserIdentity | null = null;
   #slackEventDrainPromise: Promise<void> | undefined;
   #slackEventDrainTimer: NodeJS.Timeout | undefined;
   #slackEventRetryTimer: NodeJS.Timeout | undefined;
 
-  constructor(options: { readonly config: AppConfig; readonly sessions: SessionManager; readonly agentRuntime: AgentRuntime; readonly githubPrIdentity: GitHubPrIdentityService }) {
+  constructor(options: { readonly config: AppConfig; readonly sessions: SessionManager; readonly agentRuntime: AgentRuntime; readonly githubPrIdentity: GitHubPrIdentityService; readonly feishuBridge?: FeishuCodexBridge | undefined }) {
     this.#config = options.config;
     this.#sessions = options.sessions;
     this.#agentRuntime = options.agentRuntime;
@@ -47,6 +50,7 @@ export class SlackAgentBridge {
       githubPrIdentity: options.githubPrIdentity,
     });
     this.#githubPrIdentity = options.githubPrIdentity;
+    this.#feishuBridge = options.feishuBridge;
     this.#conversations = new SlackConversationService({
       config: this.#config,
       sessions: this.#sessions,
@@ -72,6 +76,7 @@ export class SlackAgentBridge {
     await this.#backfillSessionChannelMetadata("startup");
     await this.#backfillInboundMentionedUsers("startup");
     await this.#conversations.start();
+    await this.#startFeishuBridge();
     await this.#drainPersistedSlackEvents("startup");
 
     this.#slackSocket.on("ready", () => {
@@ -88,12 +93,17 @@ export class SlackAgentBridge {
     this.#slackSocket.on("interactive", (payload) => this.#handleInteractive(payload as Record<string, unknown>));
 
     await this.#slackSocket.start();
+    logger.info("chat.platform.ready", {
+      platform: "slack",
+      source: "socket_mode",
+    });
   }
 
   async stop(): Promise<void> {
     this.#clearSlackEventDrainTimer();
     this.#clearSlackEventRetryTimer();
     await this.#slackSocket.stop();
+    await this.#feishuBridge?.stop();
     await this.#conversations.stop();
     await this.#agentRuntime.stop();
   }
@@ -122,8 +132,51 @@ export class SlackAgentBridge {
     return await this.#conversations.deleteSession(sessionKey);
   }
 
-  async acceptBackgroundJobEvent(options: { readonly channelId: string; readonly rootThreadTs: string; readonly payload: BackgroundJobEventPayload }): Promise<void> {
-    await this.#conversations.acceptBackgroundJobEvent(options);
+  async acceptBackgroundJobEvent(options: {
+    readonly platform?: ChatPlatform | undefined;
+    readonly conversationId?: string | undefined;
+    readonly rootMessageId?: string | undefined;
+    readonly channelId?: string | undefined;
+    readonly rootThreadTs?: string | undefined;
+    readonly payload: BackgroundJobEventPayload;
+  }): Promise<void> {
+    if (options.platform === "feishu") {
+      await this.#requireFeishuBridge().acceptBackgroundJobEvent({
+        conversationId: options.conversationId ?? options.channelId ?? "",
+        rootMessageId: options.rootMessageId ?? options.rootThreadTs ?? "",
+        payload: options.payload,
+      });
+      return;
+    }
+
+    const channelId = options.channelId ?? options.conversationId;
+    const rootThreadTs = options.rootThreadTs ?? options.rootMessageId;
+    if (!channelId || !rootThreadTs) {
+      throw new Error("Slack background job event requires channelId and rootThreadTs");
+    }
+
+    await this.#conversations.acceptBackgroundJobEvent({
+      channelId,
+      rootThreadTs,
+      payload: options.payload,
+    });
+  }
+
+  async readChatThreadHistory(options: { readonly platform: ChatPlatform; readonly conversationId: string; readonly rootMessageId: string; readonly beforeMessageId?: string | undefined; readonly beforeCursor?: string | undefined; readonly limit?: number | undefined }) {
+    if (options.platform === "feishu") {
+      return await this.#requireFeishuBridge().readChatThreadHistory(options);
+    }
+
+    const history = await this.readThreadHistory({
+      channelId: options.conversationId,
+      rootThreadTs: options.rootMessageId,
+      beforeMessageTs: options.beforeMessageId ?? options.beforeCursor,
+      limit: options.limit,
+    });
+    return {
+      ...history,
+      nextCursor: undefined,
+    };
   }
 
   async postSlackMessage(options: { readonly channelId: string; readonly rootThreadTs: string; readonly text: string; readonly kind?: "progress" | "final" | "block" | "wait" | undefined; readonly reason?: string | undefined }): Promise<void> {
@@ -149,6 +202,82 @@ export class SlackAgentBridge {
     return await this.#conversations.postSlackFile(options);
   }
 
+  async postChatMessage(options: {
+    readonly platform: ChatPlatform;
+    readonly conversationId: string;
+    readonly rootMessageId: string;
+    readonly text: string;
+    readonly format?: ChatOutboundMessage["format"] | undefined;
+    readonly kind?: ChatOutboundMessage["kind"] | undefined;
+    readonly reason?: string | undefined;
+    readonly richText?: ChatOutboundMessage["richText"] | undefined;
+    readonly card?: ChatOutboundMessage["card"] | undefined;
+  }) {
+    if (options.platform === "feishu") {
+      return await this.#requireFeishuBridge().postChatMessage(options);
+    }
+
+    await this.postSlackMessage({
+      channelId: options.conversationId,
+      rootThreadTs: options.rootMessageId,
+      text: options.text,
+      kind: options.kind,
+      reason: options.reason,
+    });
+    logger.info("chat.outbound.posted", {
+      platform: "slack",
+      sessionKey: `${options.conversationId}:${options.rootMessageId}`,
+      conversationId: options.conversationId,
+      rootMessageId: options.rootMessageId,
+      format: options.format ?? "text",
+      durationMs: 0,
+    });
+    return {
+      platform: "slack" as const,
+      conversationId: options.conversationId,
+      rootMessageId: options.rootMessageId,
+    };
+  }
+
+  async postChatState(options: { readonly platform: ChatPlatform; readonly conversationId: string; readonly rootMessageId: string; readonly kind: "wait" | "block" | "final"; readonly reason?: string | undefined }): Promise<void> {
+    if (options.platform === "feishu") {
+      await this.#requireFeishuBridge().postChatState(options);
+      return;
+    }
+
+    await this.postSlackState({
+      channelId: options.conversationId,
+      rootThreadTs: options.rootMessageId,
+      kind: options.kind,
+      reason: options.reason,
+    });
+  }
+
+  async postChatFile(
+    options: {
+      readonly platform: ChatPlatform;
+      readonly conversationId: string;
+      readonly rootMessageId: string;
+    } & ChatOutboundFile,
+  ): Promise<ChatUploadedFile | unknown> {
+    if (options.platform === "feishu") {
+      return await this.#requireFeishuBridge().postChatFile(options);
+    }
+
+    return await this.postSlackFile({
+      channelId: options.conversationId,
+      rootThreadTs: options.rootMessageId,
+      filePath: options.filePath,
+      contentBase64: options.contentBase64,
+      filename: options.filename,
+      title: options.title,
+      initialComment: options.initialComment,
+      altText: options.altText,
+      snippetType: options.snippetType,
+      contentType: options.contentType,
+    });
+  }
+
   async getCommitCoauthorStatus(cwd: string) {
     return await this.#coauthors.getCommitCoauthorStatus(cwd);
   }
@@ -158,7 +287,12 @@ export class SlackAgentBridge {
   }
 
   async resolveCommitCoauthors(options: { readonly cwd: string; readonly commitMessage: string; readonly primaryAuthorEmail?: string | undefined }) {
-    return await this.#coauthors.resolveCommitCoauthors(options);
+    const slackResult = await this.#coauthors.resolveCommitCoauthors(options);
+    if (slackResult.status !== "noop" || !this.#feishuBridge) {
+      return slackResult;
+    }
+
+    return await this.#feishuBridge.resolveCommitCoauthors(options);
   }
 
   async resolveGitHubPrToken(options: { readonly cwd: string; readonly command: readonly string[] }): Promise<GitHubPrTokenResolution> {
@@ -176,6 +310,55 @@ export class SlackAgentBridge {
       session,
       command: options.command,
     });
+  }
+
+  async #startFeishuBridge(): Promise<void> {
+    if (!this.#feishuBridge) {
+      return;
+    }
+
+    try {
+      await this.#feishuBridge.start();
+      if (this.#config.feishuGroupMessageMode === "at_only") {
+        logger.warn("chat.platform.degraded", {
+          platform: "feishu",
+          source: "long_connection",
+          groupMessageMode: this.#config.feishuGroupMessageMode,
+          startupRequired: this.#config.feishuStartupRequired,
+          degradedReason: "group_message_all_unavailable",
+          permission: "im:message.group_msg",
+        });
+      } else if (!this.#config.feishuAllMessageDeliveryVerified) {
+        logger.warn("chat.platform.degraded", {
+          platform: "feishu",
+          source: "long_connection",
+          groupMessageMode: this.#config.feishuGroupMessageMode,
+          startupRequired: this.#config.feishuStartupRequired,
+          degradedReason: "all_message_delivery_unverified",
+          permission: "im:message.group_msg",
+        });
+      }
+    } catch (error) {
+      logger.warn("chat.platform.degraded", {
+        platform: "feishu",
+        source: "long_connection",
+        groupMessageMode: this.#config.feishuGroupMessageMode,
+        startupRequired: this.#config.feishuStartupRequired,
+        degradedReason: "startup_failed",
+        errorClass: error instanceof Error ? error.name : "Error",
+      });
+      if (this.#config.feishuStartupRequired) {
+        throw error;
+      }
+    }
+  }
+
+  #requireFeishuBridge(): FeishuCodexBridge {
+    if (!this.#feishuBridge) {
+      throw new Error("Feishu bridge is not enabled in this runtime");
+    }
+
+    return this.#feishuBridge;
   }
 
   async #acceptEventsApi(payload: { readonly event?: Record<string, any>; readonly event_id?: string }): Promise<void> {
@@ -329,6 +512,15 @@ export class SlackAgentBridge {
     if (!parsed) {
       return;
     }
+
+    logger.info("chat.message.accepted", {
+      platform: "slack",
+      sessionKey: `${parsed.channelId}:${parsed.rootThreadTs}`,
+      conversationId: parsed.channelId,
+      rootMessageId: parsed.rootThreadTs,
+      messageId: parsed.messageTs,
+      route: parsed.route,
+    });
 
     const channelMetadata = await this.#resolveChannelMetadata(parsed);
 

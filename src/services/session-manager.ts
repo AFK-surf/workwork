@@ -20,6 +20,8 @@ import type {
 } from "../types.js";
 import { StateStore } from "../store/state-store.js";
 import { ensureDir } from "../utils/fs.js";
+import { type ChatSessionCoordinates, createChatSessionKey, createChatWorkspacePath } from "./chat/chat-session-key.js";
+import type { ChatConversationKind, ChatPlatform } from "./chat/chat-types.js";
 
 export interface SessionChannelMetadata {
   readonly channelName?: string | undefined;
@@ -46,6 +48,14 @@ export class SessionManager {
     return `${channelId}:${rootThreadTs}`;
   }
 
+  static createChatKey(coordinates: ChatSessionCoordinates): string {
+    if (coordinates.platform === "slack") {
+      return SessionManager.createKey(coordinates.conversationId, coordinates.rootMessageId);
+    }
+
+    return createChatSessionKey(coordinates);
+  }
+
   async load(): Promise<void> {
     await this.#stateStore.load();
     await Promise.all(
@@ -57,6 +67,10 @@ export class SessionManager {
 
   getSession(channelId: string, rootThreadTs: string): SlackSessionRecord | undefined {
     return this.#stateStore.getSession(SessionManager.createKey(channelId, rootThreadTs));
+  }
+
+  getChatSession(coordinates: ChatSessionCoordinates): SlackSessionRecord | undefined {
+    return this.#stateStore.getSession(SessionManager.createChatKey(coordinates));
   }
 
   listSessions(): SlackSessionRecord[] {
@@ -123,6 +137,41 @@ export class SessionManager {
     return record;
   }
 
+  async ensureChatSession(
+    coordinates: ChatSessionCoordinates,
+    options?: {
+      readonly conversationKind?: ChatConversationKind | undefined;
+      readonly platformThreadId?: string | undefined;
+    },
+  ): Promise<SlackSessionRecord> {
+    const existing = this.getChatSession(coordinates);
+    if (existing) {
+      await ensureDir(existing.workspacePath);
+      return existing;
+    }
+
+    const workspacePath = coordinates.platform === "slack" ? this.#createWorkspacePath(coordinates.conversationId, coordinates.rootMessageId) : createChatWorkspacePath(this.#sessionsRoot, coordinates);
+    await ensureDir(workspacePath);
+
+    const now = new Date().toISOString();
+    const record: SlackSessionRecord = {
+      key: SessionManager.createChatKey(coordinates),
+      platform: coordinates.platform,
+      conversationId: coordinates.conversationId,
+      conversationKind: options?.conversationKind,
+      rootMessageId: coordinates.rootMessageId,
+      platformThreadId: options?.platformThreadId,
+      channelId: coordinates.conversationId,
+      rootThreadTs: coordinates.rootMessageId,
+      workspacePath,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    await this.#stateStore.upsertSession(record);
+    return record;
+  }
+
   async updateSession(record: SlackSessionRecord): Promise<void> {
     await this.#stateStore.patchSession(record.key, {
       ...record,
@@ -164,6 +213,22 @@ export class SessionManager {
     return session;
   }
 
+  async setChatCodexThreadId(coordinates: ChatSessionCoordinates, codexThreadId: string | undefined): Promise<SlackSessionRecord> {
+    const session = await this.#patchChatSession(coordinates, {
+      agentSessionId: codexThreadId,
+      codexThreadId,
+    });
+    if (codexThreadId) {
+      await this.#stateStore.bindAgentSession({
+        sessionKey: session.key,
+        channelId: session.channelId,
+        rootThreadTs: session.rootThreadTs,
+        agentSessionId: codexThreadId,
+      });
+    }
+    return session;
+  }
+
   async setActiveTurnId(channelId: string, rootThreadTs: string, activeTurnId: string | undefined): Promise<SlackSessionRecord> {
     const now = new Date().toISOString();
     const session = await this.#patchSession(channelId, rootThreadTs, {
@@ -176,6 +241,25 @@ export class SessionManager {
         channelId: session.channelId,
         rootThreadTs: session.rootThreadTs,
         agentSessionId: session.agentSessionId,
+        turnId: activeTurnId,
+        at: now,
+      });
+    }
+    return session;
+  }
+
+  async setChatActiveTurnId(coordinates: ChatSessionCoordinates, activeTurnId: string | undefined): Promise<SlackSessionRecord> {
+    const now = new Date().toISOString();
+    const session = await this.#patchChatSession(coordinates, {
+      activeTurnId,
+      activeTurnStartedAt: activeTurnId ? now : undefined,
+    });
+    if (activeTurnId) {
+      await this.#stateStore.bindAgentTurn({
+        sessionKey: session.key,
+        channelId: session.channelId,
+        rootThreadTs: session.rootThreadTs,
+        agentSessionId: session.agentSessionId ?? session.codexThreadId,
         turnId: activeTurnId,
         at: now,
       });
@@ -210,6 +294,12 @@ export class SessionManager {
 
   async setLastObservedMessageTs(channelId: string, rootThreadTs: string, lastObservedMessageTs: string | undefined): Promise<SlackSessionRecord> {
     return await this.#patchSession(channelId, rootThreadTs, {
+      lastObservedMessageTs,
+    });
+  }
+
+  async setChatLastObservedMessageTs(coordinates: ChatSessionCoordinates, lastObservedMessageTs: string | undefined): Promise<SlackSessionRecord> {
+    return await this.#patchChatSession(coordinates, {
       lastObservedMessageTs,
     });
   }
@@ -309,6 +399,23 @@ export class SessionManager {
     });
   }
 
+  async recordChatTurnSignal(
+    coordinates: ChatSessionCoordinates,
+    signal: {
+      readonly turnId?: string | undefined;
+      readonly kind: SlackTurnSignalKind;
+      readonly reason?: string | undefined;
+      readonly occurredAt?: string | undefined;
+    },
+  ): Promise<SlackSessionRecord> {
+    return await this.#patchChatSession(coordinates, {
+      lastTurnSignalTurnId: signal.turnId,
+      lastTurnSignalKind: signal.kind,
+      lastTurnSignalReason: signal.reason?.trim() || undefined,
+      lastTurnSignalAt: signal.occurredAt ?? new Date().toISOString(),
+    });
+  }
+
   async addCoAuthorCandidates(channelId: string, rootThreadTs: string, userIds: readonly string[]): Promise<SlackSessionRecord> {
     const session = this.#requireSession(channelId, rootThreadTs);
     const additions = userIds
@@ -322,6 +429,27 @@ export class SessionManager {
     }
 
     return await this.#patchSession(channelId, rootThreadTs, {
+      coAuthorCandidateUserIds: [...(session.coAuthorCandidateUserIds ?? []), ...additions],
+      coAuthorCandidateRevision: (session.coAuthorCandidateRevision ?? 0) + 1,
+      coAuthorIgnoreMissingRevision: undefined,
+      coAuthorPromptRevision: undefined,
+      coAuthorPromptedAt: undefined,
+    });
+  }
+
+  async addChatCoAuthorCandidates(coordinates: ChatSessionCoordinates, userIds: readonly string[]): Promise<SlackSessionRecord> {
+    const session = this.#requireChatSession(coordinates);
+    const additions = userIds
+      .map((userId) => userId.trim())
+      .filter(Boolean)
+      .filter((userId, index, array) => array.indexOf(userId) === index)
+      .filter((userId) => !(session.coAuthorCandidateUserIds ?? []).includes(userId));
+
+    if (additions.length === 0) {
+      return session;
+    }
+
+    return await this.#patchChatSession(coordinates, {
       coAuthorCandidateUserIds: [...(session.coAuthorCandidateUserIds ?? []), ...additions],
       coAuthorCandidateRevision: (session.coAuthorCandidateRevision ?? 0) + 1,
       coAuthorIgnoreMissingRevision: undefined,
@@ -351,6 +479,26 @@ export class SessionManager {
     });
   }
 
+  async confirmChatCoAuthors(
+    coordinates: ChatSessionCoordinates,
+    options: {
+      readonly userIds: readonly string[];
+      readonly candidateRevision: number;
+      readonly ignoreMissing?: boolean | undefined;
+    },
+  ): Promise<SlackSessionRecord> {
+    const session = this.#requireChatSession(coordinates);
+    const confirmedUserIds = (session.coAuthorCandidateUserIds ?? []).filter((userId) => options.userIds.includes(userId));
+
+    return await this.#patchChatSession(coordinates, {
+      coAuthorConfirmedUserIds: confirmedUserIds,
+      coAuthorConfirmedRevision: options.candidateRevision,
+      coAuthorIgnoreMissingRevision: options.ignoreMissing ? options.candidateRevision : undefined,
+      coAuthorPromptRevision: options.candidateRevision,
+      coAuthorPromptedAt: undefined,
+    });
+  }
+
   async allowMissingCoAuthors(channelId: string, rootThreadTs: string, candidateRevision: number): Promise<SlackSessionRecord> {
     return await this.#patchSession(channelId, rootThreadTs, {
       coAuthorIgnoreMissingRevision: candidateRevision,
@@ -361,6 +509,13 @@ export class SessionManager {
 
   async markCoAuthorPrompted(channelId: string, rootThreadTs: string, promptRevision: number): Promise<SlackSessionRecord> {
     return await this.#patchSession(channelId, rootThreadTs, {
+      coAuthorPromptRevision: promptRevision,
+      coAuthorPromptedAt: new Date().toISOString(),
+    });
+  }
+
+  async markChatCoAuthorPrompted(coordinates: ChatSessionCoordinates, promptRevision: number): Promise<SlackSessionRecord> {
+    return await this.#patchChatSession(coordinates, {
       coAuthorPromptRevision: promptRevision,
       coAuthorPromptedAt: new Date().toISOString(),
     });
@@ -417,9 +572,17 @@ export class SessionManager {
     return await this.#stateStore.resetInflightMessages(SessionManager.createKey(channelId, rootThreadTs), batchId);
   }
 
-  listBackgroundJobs(options?: { readonly channelId?: string | undefined; readonly rootThreadTs?: string | undefined; readonly id?: string | undefined }): PersistedBackgroundJob[] {
+  listBackgroundJobs(options?: { readonly platform?: ChatPlatform | undefined; readonly conversationId?: string | undefined; readonly rootMessageId?: string | undefined; readonly channelId?: string | undefined; readonly rootThreadTs?: string | undefined; readonly id?: string | undefined }): PersistedBackgroundJob[] {
+    const sessionKey =
+      options?.platform && options.conversationId && options.rootMessageId
+        ? SessionManager.createChatKey({
+            platform: options.platform,
+            conversationId: options.conversationId,
+            rootMessageId: options.rootMessageId,
+          })
+        : undefined;
     return this.#stateStore.listBackgroundJobs({
-      sessionKey: options?.channelId && options?.rootThreadTs ? SessionManager.createKey(options.channelId, options.rootThreadTs) : undefined,
+      sessionKey: sessionKey ?? (options?.channelId && options?.rootThreadTs ? SessionManager.createKey(options.channelId, options.rootThreadTs) : undefined),
       id: options?.id,
     });
   }
@@ -513,6 +676,23 @@ export class SessionManager {
     }
 
     return session;
+  }
+
+  #requireChatSession(coordinates: ChatSessionCoordinates): SlackSessionRecord {
+    const session = this.getChatSession(coordinates);
+    if (!session) {
+      throw new Error(`Unknown chat session: ${coordinates.platform}:${coordinates.conversationId}:${coordinates.rootMessageId}`);
+    }
+
+    return session;
+  }
+
+  async #patchChatSession(coordinates: ChatSessionCoordinates, patch: Partial<SlackSessionRecord>): Promise<SlackSessionRecord> {
+    const session = this.#requireChatSession(coordinates);
+    return await this.#stateStore.patchSession(session.key, {
+      ...patch,
+      updatedAt: new Date().toISOString(),
+    });
   }
 
   #createWorkspacePath(channelId: string, rootThreadTs: string): string {

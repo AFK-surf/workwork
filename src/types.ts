@@ -1,5 +1,10 @@
 export interface SlackSessionRecord {
   readonly key: string;
+  readonly platform?: "slack" | "feishu" | undefined;
+  readonly conversationId?: string | undefined;
+  readonly conversationKind?: "channel" | "group" | "direct" | "thread" | "unknown" | undefined;
+  readonly rootMessageId?: string | undefined;
+  readonly platformThreadId?: string | undefined;
   readonly channelId: string;
   readonly channelName?: string | undefined;
   readonly channelType?: string | undefined;
@@ -11,6 +16,7 @@ export interface SlackSessionRecord {
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly agentSessionId?: string | undefined;
+  readonly codexThreadId?: string | undefined;
   readonly activeTurnId?: string | undefined;
   readonly activeTurnStartedAt?: string | undefined;
   readonly lastObservedMessageTs?: string | undefined;
@@ -107,6 +113,9 @@ export interface PersistedBackgroundJob {
   readonly id: string;
   readonly token: string;
   readonly sessionKey: string;
+  readonly platform?: "slack" | "feishu" | undefined;
+  readonly conversationId?: string | undefined;
+  readonly rootMessageId?: string | undefined;
   readonly channelId: string;
   readonly rootThreadTs: string;
   readonly kind: string;
@@ -286,11 +295,25 @@ export interface SlackUserIdentity {
 }
 
 export type GitHubAuthorMappingSource = "manual" | "slack_inferred";
+export type GitHubAuthorMappingPlatform = "slack" | "feishu";
+
+export interface GitHubAuthorMappingIdentity {
+  readonly platform: GitHubAuthorMappingPlatform;
+  readonly userId: string;
+  readonly mention: string;
+  readonly username?: string | undefined;
+  readonly displayName?: string | undefined;
+  readonly realName?: string | undefined;
+  readonly email?: string | undefined;
+}
 
 export interface GitHubAuthorMappingRecord {
+  readonly platform: GitHubAuthorMappingPlatform;
+  readonly userId: string;
   readonly slackUserId: string;
   readonly githubAuthor: string;
   readonly source: GitHubAuthorMappingSource;
+  readonly identity: GitHubAuthorMappingIdentity;
   readonly slackIdentity: SlackUserIdentity;
   readonly updatedAt: string;
 }

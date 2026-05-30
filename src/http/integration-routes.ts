@@ -3,7 +3,8 @@ import { URL } from "node:url";
 
 import { logger } from "../logger.js";
 import type { IsolatedMcpService } from "../services/codex/isolated-mcp-service.js";
-import { parseJsonLike, readJsonBody, readString, respondJson } from "./common.js";
+import { parseJsonLikeRequestField, readJsonBody, readString, respondJson } from "./common.js";
+import { redactHttpRequestBody } from "./request-log-redaction.js";
 
 export async function handleIntegrationRequest(
   method: string,
@@ -85,11 +86,11 @@ async function handleMcpCallRequest(
   logger.raw("http-requests", {
     method: "POST",
     path: "/integrations/mcp-call",
-    body: {
+    body: redactHttpRequestBody({
       server,
       name,
       arguments: rawArgs,
-    },
+    }),
   });
 
   if (!server || !name) {
@@ -101,7 +102,17 @@ async function handleMcpCallRequest(
     return;
   }
 
-  const argsValue = parseJsonLike(rawArgs);
+  const argsResult = parseJsonLikeRequestField(rawArgs, "arguments");
+  if (!argsResult.ok) {
+    respondJson(response, 400, {
+      ok: false,
+      error: "invalid_json_field",
+      field: argsResult.field,
+    });
+    return;
+  }
+
+  const argsValue = argsResult.value;
   if (argsValue != null && (typeof argsValue !== "object" || Array.isArray(argsValue))) {
     respondJson(response, 400, {
       ok: false,

@@ -4,7 +4,7 @@ import { loadConfig } from "./config.js";
 import { createHttpHandler } from "./http/router.js";
 import { logger } from "./logger.js";
 import { AuthProfileService } from "./services/auth-profile-service.js";
-import { configureServiceLogger, createAgentRuntime, createCodexBroker, createDiskPressureCleanup, createGitHubPrIdentity, createIsolatedMcpService, createJobManager, createSessionServices, createSlackBridge } from "./services/service-components.js";
+import { configureServiceLogger, createAgentRuntime, createCodexBroker, createDiskPressureCleanup, createGitHubAuthorMappings, createGitHubPrIdentity, createIsolatedMcpService, createJobManager, createSessionServices, createSlackBridge } from "./services/service-components.js";
 
 export async function startWorkerService(): Promise<{
   readonly stop: () => Promise<void>;
@@ -13,6 +13,7 @@ export async function startWorkerService(): Promise<{
   configureServiceLogger(config);
 
   const { sessions: sessionManager } = createSessionServices(config);
+  const githubAuthorMappings = await createGitHubAuthorMappings(config);
   const githubPrIdentity = await createGitHubPrIdentity(config);
   const authProfiles = new AuthProfileService({
     config,
@@ -27,7 +28,9 @@ export async function startWorkerService(): Promise<{
   const bridge = createSlackBridge({
     config,
     sessions: sessionManager,
+    codex: codexBroker,
     agentRuntime,
+    githubAuthorMappings,
     githubPrIdentity,
   });
   const isolatedMcp = createIsolatedMcpService(config);

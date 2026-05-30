@@ -3,14 +3,14 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { checkContainer, dockerExecNode, getDataRootSource, getPublishedPort, inspectContainer, readDetailedStateFromHost, readSessionStatsFromHost, repoRoot, runCommand } from "./lib.mjs";
+import { checkContainer, dockerExecNode, getDataRootSource, getPublishedPort, inspectContainer, readDetailedStateFromHost, readSessionStatsFromHost, repoRoot, runCommand, summarizeOpsDisplayPath } from "./lib.mjs";
 
 async function fileInfo(filePath) {
   try {
     const stat = await fs.stat(filePath);
     return {
       exists: true,
-      path: filePath,
+      path: summarizeOpsDisplayPath(filePath),
       size: stat.size,
       mtime: stat.mtime.toISOString(),
     };
@@ -18,7 +18,7 @@ async function fileInfo(filePath) {
     if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
       return {
         exists: false,
-        path: filePath,
+        path: summarizeOpsDisplayPath(filePath),
       };
     }
 
@@ -157,11 +157,11 @@ export async function getAuthRealStatus(options = {}) {
       startedAt: inspect.State?.StartedAt ?? null,
       restartCount: inspect.RestartCount ?? 0,
       hostPort,
-      dataRootSource,
+      dataRootSource: summarizeOpsDisplayPath(dataRootSource),
     },
     health,
     ready,
-    codexHome,
+    codexHome: summarizeOpsDisplayPath(codexHome),
     authFiles: {
       authJson: await fileInfo(path.join(codexHome, "auth.json")),
       credentialsJson: await fileInfo(path.join(codexHome, ".credentials.json")),
@@ -239,8 +239,8 @@ export async function replaceAuthInRealContainer(options) {
   for (const entry of replacements) {
     const backupPath = await backupIfExists(entry.target, backupDir);
     backups.push({
-      target: entry.target,
-      backupPath,
+      target: summarizeOpsDisplayPath(entry.target),
+      backupPath: backupPath ? summarizeOpsDisplayPath(backupPath) : null,
     });
     await copyIntoCodexHome(entry.source, entry.target);
   }
@@ -261,13 +261,13 @@ export async function replaceAuthInRealContainer(options) {
   return {
     ok: true,
     containerName,
-    codexHome,
+    codexHome: summarizeOpsDisplayPath(codexHome),
     restartAction,
     checkSummary,
     backups,
     replaced: replacements.map((entry) => ({
-      source: entry.source,
-      target: entry.target,
+      source: summarizeOpsDisplayPath(entry.source),
+      target: summarizeOpsDisplayPath(entry.target),
     })),
   };
 }

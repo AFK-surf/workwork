@@ -1,10 +1,56 @@
 # slack-codex-broker
 
-Minimal Slack-to-Codex bridge for multi-repository workflows.
+Minimal Slack + China Feishu bridge to Codex for multi-repository workflows.
 
 It connects to Slack over Socket Mode, starts or resumes one Codex app-server thread per Slack thread, and gives each Slack session an isolated workspace directory. The Codex session always starts in that neutral workspace instead of being pinned to a specific repository. If code work is needed, the agent is expected to use a shared `repos/` cache for canonical clones and create any task-specific git worktrees under the current session workspace. Normal thread replies continue the same Codex thread. Sending `-stop` in the thread interrupts the current Codex turn.
 
 On the first `@bot` inside an existing Slack thread, the broker backfills a bounded slice of earlier thread history into Codex. If Codex needs older context than the initial backfill, it can query the broker's local thread-history HTTP API from inside its shell.
+
+Feishu support runs in the same broker process as Slack. Feishu group `@bot ...`: create or resume a group session; private chats are ignored. For production parity, configure `FEISHU_ENABLED=true`, `FEISHU_GROUP_MESSAGE_MODE=all`, `FEISHU_APP_ID`, `FEISHU_APP_SECRET`, and at least one Feishu bot identity. `at_only` is a visible degraded mode; set `FEISHU_ALL_MESSAGE_DELIVERY_VERIFIED=true` only after the real non-@ follow-up smoke passes; keep `LOG_RAW_FEISHU_EVENTS=false` unless collecting a focused, redacted fixture.
+
+Feishu rollout:
+
+- run the preflight and smoke scripts against a China Feishu self-built app installed in the target group
+- capture a sanitized pre-rollout log snapshot; the snapshot redacts non-structured lines instead of copying raw Docker log text
+- verify metadata recursively redacts unsafe string fields while preserving safe posture text such as `FEISHU_APP_SECRET=missing`
+- Operator-facing auth status and replacement output summarize filesystem paths instead of echoing full host paths
+- Profile command output also summarizes auth/profile paths without full host filesystem paths
+
+Admin and chat APIs are platform-aware:
+
+- platform-aware `Slack/Feishu user -> GitHub author` mappings
+- `GET /admin/api/status?platform=slack|feishu`
+- `DELETE /admin/api/github-authors/:userId?platform=slack|feishu`
+- filters sessions, jobs, and GitHub author mappings to that platform
+- allowlisted `recentBrokerLogs` remain cross-platform
+- Platform query/body values must be `slack` or `feishu`; invalid values return 400 `invalid_platform` instead of falling back to Slack
+- generic platform-aware chat endpoints
+- Generic `/chat/*` JSON/query contracts use canonical `conversationId` and `rootMessageId` fields
+- also accepts `conversation_id` and `root_message_id` aliases
+- Invalid `platform` values return 400 `invalid_platform` with allowed values `slack` and `feishu`
+- Generic file uploads use canonical `filePath` or `contentBase64`
+- `file_path` and `content_base64` aliases accepted and named in validation errors
+- Inline `contentBase64`/`content_base64` uploads require `filename` and must decode to non-empty file content
+- Generic file uploads accept `filePath` or non-empty `content_base64` plus `filename`
+- `richText`/`rich_text` and `card` can be structured JSON values or JSON strings
+- invalid JSON strings return 400 with only the field name, not the raw payload
+- request logging redact message text, state reasons, file comments/alt text, rich/card payloads
+- `/integrations/*` request logging redacts MCP call `arguments`
+- Registered jobs receive `CHAT_PLATFORM`, `CHAT_CONVERSATION_ID`, and `CHAT_ROOT_MESSAGE_ID`
+- legacy Slack `channel_id` and `thread_ts` aliases only for Slack compatibility when `platform` is omitted or set to `slack`
+- Invalid generic job `platform` values return 400 `invalid_platform` before coordinate validation
+- Job callback `detailsJson`/`details_json` fields and `/integrations/mcp-call` `arguments` can be structured JSON values or JSON strings
+- `pnpm test:e2e:feishu-mock` covers the Feishu mock e2e gate, fixture replay, and Slack+Feishu same-process readiness
+- `pnpm rfc:feishu-audit` and `pnpm rfc:feishu-audit:local` summarize implementation surfaces, test slices, behavior evidence probes, package-script gates, and remaining real-tenant evidence gaps without sending Feishu messages
+- its JSON still keeps `ok=false` until real tenant gates pass
+- run `pnpm manual:feishu-smoke -- --preflight --env-file .env`; the extra `--` keeps Node's own `--env-file` flag from intercepting the smoke-checker argument
+- smoke CLI value flags also accept `--flag=value`; missing values fail before another flag is swallowed
+- secret-bearing values only as set/missing
+- generic platform-aware chat endpoints include `curl -sS -X POST http://127.0.0.1:3000/chat/post-message` and `curl -sS -X POST http://127.0.0.1:3000/chat/post-file`
+- `limit` (optional positive integer, clamped by `SLACK_HISTORY_API_MAX_LIMIT`; invalid values return 400 `invalid_limit`)
+- Generic chat history `limit` uses the same positive-integer validation
+- Generic chat history `format` uses the same `text|json` validation before broker delegation
+- For Feishu, outbound message images up to 10 MB are uploaded as image messages and fall back to file upload when still within the 30 MB file/resource limit
 
 ## What It Expects
 

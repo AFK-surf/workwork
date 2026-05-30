@@ -157,6 +157,23 @@ describe("syncUserCodexHome", () => {
     expect(await fs.readFile(path.join(targetHome, "skills", "linked-skill", "SKILL.md"), "utf8")).toBe("linked skill\n");
   });
 
+  it("skips git metadata when mirroring bundled skill directories", async () => {
+    const sourceHome = await makeTempDir("codex-home-source-");
+    const targetHome = await makeTempDir("codex-home-target-");
+
+    await fs.mkdir(path.join(sourceHome, "vendor_imports", "skills", ".git"), { recursive: true });
+    await fs.writeFile(path.join(sourceHome, "vendor_imports", "skills", "SKILL.md"), "vendor skill\n");
+    await fs.writeFile(path.join(sourceHome, "vendor_imports", "skills", ".git", "fsmonitor--daemon.ipc"), "socket placeholder\n");
+
+    await syncUserCodexHome({
+      codexHome: targetHome,
+      hostCodexHomePath: sourceHome,
+    });
+
+    expect(await fs.readFile(path.join(targetHome, "vendor_imports", "skills", "SKILL.md"), "utf8")).toBe("vendor skill\n");
+    await expect(fs.access(path.join(targetHome, "vendor_imports", "skills", ".git"))).rejects.toThrow();
+  });
+
   it("migrates legacy runtime AGENT.md into the detached broker memory file", async () => {
     const sourceHome = await makeTempDir("codex-home-source-");
     const targetHome = await makeTempDir("codex-home-target-");

@@ -64,6 +64,17 @@ interface ThreadRuntimeDefaults {
   readonly effort?: string | undefined;
 }
 
+interface PromptSessionCoordinates {
+  readonly platform?: "slack" | "feishu" | undefined;
+  readonly conversationId?: string | undefined;
+  readonly conversationKind?: string | undefined;
+  readonly rootMessageId?: string | undefined;
+  readonly platformThreadId?: string | undefined;
+  readonly channelId: string;
+  readonly rootThreadTs: string;
+  readonly workspacePath: string;
+}
+
 export interface StartedTurn {
   readonly turnId: string;
   readonly completion: Promise<CodexTurnResult>;
@@ -265,7 +276,7 @@ export class AppServerClientLayer1 extends AppServerClientBase {
     };
   }
 
-  async ensureThread(session: { readonly agentSessionId?: string | undefined; readonly workspacePath: string; readonly channelId: string; readonly rootThreadTs: string }): Promise<string> {
+  async ensureThread(session: PromptSessionCoordinates & { readonly agentSessionId?: string | undefined }): Promise<string> {
     if (session.agentSessionId) {
       logger.debug("Resuming Codex thread", {
         threadId: session.agentSessionId,
@@ -410,12 +421,17 @@ export class AppServerClientLayer1 extends AppServerClientBase {
     });
   }
 
-  async privateBuildBaseInstructions(session: { readonly channelId: string; readonly rootThreadTs: string; readonly workspacePath: string }): Promise<string> {
+  async privateBuildBaseInstructions(session: PromptSessionCoordinates): Promise<string> {
     const personalMemory = await this.privateReadPersonalMemory();
     return await buildSlackThreadBaseInstructions({
+      platform: session.platform,
       brokerHttpBaseUrl: this.options.brokerHttpBaseUrl,
       channelId: session.channelId,
       rootThreadTs: session.rootThreadTs,
+      conversationId: session.conversationId,
+      conversationKind: session.conversationKind,
+      rootMessageId: session.rootMessageId,
+      platformThreadId: session.platformThreadId,
       workspacePath: session.workspacePath,
       reposRoot: this.options.reposRoot,
       codexGeneratedImagesRoot: this.options.codexGeneratedImagesRoot ?? "$CODEX_HOME/generated_images",

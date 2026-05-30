@@ -4,12 +4,13 @@ import path from "node:path";
 import { ensureDir } from "./utils/fs.js";
 
 type LogLevel = "debug" | "info" | "warn" | "error";
-type RawStream = "slack-events" | "codex-rpc" | "http-requests";
+type RawStream = "slack-events" | "feishu-events" | "codex-rpc" | "http-requests";
 
 interface LoggerConfig {
   readonly logDir?: string | undefined;
   readonly level: LogLevel;
   readonly rawSlackEvents: boolean;
+  readonly rawFeishuEvents: boolean;
   readonly rawCodexRpc: boolean;
   readonly rawHttpRequests: boolean;
   readonly rawMaxBytes?: number | undefined;
@@ -26,6 +27,7 @@ let currentConfig: LoggerConfig = {
   logDir: undefined,
   level: process.env.DEBUG ? "debug" : "info",
   rawSlackEvents: false,
+  rawFeishuEvents: false,
   rawCodexRpc: false,
   rawHttpRequests: false,
   rawMaxBytes: 128 * 1024,
@@ -54,6 +56,10 @@ export function getSessionLogDirectory(logDir: string, sessionKey: string): stri
 
 export function getJobLogDirectory(logDir: string, jobId: string): string {
   return path.join(logDir, "jobs", encodeKey(jobId));
+}
+
+export async function flushLogger(): Promise<void> {
+  await Promise.all([...writeChains.values()]);
 }
 
 export const logger = {
@@ -112,16 +118,28 @@ function queueFileWrites(record: Record<string, unknown>, meta: Record<string, u
   }
 
   const targets = new Set<string>([path.join(currentConfig.logDir, relativePath)]);
+  const legacyBrokerPath = relativePath.match(/^broker\/[^/]+\.jsonl$/);
+  const legacyRawPath = relativePath.match(/^raw\/([^/]+)\/[^/]+\.jsonl$/);
+  if (legacyBrokerPath) {
+    targets.add(path.join(currentConfig.logDir, "broker.jsonl"));
+  }
+  if (legacyRawPath?.[1]) {
+    targets.add(path.join(currentConfig.logDir, "raw", `${legacyRawPath[1]}.jsonl`));
+  }
   const sessionKey = resolveSessionKey(meta);
   const jobId = typeof meta?.jobId === "string" ? meta.jobId : undefined;
   const bucket = getLogBucket(String(record.ts));
 
   if (sessionKey) {
-    targets.add(path.join(getSessionLogDirectory(currentConfig.logDir, sessionKey), `${bucket}.jsonl`));
+    const encodedSessionKey = encodeKey(sessionKey);
+    targets.add(path.join(currentConfig.logDir, "sessions", encodedSessionKey, `${bucket}.jsonl`));
+    targets.add(path.join(currentConfig.logDir, "sessions", `${encodedSessionKey}.jsonl`));
   }
 
   if (jobId) {
-    targets.add(path.join(getJobLogDirectory(currentConfig.logDir, jobId), `${bucket}.jsonl`));
+    const encodedJobId = encodeKey(jobId);
+    targets.add(path.join(currentConfig.logDir, "jobs", encodedJobId, `${bucket}.jsonl`));
+    targets.add(path.join(currentConfig.logDir, "jobs", `${encodedJobId}.jsonl`));
   }
 
   for (const target of targets) {
@@ -213,6 +231,8 @@ function isRawStreamEnabled(stream: RawStream): boolean {
   switch (stream) {
     case "slack-events":
       return currentConfig.rawSlackEvents;
+    case "feishu-events":
+      return currentConfig.rawFeishuEvents;
     case "codex-rpc":
       return currentConfig.rawCodexRpc;
     case "http-requests":

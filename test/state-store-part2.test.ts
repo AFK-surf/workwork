@@ -159,8 +159,12 @@ describe("StateStore", () => {
           name: "slack_event_retention_indexes",
         },
         {
-          version: CURRENT_STATE_SCHEMA_VERSION,
+          version: 16,
           name: "inbound_mention_backfill_indexes",
+        },
+        {
+          version: CURRENT_STATE_SCHEMA_VERSION,
+          name: "chat_platform_columns",
         },
       ]);
     } finally {

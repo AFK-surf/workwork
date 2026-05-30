@@ -62,12 +62,94 @@ describe("GitHubAuthorMappingService", () => {
       email: "alice-updated@example.com",
     });
     expect(afterManual).toMatchObject({
+      platform: "slack",
+      userId: "U123",
       githubAuthor: "Alice Manual <manual@example.com>",
       source: "manual",
+      identity: {
+        platform: "slack",
+        userId: "U123",
+        email: "alice-updated@example.com",
+      },
       slackIdentity: {
         userId: "U123",
         email: "alice-updated@example.com",
       },
     });
+  });
+
+  it("keeps Slack and Feishu author mappings separate for the same user id", async () => {
+    const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "github-author-mappings-platform-"));
+    tempDirs.push(stateDir);
+
+    const service = new GitHubAuthorMappingService({
+      stateDir,
+    });
+    await service.load();
+
+    const slack = await service.upsertManualMapping({
+      platform: "slack",
+      userId: "same-user",
+      githubAuthor: "Slack User <slack@example.com>",
+    });
+    const feishu = await service.upsertManualMapping({
+      platform: "feishu",
+      userId: "same-user",
+      githubAuthor: "Feishu User <feishu@example.com>",
+      identity: {
+        platform: "feishu",
+        userId: "same-user",
+        mention: "@same-user",
+        displayName: "Feishu User",
+      },
+    });
+
+    expect(slack).toMatchObject({
+      platform: "slack",
+      userId: "same-user",
+      slackUserId: "same-user",
+      githubAuthor: "Slack User <slack@example.com>",
+      identity: {
+        platform: "slack",
+        userId: "same-user",
+      },
+    });
+    expect(feishu).toMatchObject({
+      platform: "feishu",
+      userId: "same-user",
+      slackUserId: "same-user",
+      githubAuthor: "Feishu User <feishu@example.com>",
+      identity: {
+        platform: "feishu",
+        userId: "same-user",
+        displayName: "Feishu User",
+      },
+    });
+    expect(service.getMapping("same-user")?.githubAuthor).toBe("Slack User <slack@example.com>");
+    expect(
+      service.getMappingForUser({
+        platform: "feishu",
+        userId: "same-user",
+      })?.githubAuthor,
+    ).toBe("Feishu User <feishu@example.com>");
+
+    const reloaded = new GitHubAuthorMappingService({
+      stateDir,
+    });
+    await reloaded.load();
+    expect(reloaded.listMappings()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          platform: "slack",
+          userId: "same-user",
+          githubAuthor: "Slack User <slack@example.com>",
+        }),
+        expect.objectContaining({
+          platform: "feishu",
+          userId: "same-user",
+          githubAuthor: "Feishu User <feishu@example.com>",
+        }),
+      ]),
+    );
   });
 });

@@ -8,6 +8,8 @@ import type { AuthProfileService } from "./auth-profile-service.js";
 import { CodexBroker } from "./codex/codex-broker.js";
 import { IsolatedMcpService } from "./codex/isolated-mcp-service.js";
 import { DiskPressureCleanupService } from "./disk-pressure-cleanup-service.js";
+import { FeishuCodexBridge } from "./feishu/feishu-codex-bridge.js";
+import { FeishuPlatformAdapter } from "./feishu/feishu-platform-adapter.js";
 import { GitHubAuthorMappingService } from "./github-author-mapping-service.js";
 import { GitHubPrIdentityService } from "./github-pr-identity-service.js";
 import { JobManager } from "./job-manager.js";
@@ -20,6 +22,7 @@ export function configureServiceLogger(config: AppConfig): void {
     logDir: config.logDir,
     level: config.logLevel,
     rawSlackEvents: config.logRawSlackEvents,
+    rawFeishuEvents: config.logRawFeishuEvents,
     rawCodexRpc: config.logRawCodexRpc,
     rawHttpRequests: config.logRawHttpRequests,
     rawMaxBytes: config.logRawMaxBytes,
@@ -106,12 +109,58 @@ export function createAgentRuntime(options: { readonly config: AppConfig; readon
   });
 }
 
-export function createSlackBridge(options: { readonly config: AppConfig; readonly sessions: SessionManager; readonly agentRuntime: AgentRuntime; readonly githubPrIdentity: GitHubPrIdentityService }): SlackAgentBridge {
+export function createSlackBridge(options: {
+  readonly config: AppConfig;
+  readonly sessions: SessionManager;
+  readonly codex?: CodexBroker | undefined;
+  readonly agentRuntime: AgentRuntime;
+  readonly githubAuthorMappings?: GitHubAuthorMappingService | undefined;
+  readonly githubPrIdentity: GitHubPrIdentityService;
+}): SlackAgentBridge {
   return new SlackAgentBridge({
     config: options.config,
     sessions: options.sessions,
     agentRuntime: options.agentRuntime,
     githubPrIdentity: options.githubPrIdentity,
+    feishuBridge: createFeishuBridge({
+      config: options.config,
+      sessions: options.sessions,
+      codex: options.codex,
+      mappings: options.githubAuthorMappings,
+    }),
+  });
+}
+
+function createFeishuBridge(options: { readonly config: AppConfig; readonly sessions: SessionManager; readonly codex?: CodexBroker | undefined; readonly mappings?: GitHubAuthorMappingService | undefined }): FeishuCodexBridge | undefined {
+  if (!options.config.feishuEnabled) {
+    return undefined;
+  }
+  if (!options.codex) {
+    throw new Error("Feishu bridge requires the legacy Codex broker adapter");
+  }
+  if (!options.config.feishuAppId || !options.config.feishuAppSecret) {
+    throw new Error("Feishu bridge requires FEISHU_APP_ID and FEISHU_APP_SECRET");
+  }
+
+  return new FeishuCodexBridge({
+    sessions: options.sessions,
+    codex: options.codex,
+    groupMessageMode: options.config.feishuGroupMessageMode,
+    initialThreadHistoryCount: options.config.feishuInitialThreadHistoryCount,
+    historyApiMaxLimit: options.config.feishuHistoryApiMaxLimit,
+    mappings: options.mappings,
+    adapter: new FeishuPlatformAdapter({
+      appId: options.config.feishuAppId,
+      appSecret: options.config.feishuAppSecret,
+      apiBaseUrl: options.config.feishuApiBaseUrl,
+      botIdentity: {
+        openId: options.config.feishuBotOpenId,
+        userId: options.config.feishuBotUserId,
+        unionId: options.config.feishuBotUnionId,
+      },
+      groupMessageMode: options.config.feishuGroupMessageMode,
+      startupRequired: options.config.feishuStartupRequired,
+    }),
   });
 }
 

@@ -44,6 +44,7 @@ async function replaceWithCopy(targetPath: string, sourcePath: string, isDirecto
     await fs.cp(sourcePath, targetPath, {
       dereference: true,
       force: true,
+      filter: (source) => !source.split(path.sep).includes(".git"),
       recursive: true,
     });
     return;
