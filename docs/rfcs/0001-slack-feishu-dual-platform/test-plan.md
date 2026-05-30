@@ -20,6 +20,7 @@ pnpm build
 pnpm test
 pnpm test:e2e:feishu-mock
 pnpm rfc:feishu-audit -- --json
+pnpm rfc:feishu-test-plan -- --json
 pnpm manual:feishu-smoke -- --status-file evidence/feishu-smoke/admin-status.json --setup-evidence-file evidence/feishu-smoke/feishu-setup-evidence.json --output-dir evidence/feishu-smoke --json
 ```
 
@@ -59,6 +60,7 @@ pnpm manual:feishu-smoke -- --status-file evidence/feishu-smoke/admin-status.jso
 - [ ] Run `pnpm test`; complete when the full Vitest suite passes.
 - [ ] Run `pnpm test:e2e:feishu-mock`; complete when Feishu bridge, adapter, fixture replay, and dual runtime tests pass.
 - [ ] Run `pnpm rfc:feishu-audit -- --json`; complete when `ok`, `localOk`, and `realTenantOk` are true for the saved evidence bundle.
+- [ ] Run `pnpm rfc:feishu-test-plan -- --json`; complete when the capability matrix, proof links, Layer 2 commands, saved smoke report, and RFC audit are all verified.
 
 </details>
 

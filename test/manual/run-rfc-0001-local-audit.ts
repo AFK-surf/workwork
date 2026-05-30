@@ -54,6 +54,7 @@ const REQUIRED_PACKAGE_SCRIPTS: ReadonlyArray<{
   { name: "manual:feishu-smoke", includes: "run-real-feishu-smoke.ts --" },
   { name: "rfc:feishu-audit", includes: "run-rfc-0001-local-audit.ts" },
   { name: "rfc:feishu-audit:local", includes: "--local-only" },
+  { name: "rfc:feishu-test-plan", includes: "run-rfc-0001-test-plan.ts" },
   { name: "ops:auth:real", includes: "scripts/ops/auth-real.mjs" },
   { name: "ops:auth:profiles", includes: "scripts/ops/auth-profiles.mjs" },
   { name: "ops:ui:real", includes: "scripts/ops/auth-ui-real.mjs" },
@@ -130,6 +131,7 @@ export const RFC0001_REQUIRED_LOCAL_TEST_FILES = [
   "test/ops-feishu-preflight.test.ts",
   "test/slack-routes.test.ts",
   "test/rfc-0001-docs.test.ts",
+  "test/rfc-0001-test-plan.test.ts",
   "test/rfc-pr-template.test.ts",
 ];
 
@@ -402,6 +404,11 @@ export const RFC0001_REQUIRED_LOCAL_EVIDENCE_PATTERNS: ReadonlyArray<{
     id: "docs.progressive_gates",
     file: "test/rfc-0001-docs.test.ts",
     snippets: ["keeps completion evidence progressive after real-tenant signoff", "keeps the README aligned with the Slack + Feishu user-facing surface"],
+  },
+  {
+    id: "docs.test_plan_automation",
+    file: "test/rfc-0001-test-plan.test.ts",
+    snippets: ["passes against the checked-in RFC 0001 test plan", "fails when the default acceptance command set drifts", "fails when a documented proof file is missing"],
   },
 ];
 

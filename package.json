@@ -46,7 +46,8 @@
     "manual:feishu-smoke": "tsx test/manual/run-real-feishu-smoke.ts --",
     "manual:feishu-controlled-evidence": "tsx test/manual/write-controlled-feishu-smoke-evidence.ts",
     "rfc:feishu-audit": "tsx test/manual/run-rfc-0001-local-audit.ts",
-    "rfc:feishu-audit:local": "tsx test/manual/run-rfc-0001-local-audit.ts -- --local-only"
+    "rfc:feishu-audit:local": "tsx test/manual/run-rfc-0001-local-audit.ts -- --local-only",
+    "rfc:feishu-test-plan": "tsx test/manual/run-rfc-0001-test-plan.ts"
   },
   "dependencies": {
     "@larksuiteoapi/node-sdk": "^1.66.0",

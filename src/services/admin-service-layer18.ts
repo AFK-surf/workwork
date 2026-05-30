@@ -149,6 +149,21 @@ type MutableSessionUsageSummary = { -readonly [Key in keyof SessionUsageSummary]
 
 import { AdminServiceLayer17 } from "./admin-service-layer17.js";
 export class AdminServiceLayer18 extends AdminServiceLayer17 {
+  override async getStatus(): Promise<Record<string, unknown>> {
+    const status = await super.getStatus();
+    const state = isRecord(status.state) ? status.state : {};
+    const recentBrokerLogs = Array.isArray(state.recentBrokerLogs) ? state.recentBrokerLogs : await this.privateReadRecentBrokerLogs(40);
+
+    return {
+      ...status,
+      platforms: buildPlatformHealth(this.options.config, recentBrokerLogs),
+      state: {
+        ...state,
+        recentBrokerLogs,
+      },
+    };
+  }
+
   async privateRemoveDeletedSessionArtifacts(sessionKey: string, jobs: readonly PersistedBackgroundJob[]): Promise<Record<string, unknown>> {
     const pathSpecs = [
       {
@@ -182,6 +197,191 @@ export class AdminServiceLayer18 extends AdminServiceLayer17 {
       pathCount: pathSpecs.length,
     };
   }
+}
+
+type PlatformName = "slack" | "feishu";
+type PlatformHealthState = "disabled" | "starting" | "ready" | "degraded" | "failed";
+type PermissionStatus = "unknown" | "configured" | "verified" | "missing";
+
+interface PlatformLifecycleRecord {
+  readonly message: string;
+  readonly ts?: string | undefined;
+  readonly meta: Record<string, unknown>;
+}
+
+function buildPlatformHealth(config: AppConfig, logs: readonly unknown[]): Record<PlatformName, Record<string, unknown>> {
+  return {
+    slack: buildSlackPlatformHealth(config, logs),
+    feishu: buildFeishuPlatformHealth(config, logs),
+  };
+}
+
+function buildSlackPlatformHealth(config: AppConfig, logs: readonly unknown[]): Record<string, unknown> {
+  const lifecycle = platformLifecycle(logs, "slack");
+  const ready = lastLifecycle(lifecycle, "chat.platform.ready");
+  const degraded = lastLifecycle(lifecycle, "chat.platform.degraded");
+  const state = platformState({
+    enabled: Boolean(config.slackAppToken && config.slackBotToken),
+    ready,
+    degraded,
+    startupRequired: true,
+  });
+
+  return {
+    platform: "slack",
+    enabled: Boolean(config.slackAppToken && config.slackBotToken),
+    state,
+    startupRequired: true,
+    connection: {
+      mode: "socket_mode",
+      connected: state === "ready",
+      ...(ready?.ts ? { lastConnectedAt: ready.ts } : {}),
+      ...(degraded?.ts && state !== "ready" ? { lastDisconnectedAt: degraded.ts } : {}),
+    },
+    ...(degraded && state !== "ready" ? { degradedReason: readString(degraded.meta.degradedReason) ?? "platform_degraded", lastError: lifecycleLastError(degraded) } : {}),
+  };
+}
+
+function buildFeishuPlatformHealth(config: AppConfig, logs: readonly unknown[]): Record<string, unknown> {
+  const lifecycle = platformLifecycle(logs, "feishu");
+  const ready = lastLifecycle(lifecycle, "chat.platform.ready");
+  const degraded = lastLifecycle(lifecycle, "chat.platform.degraded");
+  const enabled = config.feishuEnabled;
+  const state = platformState({
+    enabled,
+    ready,
+    degraded,
+    startupRequired: config.feishuStartupRequired,
+  });
+  const lastError = degraded && state !== "ready" ? lifecycleLastError(degraded) : undefined;
+
+  return {
+    platform: "feishu",
+    enabled,
+    state,
+    startupRequired: config.feishuStartupRequired,
+    groupMessageMode: config.feishuGroupMessageMode,
+    allMessageDeliveryVerified: config.feishuAllMessageDeliveryVerified,
+    connection: {
+      mode: "long_connection",
+      connected: state === "ready",
+      ...(ready?.ts ? { lastConnectedAt: ready.ts } : {}),
+      ...(degraded?.ts && state !== "ready" ? { lastDisconnectedAt: degraded.ts } : {}),
+    },
+    permissions: feishuPermissionPosture(config),
+    ...(degraded && state !== "ready" ? { degradedReason: readString(degraded.meta.degradedReason) ?? "platform_degraded" } : {}),
+    ...(lastError ? { lastError } : {}),
+  };
+}
+
+function platformState(options: { readonly enabled: boolean; readonly ready?: PlatformLifecycleRecord | undefined; readonly degraded?: PlatformLifecycleRecord | undefined; readonly startupRequired: boolean }): PlatformHealthState {
+  if (!options.enabled) {
+    return "disabled";
+  }
+
+  const readyTime = lifecycleTime(options.ready);
+  const degradedTime = lifecycleTime(options.degraded);
+  if (options.degraded && degradedTime >= readyTime) {
+    return readString(options.degraded.meta.degradedReason) === "startup_failed" && options.startupRequired ? "failed" : "degraded";
+  }
+
+  if (options.ready) {
+    return "ready";
+  }
+
+  return "starting";
+}
+
+function platformLifecycle(logs: readonly unknown[], platform: PlatformName): PlatformLifecycleRecord[] {
+  return logs.flatMap((entry) => {
+    const record = isRecord(entry) ? entry : {};
+    const meta = isRecord(record.meta) ? record.meta : {};
+    if (readString(meta.platform) !== platform) {
+      return [];
+    }
+    const message = readString(record.message);
+    if (message !== "chat.platform.starting" && message !== "chat.platform.ready" && message !== "chat.platform.degraded") {
+      return [];
+    }
+
+    const ts = readString(record.ts);
+    return [
+      {
+        message,
+        ...(ts ? { ts } : {}),
+        meta,
+      },
+    ];
+  });
+}
+
+function lastLifecycle(records: readonly PlatformLifecycleRecord[], message: string): PlatformLifecycleRecord | undefined {
+  return [...records].reverse().find((record) => record.message === message);
+}
+
+function lifecycleTime(record: PlatformLifecycleRecord | undefined): number {
+  if (!record?.ts) {
+    return 0;
+  }
+
+  const parsed = Date.parse(record.ts);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function lifecycleLastError(record: PlatformLifecycleRecord): Record<string, unknown> {
+  return {
+    at: record.ts ?? new Date(0).toISOString(),
+    errorClass: readString(record.meta.errorClass) ?? "PlatformDegraded",
+    message: readString(record.meta.degradedReason) ?? "platform_degraded",
+  };
+}
+
+function feishuPermissionPosture(config: AppConfig): readonly Record<string, unknown>[] {
+  return [
+    {
+      name: "bot_identity",
+      requiredFor: "Feishu @bot mention detection",
+      status: config.feishuBotOpenId || config.feishuBotUserId || config.feishuBotUnionId ? "configured" : "missing",
+    },
+    {
+      name: "im:message.group_at_msg:readonly",
+      requiredFor: "Feishu group @bot session starts",
+      status: config.feishuEnabled ? "configured" : "unknown",
+    },
+    {
+      name: "im:message.group_msg",
+      requiredFor: "Feishu active-session non-@ follow-ups and bounded group history",
+      status: groupMessagePermissionStatus(config),
+    },
+    {
+      name: "im:message:send_as_bot",
+      requiredFor: "Feishu text, rich text, file, and card replies",
+      status: config.feishuEnabled && config.feishuAppId && config.feishuAppSecret ? "configured" : "unknown",
+    },
+    {
+      name: "card.action.trigger",
+      requiredFor: "Feishu interactive card callbacks",
+      status: config.feishuEnabled ? "configured" : "unknown",
+    },
+  ];
+}
+
+function groupMessagePermissionStatus(config: AppConfig): PermissionStatus {
+  if (!config.feishuEnabled) {
+    return "unknown";
+  }
+  if (config.feishuGroupMessageMode !== "all") {
+    return "missing";
+  }
+  return config.feishuAllMessageDeliveryVerified ? "verified" : "configured";
+}
+
+function readString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function summarizeUsageTotals(records: readonly PersistedAgentTurnUsage[]): AgentUsageTotals {
