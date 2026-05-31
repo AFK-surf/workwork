@@ -7,11 +7,13 @@ import { setTimeout as delay } from "node:timers/promises";
 import { describe, expect, it } from "vitest";
 
 import { configureLogger, flushLogger } from "../src/logger.js";
+import type { ChatTurnProjection } from "../src/services/chat/chat-turn-projection.js";
 import type { ChatAttachment, ChatInputMessage, ChatOutboundFile, ChatPostedMessage, ChatThreadMessage, ChatThreadPage, ChatThreadQuery, ChatThreadTarget, ChatUploadedFile, ChatUserIdentity } from "../src/services/chat/chat-types.js";
 import type { ChatPlatformAdapter, ChatPlatformHandlers } from "../src/services/chat/chat-platform-adapter.js";
 import { FeishuCodexBridge } from "../src/services/feishu/feishu-codex-bridge.js";
 import { FeishuPlatformAdapter } from "../src/services/feishu/feishu-platform-adapter.js";
 import { GitHubAuthorMappingService } from "../src/services/github-author-mapping-service.js";
+import { GitHubPrIdentityService } from "../src/services/github-pr-identity-service.js";
 import { SessionManager } from "../src/services/session-manager.js";
 import { StateStore } from "../src/store/state-store.js";
 
@@ -73,6 +75,8 @@ describe("FeishuCodexBridge", () => {
       platformThreadId: "omt_thread",
       codexThreadId: "thread-1",
       activeTurnId: undefined,
+      initiatorUserId: "ou_user",
+      initiatorMessageTs: "om_root",
       lastObservedMessageTs: "1710000000000",
       coAuthorCandidateUserIds: ["ou_user"],
       coAuthorCandidateRevision: 1,
@@ -132,6 +136,119 @@ describe("FeishuCodexBridge", () => {
         }),
       ]),
     );
+  });
+
+  it("posts the Feishu session dashboard link and GitHub bind prompt once on session start", async () => {
+    const dataRoot = await fs.mkdtemp(path.join(os.tmpdir(), "feishu-codex-session-link-"));
+    const sessions = new SessionManager({
+      stateStore: new StateStore(path.join(dataRoot, "state"), path.join(dataRoot, "sessions")),
+      sessionsRoot: path.join(dataRoot, "sessions"),
+    });
+    const githubPrIdentity = new GitHubPrIdentityService({
+      stateDir: path.join(dataRoot, "state"),
+      defaultGitHubLogin: "default-bot",
+      defaultGitHubToken: "default-token",
+    });
+    await sessions.load();
+    await githubPrIdentity.load();
+    const adapter = new FakeFeishuAdapter();
+    const codex = new FakeCodex();
+    const bridge = new FeishuCodexBridge({
+      sessions,
+      adapter,
+      codex: codex as never,
+      groupMessageMode: "all",
+      adminBaseUrl: "https://admin.example.test",
+      githubPrIdentity,
+    });
+
+    await bridge.start();
+    await adapter.emit({
+      platform: "feishu",
+      conversationId: "oc_group",
+      conversationKind: "group",
+      rootMessageId: "om_root",
+      platformThreadId: "omt_thread",
+      messageId: "om_root",
+      messageCursor: "1710000000000",
+      source: "bot_mention",
+      sender: {
+        kind: "user",
+        userId: "ou_user",
+      },
+      text: "please check this",
+    });
+    await adapter.emit({
+      platform: "feishu",
+      conversationId: "oc_group",
+      conversationKind: "group",
+      rootMessageId: "om_root",
+      platformThreadId: "omt_thread",
+      messageId: "om_followup",
+      messageCursor: "1710000001000",
+      source: "thread_reply",
+      sender: {
+        kind: "user",
+        userId: "ou_user",
+      },
+      text: "follow up",
+    });
+
+    const sessionUrl = "https://admin.example.test/admin/sessions/feishu%3Ab2NfZ3JvdXA%3Ab21fcm9vdA";
+    const linkMessages = adapter.postedMessages.filter((entry) => asPostedMessageText(entry)?.includes(sessionUrl));
+    expect(linkMessages).toHaveLength(1);
+    expect(linkMessages[0]).toMatchObject({
+      target: {
+        platform: "feishu",
+        conversationId: "oc_group",
+        rootMessageId: "om_root",
+      },
+      message: {
+        text: expect.stringContaining("查看会话活动时间线"),
+        format: "card",
+        card: expect.objectContaining({
+          header: expect.objectContaining({
+            template: "yellow",
+          }),
+          elements: expect.arrayContaining([
+            expect.objectContaining({
+              tag: "action",
+              actions: expect.arrayContaining([
+                expect.objectContaining({
+                  text: expect.objectContaining({
+                    content: "查看会话活动时间线",
+                  }),
+                  url: sessionUrl,
+                }),
+              ]),
+            }),
+            expect.objectContaining({
+              tag: "action",
+              actions: expect.arrayContaining([
+                expect.objectContaining({
+                  text: expect.objectContaining({
+                    content: "绑定 GitHub",
+                  }),
+                  url: `${sessionUrl}/github/bind`,
+                }),
+              ]),
+            }),
+          ]),
+        }),
+      },
+    });
+    expect(asPostedMessageText(linkMessages[0])).toContain("当前发起人还没有绑定 GitHub 账号");
+    expect(asPostedMessageText(linkMessages[0])).toContain("默认账号 default-bot");
+    expect(asPostedMessageText(linkMessages[0])).toContain(`${sessionUrl}/github/bind`);
+    expect(
+      sessions.getChatSession({
+        platform: "feishu",
+        conversationId: "oc_group",
+        rootMessageId: "om_root",
+      }),
+    ).toMatchObject({
+      sessionPageLinkPostedAt: expect.any(String),
+    });
   });
 
   it("accepts a raw Feishu group mention through the adapter and creates matching session evidence", async () => {
@@ -939,6 +1056,29 @@ describe("FeishuCodexBridge", () => {
         },
       },
     ]);
+    expect(adapter.postedProjections).toEqual([
+      {
+        target: {
+          platform: "feishu",
+          conversationId: "oc_group",
+          rootMessageId: "om_root",
+        },
+        projection: expect.objectContaining({
+          title: "Codex shared an artifact",
+          slots: [
+            expect.objectContaining({
+              kind: "artifact",
+              title: "Artifact: report.pdf",
+              metadata: expect.objectContaining({
+                fileId: "file_uploaded",
+                name: "report.pdf",
+                mimetype: "application/pdf",
+              }),
+            }),
+          ],
+        }),
+      },
+    ]);
     const logs = await readJsonl(path.join(logDir, "broker.jsonl"));
     expect(logs).toEqual(
       expect.arrayContaining([
@@ -951,6 +1091,83 @@ describe("FeishuCodexBridge", () => {
             rootMessageId: "om_root",
             fileId: "file_uploaded",
             format: "file",
+          }),
+        }),
+        expect.objectContaining({
+          message: "chat.outbound.posted",
+          meta: expect.objectContaining({
+            platform: "feishu",
+            sessionKey: "feishu:b2NfZ3JvdXA:b21fcm9vdA",
+            conversationId: "oc_group",
+            rootMessageId: "om_root",
+            messageId: "state",
+            format: "card",
+          }),
+        }),
+      ]),
+    );
+  });
+
+  it("keeps Feishu file uploads successful when artifact card projection fails", async () => {
+    const dataRoot = await fs.mkdtemp(path.join(os.tmpdir(), "feishu-codex-upload-projection-fail-"));
+    const logDir = path.join(dataRoot, "logs");
+    configureLogger({
+      logDir,
+      level: "debug",
+      rawSlackEvents: false,
+      rawFeishuEvents: false,
+      rawCodexRpc: false,
+      rawHttpRequests: false,
+    });
+    const sessions = new SessionManager({
+      stateStore: new StateStore(path.join(dataRoot, "state"), path.join(dataRoot, "sessions")),
+      sessionsRoot: path.join(dataRoot, "sessions"),
+    });
+    await sessions.load();
+    const adapter = new FakeFeishuAdapter();
+    adapter.projectionError = Object.assign(new Error("card expired"), {
+      statusCode: 404,
+    });
+    const bridge = new FeishuCodexBridge({
+      sessions,
+      adapter,
+      codex: new FakeCodex() as never,
+      groupMessageMode: "all",
+    });
+
+    await expect(
+      bridge.postChatFile({
+        conversationId: "oc_group",
+        rootMessageId: "om_root",
+        contentBase64: Buffer.from("pdf").toString("base64"),
+        filename: "report.pdf",
+        contentType: "application/pdf",
+      }),
+    ).resolves.toMatchObject({
+      fileId: "file_uploaded",
+    });
+    await flushLogger();
+
+    expect(adapter.uploadedFiles).toHaveLength(1);
+    expect(adapter.postedProjections).toHaveLength(1);
+    const logs = await readJsonl(path.join(logDir, "broker.jsonl"));
+    expect(logs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: "chat.outbound.posted",
+          meta: expect.objectContaining({
+            platform: "feishu",
+            fileId: "file_uploaded",
+            format: "file",
+          }),
+        }),
+        expect.objectContaining({
+          level: "warn",
+          message: "chat.outbound.failed",
+          meta: expect.objectContaining({
+            platform: "feishu",
+            format: "card",
+            statusCode: 404,
           }),
         }),
       ]),
@@ -1076,11 +1293,30 @@ describe("FeishuCodexBridge", () => {
 
   it("renders Feishu turn-state updates as static interactive cards", async () => {
     const dataRoot = await fs.mkdtemp(path.join(os.tmpdir(), "feishu-codex-card-"));
+    const logDir = path.join(dataRoot, "logs");
+    configureLogger({
+      logDir,
+      level: "debug",
+      rawSlackEvents: false,
+      rawFeishuEvents: false,
+      rawCodexRpc: false,
+      rawHttpRequests: false,
+    });
     const sessions = new SessionManager({
       stateStore: new StateStore(path.join(dataRoot, "state"), path.join(dataRoot, "sessions")),
       sessionsRoot: path.join(dataRoot, "sessions"),
     });
+    const coordinates = {
+      platform: "feishu" as const,
+      conversationId: "oc_group",
+      rootMessageId: "om_root",
+    };
     await sessions.load();
+    await sessions.ensureChatSession(coordinates, {
+      conversationKind: "group",
+    });
+    await sessions.setChatCodexThreadId(coordinates, "thread-1");
+    await sessions.setChatActiveTurnId(coordinates, "turn-1");
     const adapter = new FakeFeishuAdapter();
     const bridge = new FeishuCodexBridge({
       sessions,
@@ -1096,6 +1332,7 @@ describe("FeishuCodexBridge", () => {
       kind: "wait",
       reason: "ci still running",
     });
+    await flushLogger();
 
     expect(adapter.postedMessages).toEqual([
       {
@@ -1136,6 +1373,276 @@ describe("FeishuCodexBridge", () => {
         },
       },
     ]);
+    expect(sessions.getChatSession(coordinates)).toMatchObject({
+      activeTurnId: "turn-1",
+      lastTurnSignalTurnId: "turn-1",
+      lastTurnSignalKind: "wait",
+      lastTurnSignalReason: "ci still running",
+    });
+    const logs = await readJsonl(path.join(logDir, "broker.jsonl"));
+    expect(logs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: "chat.turn.completed",
+          meta: expect.objectContaining({
+            platform: "feishu",
+            sessionKey: "feishu:b2NfZ3JvdXA:b21fcm9vdA",
+            turnId: "turn-1",
+            codexThreadId: "thread-1",
+            batchId: "message",
+            status: "wait",
+            reason: "ci still running",
+          }),
+        }),
+      ]),
+    );
+  });
+
+  it("records Feishu visible block cards as turn signals", async () => {
+    const dataRoot = await fs.mkdtemp(path.join(os.tmpdir(), "feishu-codex-block-card-"));
+    const sessions = new SessionManager({
+      stateStore: new StateStore(path.join(dataRoot, "state"), path.join(dataRoot, "sessions")),
+      sessionsRoot: path.join(dataRoot, "sessions"),
+    });
+    const coordinates = {
+      platform: "feishu" as const,
+      conversationId: "oc_group",
+      rootMessageId: "om_root",
+    };
+    await sessions.load();
+    await sessions.ensureChatSession(coordinates, {
+      conversationKind: "group",
+    });
+    await sessions.setChatCodexThreadId(coordinates, "thread-1");
+    await sessions.setChatActiveTurnId(coordinates, "turn-1");
+    const adapter = new FakeFeishuAdapter();
+    const bridge = new FeishuCodexBridge({
+      sessions,
+      adapter,
+      codex: new FakeCodex() as never,
+      groupMessageMode: "all",
+    });
+
+    await bridge.postChatMessage({
+      conversationId: "oc_group",
+      rootMessageId: "om_root",
+      text: "Blocked on permissions.",
+      kind: "block",
+      reason: "missing approval",
+    });
+
+    expect(adapter.postedMessages).toEqual([
+      expect.objectContaining({
+        message: expect.objectContaining({
+          text: "Blocked on permissions.",
+          format: "card",
+          card: expect.objectContaining({
+            header: expect.objectContaining({
+              template: "red",
+            }),
+          }),
+        }),
+      }),
+    ]);
+    expect(sessions.getChatSession(coordinates)).toMatchObject({
+      activeTurnId: "turn-1",
+      lastTurnSignalTurnId: "turn-1",
+      lastTurnSignalKind: "block",
+      lastTurnSignalReason: "missing approval",
+    });
+  });
+
+  it("rejects Feishu visible terminal messages before posting when the session is missing", async () => {
+    const dataRoot = await fs.mkdtemp(path.join(os.tmpdir(), "feishu-codex-missing-state-session-"));
+    const sessions = new SessionManager({
+      stateStore: new StateStore(path.join(dataRoot, "state"), path.join(dataRoot, "sessions")),
+      sessionsRoot: path.join(dataRoot, "sessions"),
+    });
+    await sessions.load();
+    const adapter = new FakeFeishuAdapter();
+    const bridge = new FeishuCodexBridge({
+      sessions,
+      adapter,
+      codex: new FakeCodex() as never,
+      groupMessageMode: "all",
+    });
+
+    await expect(
+      bridge.postChatMessage({
+        conversationId: "oc_group",
+        rootMessageId: "om_unknown",
+        text: "Final answer.",
+        kind: "final",
+      }),
+    ).rejects.toThrow("Unknown session for Feishu state update: oc_group:om_unknown");
+
+    expect(adapter.postedMessages).toEqual([]);
+  });
+
+  it("projects Feishu progress messages into the active state card instead of posting noisy replies", async () => {
+    const dataRoot = await fs.mkdtemp(path.join(os.tmpdir(), "feishu-codex-progress-projection-"));
+    const logDir = path.join(dataRoot, "logs");
+    configureLogger({
+      logDir,
+      level: "debug",
+      rawSlackEvents: false,
+      rawFeishuEvents: false,
+      rawCodexRpc: false,
+      rawHttpRequests: false,
+    });
+    const sessions = new SessionManager({
+      stateStore: new StateStore(path.join(dataRoot, "state"), path.join(dataRoot, "sessions")),
+      sessionsRoot: path.join(dataRoot, "sessions"),
+    });
+    await sessions.load();
+    const adapter = new FakeFeishuAdapter();
+    const bridge = new FeishuCodexBridge({
+      sessions,
+      adapter,
+      codex: new FakeCodex() as never,
+      groupMessageMode: "all",
+    });
+
+    await bridge.postChatMessage({
+      conversationId: "oc_group",
+      rootMessageId: "om_root",
+      text: "tool: exec_command\npnpm test",
+      kind: "progress",
+    });
+    await flushLogger();
+
+    expect(adapter.postedMessages).toEqual([]);
+    expect(adapter.postedProjections).toEqual([
+      {
+        target: {
+          platform: "feishu",
+          conversationId: "oc_group",
+          rootMessageId: "om_root",
+        },
+        projection: expect.objectContaining({
+          status: "running_tool",
+          slots: [
+            expect.objectContaining({
+              kind: "tool",
+              title: "Tool: exec_command",
+            }),
+          ],
+        }),
+      },
+    ]);
+    const logs = await readJsonl(path.join(logDir, "broker.jsonl"));
+    expect(logs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: "chat.outbound.posted",
+          meta: expect.objectContaining({
+            platform: "feishu",
+            messageId: "state",
+            format: "card",
+          }),
+        }),
+      ]),
+    );
+  });
+
+  it("posts Feishu final replies as regular messages without an extra state card", async () => {
+    const dataRoot = await fs.mkdtemp(path.join(os.tmpdir(), "feishu-codex-final-projection-fail-"));
+    const logDir = path.join(dataRoot, "logs");
+    configureLogger({
+      logDir,
+      level: "debug",
+      rawSlackEvents: false,
+      rawFeishuEvents: false,
+      rawCodexRpc: false,
+      rawHttpRequests: false,
+    });
+    const sessions = new SessionManager({
+      stateStore: new StateStore(path.join(dataRoot, "state"), path.join(dataRoot, "sessions")),
+      sessionsRoot: path.join(dataRoot, "sessions"),
+    });
+    const coordinates = {
+      platform: "feishu" as const,
+      conversationId: "oc_group",
+      rootMessageId: "om_root",
+    };
+    await sessions.load();
+    await sessions.ensureChatSession(coordinates, {
+      conversationKind: "group",
+    });
+    await sessions.setChatCodexThreadId(coordinates, "thread-1");
+    await sessions.setChatActiveTurnId(coordinates, "turn-1");
+    const adapter = new FakeFeishuAdapter();
+    const bridge = new FeishuCodexBridge({
+      sessions,
+      adapter,
+      codex: new FakeCodex() as never,
+      groupMessageMode: "all",
+    });
+
+    await expect(
+      bridge.postChatMessage({
+        conversationId: "oc_group",
+        rootMessageId: "om_root",
+        text: "Final answer is still visible.",
+        kind: "final",
+      }),
+    ).resolves.toMatchObject({
+      messageId: "om_reply",
+    });
+    await flushLogger();
+
+    expect(adapter.postedMessages).toEqual([
+      expect.objectContaining({
+        message: expect.objectContaining({
+          text: "Final answer is still visible.",
+          format: undefined,
+          card: undefined,
+        }),
+      }),
+    ]);
+    expect(adapter.postedProjections).toEqual([]);
+    expect(sessions.getChatSession(coordinates)).toMatchObject({
+      activeTurnId: "turn-1",
+      lastTurnSignalTurnId: "turn-1",
+      lastTurnSignalKind: "final",
+    });
+    const logs = await readJsonl(path.join(logDir, "broker.jsonl"));
+    expect(logs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: "chat.outbound.posted",
+          meta: expect.objectContaining({
+            platform: "feishu",
+            messageId: "om_reply",
+            format: "text",
+          }),
+        }),
+        expect.objectContaining({
+          message: "chat.turn.completed",
+          meta: expect.objectContaining({
+            platform: "feishu",
+            sessionKey: "feishu:b2NfZ3JvdXA:b21fcm9vdA",
+            turnId: "turn-1",
+            codexThreadId: "thread-1",
+            batchId: "message",
+            status: "final",
+          }),
+        }),
+      ]),
+    );
+    expect(logs).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: "chat.outbound.posted",
+          meta: expect.objectContaining({
+            platform: "feishu",
+            sessionKey: "feishu:b2NfZ3JvdXA:b21fcm9vdA",
+            format: "card",
+            messageId: "state",
+          }),
+        }),
+      ]),
+    );
   });
 
   it("confirms Feishu co-authors through a card callback before resolving commit trailers", async () => {
@@ -1637,7 +2144,7 @@ describe("FeishuCodexBridge", () => {
     expect(JSON.stringify(logs)).not.toContain("ou_user");
   });
 
-  it("records Feishu chat state as a persisted turn signal", async () => {
+  it("records Feishu chat state as a silent persisted turn signal", async () => {
     const dataRoot = await fs.mkdtemp(path.join(os.tmpdir(), "feishu-codex-state-"));
     const logDir = path.join(dataRoot, "logs");
     configureLogger({
@@ -1663,9 +2170,10 @@ describe("FeishuCodexBridge", () => {
     });
     await sessions.setChatCodexThreadId(coordinates, "thread-1");
     await sessions.setChatActiveTurnId(coordinates, "turn-1");
+    const adapter = new FakeFeishuAdapter();
     const bridge = new FeishuCodexBridge({
       sessions,
-      adapter: new FakeFeishuAdapter(),
+      adapter,
       codex: new FakeCodex() as never,
       groupMessageMode: "all",
     });
@@ -1683,6 +2191,9 @@ describe("FeishuCodexBridge", () => {
       lastTurnSignalKind: "final",
       lastTurnSignalReason: "done",
     });
+    expect(adapter.postedStates).toEqual([]);
+    expect(adapter.postedProjections).toEqual([]);
+    expect(adapter.postedMessages).toEqual([]);
     const logs = await readJsonl(path.join(logDir, "broker.jsonl"));
     expect(logs).toEqual(
       expect.arrayContaining([
@@ -1695,6 +2206,244 @@ describe("FeishuCodexBridge", () => {
             codexThreadId: "thread-1",
             durationMs: 0,
             batchId: "state",
+          }),
+        }),
+      ]),
+    );
+    expect(logs).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: "chat.outbound.posted",
+          meta: expect.objectContaining({
+            platform: "feishu",
+            sessionKey: "feishu:b2NfZ3JvdXA:b21fcm9vdA",
+            format: "card",
+            messageId: "state",
+          }),
+        }),
+      ]),
+    );
+  });
+
+  it("starts a new turn for Feishu topic replies after a silent final state", async () => {
+    const dataRoot = await fs.mkdtemp(path.join(os.tmpdir(), "feishu-codex-state-followup-"));
+    const logDir = path.join(dataRoot, "logs");
+    configureLogger({
+      logDir,
+      level: "debug",
+      rawSlackEvents: false,
+      rawFeishuEvents: false,
+      rawCodexRpc: false,
+      rawHttpRequests: false,
+    });
+    const sessions = new SessionManager({
+      stateStore: new StateStore(path.join(dataRoot, "state"), path.join(dataRoot, "sessions")),
+      sessionsRoot: path.join(dataRoot, "sessions"),
+    });
+    await sessions.load();
+    const coordinates = {
+      platform: "feishu" as const,
+      conversationId: "oc_group",
+      rootMessageId: "om_root",
+    };
+    const adapter = new FakeFeishuAdapter();
+    const codex = new DeferredFakeCodex();
+    const bridge = new FeishuCodexBridge({
+      sessions,
+      adapter,
+      codex: codex as never,
+      groupMessageMode: "all",
+    });
+
+    await bridge.start();
+    const firstMessage = adapter.emit({
+      platform: "feishu",
+      conversationId: "oc_group",
+      conversationKind: "group",
+      rootMessageId: "om_root",
+      platformThreadId: "omt_thread",
+      messageId: "om_root",
+      source: "bot_mention",
+      sender: {
+        kind: "user",
+        userId: "ou_user",
+      },
+      text: "start the topic session",
+    });
+    await waitForCondition(() => codex.startedTurns.length === 1, "first Feishu topic turn start");
+    await waitForCondition(() => sessions.getChatSession(coordinates)?.activeTurnId === "turn-1", "first Feishu topic turn active");
+
+    await bridge.postChatState({
+      conversationId: "oc_group",
+      rootMessageId: "om_root",
+      kind: "final",
+      reason: "done",
+    });
+    codex.completeNext();
+    await firstMessage;
+    await waitForCondition(() => sessions.getChatSession(coordinates)?.activeTurnId === undefined, "first Feishu topic turn completion");
+
+    const followupMessage = adapter.emit({
+      platform: "feishu",
+      conversationId: "oc_group",
+      conversationKind: "group",
+      rootMessageId: "om_root",
+      platformThreadId: "omt_thread",
+      messageId: "om_followup",
+      source: "thread_reply",
+      sender: {
+        kind: "user",
+        userId: "ou_user",
+      },
+      text: "follow-up in the same topic",
+    });
+    await waitForCondition(() => codex.startedTurns.length === 2, "follow-up Feishu topic turn start");
+    codex.completeNext();
+    await followupMessage;
+    await waitForCondition(() => sessions.getChatSession(coordinates)?.activeTurnId === undefined, "follow-up Feishu topic turn completion");
+    await flushLogger();
+
+    expect(codex.steers).toEqual([]);
+    expect(codex.startedTurns[1]).toEqual(
+      expect.objectContaining({
+        inputText: expect.stringContaining("follow-up in the same topic"),
+      }),
+    );
+    expect(sessions.getChatSession(coordinates)).toMatchObject({
+      lastTurnSignalTurnId: "turn-1",
+      lastTurnSignalKind: "final",
+      lastObservedMessageTs: "om_followup",
+    });
+    expect(adapter.postedStates).toEqual([]);
+    expect(adapter.postedProjections).toEqual([]);
+    const logs = await readJsonl(path.join(logDir, "broker.jsonl"));
+    expect(logs).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: "chat.outbound.posted",
+          meta: expect.objectContaining({
+            platform: "feishu",
+            format: "card",
+            messageId: "state",
+          }),
+        }),
+      ]),
+    );
+  });
+
+  it("starts a new turn for Feishu topic replies after a visible final reply", async () => {
+    const dataRoot = await fs.mkdtemp(path.join(os.tmpdir(), "feishu-codex-visible-final-followup-"));
+    const logDir = path.join(dataRoot, "logs");
+    configureLogger({
+      logDir,
+      level: "debug",
+      rawSlackEvents: false,
+      rawFeishuEvents: false,
+      rawCodexRpc: false,
+      rawHttpRequests: false,
+    });
+    const sessions = new SessionManager({
+      stateStore: new StateStore(path.join(dataRoot, "state"), path.join(dataRoot, "sessions")),
+      sessionsRoot: path.join(dataRoot, "sessions"),
+    });
+    await sessions.load();
+    const coordinates = {
+      platform: "feishu" as const,
+      conversationId: "oc_group",
+      rootMessageId: "om_root",
+    };
+    const adapter = new FakeFeishuAdapter();
+    const codex = new DeferredFakeCodex();
+    const bridge = new FeishuCodexBridge({
+      sessions,
+      adapter,
+      codex: codex as never,
+      groupMessageMode: "all",
+    });
+
+    await bridge.start();
+    const firstMessage = adapter.emit({
+      platform: "feishu",
+      conversationId: "oc_group",
+      conversationKind: "group",
+      rootMessageId: "om_root",
+      platformThreadId: "omt_thread",
+      messageId: "om_root",
+      source: "bot_mention",
+      sender: {
+        kind: "user",
+        userId: "ou_user",
+      },
+      text: "start the topic session",
+    });
+    await waitForCondition(() => codex.startedTurns.length === 1, "first Feishu topic turn start");
+    await waitForCondition(() => sessions.getChatSession(coordinates)?.activeTurnId === "turn-1", "first Feishu topic turn active");
+
+    await bridge.postChatMessage({
+      conversationId: "oc_group",
+      rootMessageId: "om_root",
+      text: "Final answer is visible.",
+      kind: "final",
+    });
+    codex.completeNext();
+    await firstMessage;
+    await waitForCondition(() => sessions.getChatSession(coordinates)?.activeTurnId === undefined, "first Feishu topic turn completion");
+
+    const followupMessage = adapter.emit({
+      platform: "feishu",
+      conversationId: "oc_group",
+      conversationKind: "group",
+      rootMessageId: "om_root",
+      platformThreadId: "omt_thread",
+      messageId: "om_followup",
+      source: "thread_reply",
+      sender: {
+        kind: "user",
+        userId: "ou_user",
+      },
+      text: "new work in the same topic",
+    });
+    await waitForCondition(() => codex.startedTurns.length === 2, "follow-up Feishu topic turn start");
+    codex.completeNext();
+    await followupMessage;
+    await waitForCondition(() => sessions.getChatSession(coordinates)?.activeTurnId === undefined, "follow-up Feishu topic turn completion");
+    await flushLogger();
+
+    expect(codex.steers).toEqual([]);
+    expect(codex.startedTurns[1]).toEqual(
+      expect.objectContaining({
+        inputText: expect.stringContaining("new work in the same topic"),
+      }),
+    );
+    expect(adapter.postedMessages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: expect.objectContaining({
+            text: "Final answer is visible.",
+            format: undefined,
+            card: undefined,
+          }),
+        }),
+      ]),
+    );
+    expect(adapter.postedStates).toEqual([]);
+    expect(adapter.postedProjections).toEqual([]);
+    expect(sessions.getChatSession(coordinates)).toMatchObject({
+      lastTurnSignalTurnId: "turn-1",
+      lastTurnSignalKind: "final",
+      lastObservedMessageTs: "om_followup",
+    });
+    const logs = await readJsonl(path.join(logDir, "broker.jsonl"));
+    expect(logs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: "chat.turn.completed",
+          meta: expect.objectContaining({
+            platform: "feishu",
+            sessionKey: "feishu:b2NfZ3JvdXA:b21fcm9vdA",
+            turnId: "turn-1",
+            batchId: "message",
+            status: "final",
           }),
         }),
       ]),
@@ -2580,6 +3329,8 @@ class FakeFeishuAdapter implements ChatPlatformAdapter {
   readonly platform = "feishu" as const;
   handlers: ChatPlatformHandlers | undefined;
   readonly postedMessages: unknown[] = [];
+  readonly postedStates: unknown[] = [];
+  readonly postedProjections: unknown[] = [];
   readonly uploadedFiles: unknown[] = [];
   readonly downloadedAttachments: unknown[] = [];
   readonly historyQueries: unknown[] = [];
@@ -2587,6 +3338,7 @@ class FakeFeishuAdapter implements ChatPlatformAdapter {
   historyPage: ChatThreadPage | undefined;
   uploadKind: ChatUploadedFile["kind"];
   postError: unknown;
+  projectionError: unknown;
   postedMessageId: string | undefined = "om_reply";
   postDelayMs = 0;
   activePosts = 0;
@@ -2646,6 +3398,17 @@ class FakeFeishuAdapter implements ChatPlatformAdapter {
       };
     } finally {
       this.activePosts -= 1;
+    }
+  }
+
+  async postThreadState(target: ChatThreadTarget, state: unknown): Promise<void> {
+    this.postedStates.push({ target, state });
+  }
+
+  async postThreadProjection(target: ChatThreadTarget, projection: ChatTurnProjection): Promise<void> {
+    this.postedProjections.push({ target, projection });
+    if (this.projectionError) {
+      throw this.projectionError;
     }
   }
 
@@ -2776,6 +3539,45 @@ class FakeCodex {
 
   async interrupt(session: unknown) {
     this.interruptedSessions.push(session);
+  }
+}
+
+class DeferredFakeCodex extends FakeCodex {
+  readonly #pendingTurns: Array<{
+    readonly turnId: string;
+    readonly resolve: (result: { readonly threadId: string; readonly turnId: string; readonly finalMessage: string; readonly aborted: boolean }) => void;
+  }> = [];
+
+  override async startTurn(session: unknown, input: readonly { type: string; text?: string }[]) {
+    const turnId = `turn-${this.startedTurns.length + 1}`;
+    this.startedTurns.push({
+      session,
+      inputText: input.map((item) => item.text ?? "").join("\n"),
+      imageUrls: input.filter((item): item is { type: string; url: string } => item.type === "image" && "url" in item).map((item) => item.url),
+    });
+    const completion = new Promise<{ readonly threadId: string; readonly turnId: string; readonly finalMessage: string; readonly aborted: boolean }>((resolve) => {
+      this.#pendingTurns.push({
+        turnId,
+        resolve,
+      });
+    });
+    return {
+      turnId,
+      completion,
+    };
+  }
+
+  completeNext(): void {
+    const pending = this.#pendingTurns.shift();
+    if (!pending) {
+      throw new Error("No pending deferred Codex turn");
+    }
+    pending.resolve({
+      threadId: "thread-1",
+      turnId: pending.turnId,
+      finalMessage: "",
+      aborted: false,
+    });
   }
 }
 

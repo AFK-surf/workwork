@@ -11,6 +11,8 @@ Current {{chat_surface_name}} thread coordinates:
 
 {{thread_coordinates_section}}
 
+{{thread_model_note}}
+
 {{chat_surface_name}} broker API usage for this session:
 
 - Send text with: {{post_message_command}}

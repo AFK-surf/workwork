@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { activeBackgroundJobCount, renderSessionMeta, sessionActivityAt, sessionQueueState, shouldShowSessionState } from "../src/admin-ui/session-row-display.js";
+import { activeBackgroundJobCount, renderSessionMeta, sessionActivityAt, sessionInboundIndicator, sessionQueueState, sessionWorkIndicator, shouldShowSessionState } from "../src/admin-ui/session-row-display.js";
 
 import { requestCancelSessionJob } from "../src/admin-ui/session-job-actions.js";
 
@@ -115,6 +115,7 @@ describe("admin session row display", () => {
     const labels = meta.map((item) => item.label);
 
     expect(labels).toContain("#deep-review");
+    expect(labels).toContain("未读/待处理 1 条");
     expect(labels).toContain("Jobs 1");
     expect(labels).not.toContain("Jobs 2");
     expect(shouldShowSessionState({ rank: 50 })).toBe(true);
@@ -198,9 +199,68 @@ describe("admin session row display", () => {
     expect(state).toMatchObject({
       label: "待处理",
       tone: "warn",
-      detail: "1 条用户消息",
+      detail: "1 条未处理用户消息",
     });
     expect(state.label).not.toContain("待人处理");
+  });
+
+  it("exposes broker open-inbound as the product read/unread signal", () => {
+    const slack = sessionInboundIndicator({
+      platform: "slack",
+      openInboundCount: 2,
+      openHumanInboundCount: 1,
+      openSystemInboundCount: 1,
+    });
+    const feishu = sessionInboundIndicator({
+      platform: "feishu",
+      openInboundCount: 1,
+      openHumanInboundCount: 1,
+      openSystemInboundCount: 0,
+    });
+
+    expect(slack).toMatchObject({
+      value: "2 条",
+      detail: "用户 1 / 系统 1",
+      tone: "warn",
+      title: expect.stringContaining("Slack thread/channel broker open-inbound state"),
+    });
+    expect(feishu).toMatchObject({
+      value: "1 条",
+      detail: "用户 1 / 系统 0",
+      tone: "warn",
+      title: expect.stringContaining("Feishu group broker open-inbound state"),
+    });
+    expect(slack?.title).toContain("not a native client unread counter");
+  });
+
+  it("names platform-adapted work indicators for active Slack and Feishu turns", () => {
+    const slack = {
+      platform: "slack",
+      activeTurnId: "turn-slack-1234567890",
+    };
+    const feishu = {
+      platform: "feishu",
+      activeTurnId: "turn-feishu-1234567890",
+    };
+
+    expect(sessionQueueState(slack)).toMatchObject({
+      label: "处理中",
+      tone: "good",
+      detail: "assistant status / eyes fallback · turn-slack-12...7890",
+    });
+    expect(sessionWorkIndicator(slack)).toMatchObject({
+      value: "Slack 状态",
+      title: expect.stringContaining("assistant.threads.setStatus"),
+    });
+    expect(sessionQueueState(feishu)).toMatchObject({
+      label: "处理中",
+      tone: "good",
+      detail: "状态卡 / 消息更新 · turn-feishu-1...7890",
+    });
+    expect(sessionWorkIndicator(feishu)).toMatchObject({
+      value: "飞书状态卡",
+      title: expect.stringContaining("visible state card"),
+    });
   });
 
   it("does not show account-switch state when the bound profile quota has recovered", () => {
@@ -237,7 +297,7 @@ describe("admin session row display", () => {
     const meta = renderSessionMeta(session, new Map([["profile-a", profile]]));
 
     expect(state.label).toBe("待处理");
-    expect(state.detail).toBe("1 条系统消息");
+    expect(state.detail).toBe("1 条未处理系统消息");
     expect(meta.map((item) => item.key)).not.toContain("auth-blocked");
     expect(meta.map((item) => item.label)).not.toContain("账号待切换");
   });
@@ -268,7 +328,7 @@ describe("admin session row display", () => {
     const meta = renderSessionMeta(session, new Map([["profile-a", profile]]));
 
     expect(state.label).toBe("待处理");
-    expect(state.detail).toBe("1 条用户消息");
+    expect(state.detail).toBe("1 条未处理用户消息");
     expect(meta.map((item) => item.key)).not.toContain("auth-blocked");
     expect(meta.map((item) => item.label)).not.toContain("账号待切换");
   });

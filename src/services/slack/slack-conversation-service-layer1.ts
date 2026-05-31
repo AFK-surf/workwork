@@ -2,9 +2,9 @@ import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-import { buildAdminSessionUrl } from "../../admin-session-url.js";
 import type { AppConfig } from "../../config.js";
 import { logger } from "../../logger.js";
+import { formatSessionPageLinkMessage } from "../chat/session-page-link-message.js";
 import { SessionManager } from "../session-manager.js";
 import type { BackgroundJobEventPayload, PersistedInboundMessage, ResolvedSlackThreadMessage, SlackInputMessage, SlackSessionRecord, SlackThreadMessage, SlackTurnSignalKind } from "../../types.js";
 import type { AgentRuntime, AgentRuntimeEvent } from "../agent-runtime/types.js";
@@ -32,6 +32,7 @@ import {
   shouldPostSlackRunFailure,
   shouldNotifySlackFailure,
   shouldAutoRecoverSession,
+  isSlackPlatformSession,
 } from "./slack-conversation-utils.js";
 import { SlackInboundStore } from "./slack-inbound-store.js";
 import { formatSlackHistoryContextForAgent } from "./slack-message-format.js";
@@ -630,6 +631,7 @@ export class SlackConversationServiceLayer1 extends SlackConversationServiceBase
   async privateReconcilePersistedActiveTurns(): Promise<void> {
     const sessions = this.privateSessions
       .listSessions()
+      .filter(isSlackPlatformSession)
       .filter((session) => session.activeTurnId)
       .sort((left, right) => compareIsoTimestamp(right.updatedAt, left.updatedAt));
 
@@ -698,6 +700,7 @@ export class SlackConversationServiceLayer1 extends SlackConversationServiceBase
   async privateReconcileLiveActiveTurns(): Promise<void> {
     const sessions = this.privateSessions
       .listSessions()
+      .filter(isSlackPlatformSession)
       .filter((session) => session.activeTurnId)
       .sort((left, right) => compareIsoTimestamp(right.updatedAt, left.updatedAt));
 
@@ -754,6 +757,7 @@ export class SlackConversationServiceLayer1 extends SlackConversationServiceBase
 
     const sessions = this.privateSessions
       .listSessions()
+      .filter(isSlackPlatformSession)
       .filter((session) => shouldAutoRecoverSession(session, now))
       .sort((left, right) => compareIsoTimestamp(right.updatedAt, left.updatedAt));
 
@@ -899,28 +903,22 @@ export class SlackConversationServiceLayer1 extends SlackConversationServiceBase
       return latestSession;
     }
 
-    const url = buildAdminSessionUrl(this.privateConfig.adminBaseUrl, session.key);
+    const text = formatSessionPageLinkMessage({
+      adminBaseUrl: this.privateConfig.adminBaseUrl,
+      session: latestSession,
+      githubPrIdentity: this.privateGithubPrIdentity,
+      style: "slack_mrkdwn",
+    });
     try {
-      await this.privatePostBotThreadMessage(latestSession.channelId, latestSession.rootThreadTs, this.privateFormatSessionPageLinkMessage(latestSession, url), { alreadyFormatted: true });
+      await this.privatePostBotThreadMessage(latestSession.channelId, latestSession.rootThreadTs, text, { alreadyFormatted: true });
       return await this.privateSessions.setSessionPageLinkPostedAt(latestSession.channelId, latestSession.rootThreadTs, new Date().toISOString());
     } catch (error) {
       logger.warn("Failed to post admin session link into Slack thread", {
         sessionKey: session.key,
-        adminSessionUrl: url,
         error: error instanceof Error ? error.message : String(error),
       });
       return session;
     }
-  }
-
-  privateFormatSessionPageLinkMessage(session: SlackSessionRecord, url: string): string {
-    const lines = [`<${url}|查看会话活动时间线>`];
-    const identity = this.privateGithubPrIdentity?.getSessionIdentityStatus(session);
-    if (identity?.binding.state === "unbound") {
-      const warning = identity.defaultAccount.available ? `当前发起人还没有绑定 GitHub 账号。不绑定时，后续创建 PR 会使用默认账号 ${identity.defaultAccount.githubLogin}。` : "当前发起人还没有绑定 GitHub 账号。当前没有默认 GitHub PR 账号，创建 PR 前需要先绑定。";
-      lines.push("", warning, `<${url}/github/bind|绑定 GitHub>`);
-    }
-    return lines.join("\n");
   }
 
   async privateRecordStopSignal(

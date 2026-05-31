@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { configureLogger, flushLogger } from "../src/logger.js";
 import { CHAT_FILE_SOURCE_REQUIREMENT_MESSAGE, CHAT_INLINE_FILE_CONTENT_REQUIREMENT_MESSAGE, CHAT_INLINE_FILE_FILENAME_REQUIREMENT_MESSAGE } from "../src/services/chat/chat-types.js";
-import { FEISHU_GROUP_MESSAGE_MIN_INTERVAL_MS, FeishuGroupMessageRateLimiter, FeishuPlatformAdapter } from "../src/services/feishu/feishu-platform-adapter.js";
+import { FEISHU_GROUP_MESSAGE_MIN_INTERVAL_MS, FEISHU_STATE_CARD_PATCH_DEBOUNCE_MS, FeishuGroupMessageRateLimiter, FeishuPlatformAdapter } from "../src/services/feishu/feishu-platform-adapter.js";
 
 describe("FeishuPlatformAdapter", () => {
   afterEach(() => {
@@ -72,6 +72,321 @@ describe("FeishuPlatformAdapter", () => {
     await vi.advanceTimersByTimeAsync(1);
     await second;
     expect(postedFeishuTextCalls(calls)).toEqual(["first", "other", "second"]);
+  });
+
+  it("posts an initial Feishu turn-state card, patches later states, and skips duplicate states", async () => {
+    const calls: unknown[] = [];
+    const adapter = new FeishuPlatformAdapter({
+      appId: "cli-test",
+      appSecret: "secret-test",
+      api: createFakeApi(calls),
+      wsClient: new FakeWsClient(),
+      stateCardPatchDebounceMs: 0,
+    });
+    const target = {
+      platform: "feishu" as const,
+      conversationId: "oc_group",
+      rootMessageId: "om_root",
+    };
+
+    await adapter.postThreadState(target, {
+      kind: "wait",
+      reason: "CI is still running",
+    });
+    await adapter.postThreadState(target, {
+      kind: "wait",
+      reason: "CI is still running",
+    });
+    await adapter.postThreadState(target, {
+      kind: "final",
+      reason: "done",
+    });
+
+    expect(calls.map((call) => (call as { operation?: string }).operation)).toEqual(["replyMessage", "patchMessage"]);
+    expect(calls[0]).toEqual({
+      operation: "replyMessage",
+      options: expect.objectContaining({
+        messageId: "om_root",
+        msgType: "interactive",
+        replyInThread: true,
+        content: expect.objectContaining({
+          header: expect.objectContaining({
+            template: "yellow",
+            title: expect.objectContaining({
+              content: "Codex is waiting",
+            }),
+          }),
+        }),
+      }),
+    });
+    expect(calls[1]).toEqual({
+      operation: "patchMessage",
+      options: expect.objectContaining({
+        messageId: "om_reply",
+        content: expect.objectContaining({
+          header: expect.objectContaining({
+            template: "green",
+            title: expect.objectContaining({
+              content: "Codex finished",
+            }),
+          }),
+        }),
+      }),
+    });
+  });
+
+  it("renders shared progress projection slots inside the Feishu state card", async () => {
+    const calls: unknown[] = [];
+    const adapter = new FeishuPlatformAdapter({
+      appId: "cli-test",
+      appSecret: "secret-test",
+      api: createFakeApi(calls),
+      wsClient: new FakeWsClient(),
+      stateCardPatchDebounceMs: 0,
+    });
+    const target = {
+      platform: "feishu" as const,
+      conversationId: "oc_group",
+      rootMessageId: "om_root",
+    };
+
+    await adapter.postThreadProjection(target, {
+      target,
+      status: "running_tool",
+      title: "Codex is running a tool",
+      summary: "Codex is using a tool to make progress.",
+      slots: [
+        {
+          kind: "tool",
+          title: "Tool: exec_command",
+          body: `tool: exec_command\n${"x".repeat(900)}`,
+          metadata: {
+            toolName: "exec_command",
+          },
+        },
+      ],
+    });
+
+    expect(calls).toEqual([
+      {
+        operation: "replyMessage",
+        options: expect.objectContaining({
+          msgType: "interactive",
+          content: expect.objectContaining({
+            elements: expect.arrayContaining([
+              expect.objectContaining({
+                tag: "div",
+                text: expect.objectContaining({
+                  content: expect.stringContaining("**Tool: exec_command**"),
+                }),
+              }),
+            ]),
+          }),
+        }),
+      },
+    ]);
+    expect(JSON.stringify(calls)).toContain("...");
+  });
+
+  it("renders shared artifact projection slots inside the Feishu state card", async () => {
+    const calls: unknown[] = [];
+    const adapter = new FeishuPlatformAdapter({
+      appId: "cli-test",
+      appSecret: "secret-test",
+      api: createFakeApi(calls),
+      wsClient: new FakeWsClient(),
+      stateCardPatchDebounceMs: 0,
+    });
+    const target = {
+      platform: "feishu" as const,
+      conversationId: "oc_group",
+      rootMessageId: "om_root",
+    };
+
+    await adapter.postThreadProjection(target, {
+      target,
+      status: "thinking",
+      title: "Codex shared an artifact",
+      summary: "A file or artifact was uploaded to the chat.",
+      slots: [
+        {
+          kind: "artifact",
+          title: "Artifact: report.pdf",
+          body: "Kind: file\nName: report.pdf\nType: application/pdf\nSize: 2.0 KiB",
+          metadata: {
+            fileId: "file_uploaded",
+            artifactKind: "file",
+          },
+        },
+      ],
+    });
+
+    expect(calls).toEqual([
+      {
+        operation: "replyMessage",
+        options: expect.objectContaining({
+          msgType: "interactive",
+          content: expect.objectContaining({
+            elements: expect.arrayContaining([
+              expect.objectContaining({
+                tag: "div",
+                text: expect.objectContaining({
+                  content: expect.stringContaining("**Artifact: report.pdf**"),
+                }),
+              }),
+            ]),
+          }),
+        }),
+      },
+    ]);
+    expect(JSON.stringify(calls)).toContain("Kind: file");
+  });
+
+  it("debounces rapid Feishu turn-state patches to the latest visible card state", async () => {
+    vi.useFakeTimers();
+    const calls: unknown[] = [];
+    const adapter = new FeishuPlatformAdapter({
+      appId: "cli-test",
+      appSecret: "secret-test",
+      api: createFakeApi(calls),
+      wsClient: new FakeWsClient(),
+      stateCardPatchDebounceMs: FEISHU_STATE_CARD_PATCH_DEBOUNCE_MS,
+    });
+    const target = {
+      platform: "feishu" as const,
+      conversationId: "oc_group",
+      rootMessageId: "om_root",
+    };
+
+    const initial = adapter.postThreadState(target, {
+      kind: "wait",
+      reason: "initial queue",
+    });
+    await vi.advanceTimersByTimeAsync(FEISHU_STATE_CARD_PATCH_DEBOUNCE_MS);
+    await initial;
+
+    const waiting = adapter.postThreadState(target, {
+      kind: "wait",
+      reason: "still waiting",
+    });
+    const blocked = adapter.postThreadState(target, {
+      kind: "block",
+      reason: "needs approval",
+    });
+    const final = adapter.postThreadState(target, {
+      kind: "final",
+      reason: "done",
+    });
+
+    await vi.advanceTimersByTimeAsync(FEISHU_STATE_CARD_PATCH_DEBOUNCE_MS - 1);
+    expect(calls.map((call) => (call as { operation?: string }).operation)).toEqual(["replyMessage"]);
+
+    await vi.advanceTimersByTimeAsync(1);
+    await Promise.all([waiting, blocked, final]);
+
+    expect(calls.map((call) => (call as { operation?: string }).operation)).toEqual(["replyMessage", "patchMessage"]);
+    expect(calls[1]).toEqual({
+      operation: "patchMessage",
+      options: expect.objectContaining({
+        messageId: "om_reply",
+        content: expect.objectContaining({
+          header: expect.objectContaining({
+            template: "green",
+            title: expect.objectContaining({
+              content: "Codex finished",
+            }),
+          }),
+        }),
+      }),
+    });
+  });
+
+  it("serializes slow Feishu turn-state patches so the final visible state wins", async () => {
+    let releaseFirstPatch: (() => void) | undefined;
+    const firstPatchBlocker = new Promise<void>((resolve) => {
+      releaseFirstPatch = resolve;
+    });
+    const calls: unknown[] = [];
+    const adapter = new FeishuPlatformAdapter({
+      appId: "cli-test",
+      appSecret: "secret-test",
+      api: createFakeApi(calls, {
+        firstPatchBlocker,
+      }),
+      wsClient: new FakeWsClient(),
+      stateCardPatchDebounceMs: 0,
+    });
+    const target = {
+      platform: "feishu" as const,
+      conversationId: "oc_group",
+      rootMessageId: "om_root",
+    };
+
+    await adapter.postThreadState(target, {
+      kind: "wait",
+      reason: "initial queue",
+    });
+
+    const blocked = adapter.postThreadState(target, {
+      kind: "block",
+      reason: "needs approval",
+    });
+    await flushAsyncHandlers();
+    expect(calls.map((call) => (call as { operation?: string }).operation)).toEqual(["replyMessage", "patchMessage"]);
+
+    const final = adapter.postThreadState(target, {
+      kind: "final",
+      reason: "done",
+    });
+    await flushAsyncHandlers();
+    expect(calls.map((call) => (call as { operation?: string }).operation)).toEqual(["replyMessage", "patchMessage"]);
+
+    releaseFirstPatch?.();
+    await Promise.all([blocked, final]);
+
+    expect(calls.map((call) => (call as { operation?: string }).operation)).toEqual(["replyMessage", "patchMessage", "patchMessage"]);
+    expect(calls[2]).toEqual({
+      operation: "patchMessage",
+      options: expect.objectContaining({
+        content: expect.objectContaining({
+          header: expect.objectContaining({
+            template: "green",
+            title: expect.objectContaining({
+              content: "Codex finished",
+            }),
+          }),
+        }),
+      }),
+    });
+  });
+
+  it("falls back to a fresh Feishu turn-state card when patching the previous card fails", async () => {
+    const calls: unknown[] = [];
+    const adapter = new FeishuPlatformAdapter({
+      appId: "cli-test",
+      appSecret: "secret-test",
+      api: createFakeApi(calls, {
+        patchMessageError: new Error("expired card"),
+      }),
+      wsClient: new FakeWsClient(),
+      stateCardPatchDebounceMs: 0,
+    });
+    const target = {
+      platform: "feishu" as const,
+      conversationId: "oc_group",
+      rootMessageId: "om_root",
+    };
+
+    await adapter.postThreadState(target, {
+      kind: "wait",
+      reason: "CI is still running",
+    });
+    await adapter.postThreadState(target, {
+      kind: "final",
+      reason: "done",
+    });
+
+    expect(calls.map((call) => (call as { operation?: string }).operation)).toEqual(["replyMessage", "patchMessage", "replyMessage"]);
   });
 
   it("lists Feishu history with thread containers, page cursors, and raw card content", async () => {
@@ -1132,11 +1447,68 @@ describe("FeishuPlatformAdapter", () => {
           msgType: "post",
           content: {
             zh_cn: {
-              content: [[{ tag: "text", text: "Build passed" }], [{ tag: "text", text: "- tests green" }]],
+              content: [
+                [{ tag: "text", text: "Build passed" }],
+                [
+                  { tag: "text", text: "- " },
+                  { tag: "text", text: "tests green" },
+                ],
+              ],
             },
           },
           replyInThread: true,
         },
+      },
+    ]);
+  });
+
+  it("uses a Markdown parser when converting inline code, links, and code blocks to Feishu post messages", async () => {
+    const calls: unknown[] = [];
+    const adapter = new FeishuPlatformAdapter({
+      appId: "cli-test",
+      appSecret: "secret-test",
+      api: createFakeApi(calls),
+      wsClient: new FakeWsClient(),
+    });
+
+    await adapter.postThreadMessage(
+      {
+        platform: "feishu",
+        conversationId: "oc_group",
+        rootMessageId: "om_root",
+      },
+      {
+        text: "看过 PR #73 啦：\n- GitHub CI: `Build and test` 已通过；PR 状态 **open** / mergeable。\n- [docs](https://example.com)\n\n```sh\npnpm test\n```",
+        format: "markdown",
+      },
+    );
+
+    expect(calls).toEqual([
+      {
+        operation: "replyMessage",
+        options: expect.objectContaining({
+          msgType: "post",
+          content: {
+            zh_cn: {
+              content: [
+                [{ tag: "text", text: "看过 PR #73 啦：" }],
+                [
+                  { tag: "text", text: "- " },
+                  { tag: "text", text: "GitHub CI: " },
+                  { tag: "text", text: "Build and test", style: ["codeInline"] },
+                  { tag: "text", text: " 已通过；PR 状态 " },
+                  { tag: "text", text: "open", style: ["bold"] },
+                  { tag: "text", text: " / mergeable。" },
+                ],
+                [
+                  { tag: "text", text: "- " },
+                  { tag: "a", text: "docs", href: "https://example.com" },
+                ],
+                [{ tag: "code_block", language: "sh", text: "pnpm test" }],
+              ],
+            },
+          },
+        }),
       },
     ]);
   });
@@ -1767,11 +2139,29 @@ function createFakeApi(
   calls: unknown[] = [],
   options?: {
     readonly listMessages?: unknown;
+    readonly patchMessageError?: unknown;
+    readonly firstPatchBlocker?: Promise<void> | undefined;
   },
 ) {
+  let patchCount = 0;
   return {
     replyMessage: async (options: unknown) => {
       calls.push({ operation: "replyMessage", options });
+      return {
+        message_id: "om_reply",
+        root_id: "om_root",
+        create_time: "1710000000000",
+      };
+    },
+    patchMessage: async (payload: unknown) => {
+      calls.push({ operation: "patchMessage", options: payload });
+      patchCount += 1;
+      if (patchCount === 1 && options?.firstPatchBlocker) {
+        await options.firstPatchBlocker;
+      }
+      if (options?.patchMessageError) {
+        throw options.patchMessageError;
+      }
       return {
         message_id: "om_reply",
         root_id: "om_root",

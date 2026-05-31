@@ -36,6 +36,7 @@ export class AppServerProcess {
   readonly #geminiHttpsProxy: string | undefined;
   readonly #geminiAllProxy: string | undefined;
   #child: ChildProcessByStdio<null, Readable, Readable> | undefined;
+  #startPromise: Promise<void> | undefined;
   #homePrepared = false;
 
   constructor(options: {
@@ -78,6 +79,23 @@ export class AppServerProcess {
       return;
     }
 
+    if (this.#startPromise) {
+      await this.#startPromise;
+      return;
+    }
+
+    const startPromise = this.#start();
+    this.#startPromise = startPromise;
+    try {
+      await startPromise;
+    } finally {
+      if (this.#startPromise === startPromise) {
+        this.#startPromise = undefined;
+      }
+    }
+  }
+
+  async #start(): Promise<void> {
     await this.#prepareCodexHome();
     await this.#bootstrapAuth();
     await this.#disableConfiguredMcpServers();
@@ -508,11 +526,11 @@ function formatStartupDetails(stdoutTail: string, stderrTail: string): string {
 }
 
 async function pointSymlink(linkPath: string, targetPath: string): Promise<void> {
-  const desiredTarget = path.relative(path.dirname(linkPath), targetPath);
+  const desiredTarget = path.resolve(targetPath);
   try {
     const currentTarget = await fs.readlink(linkPath);
     const resolvedCurrent = path.resolve(path.dirname(linkPath), currentTarget);
-    if (path.resolve(resolvedCurrent) === path.resolve(targetPath)) {
+    if (resolvedCurrent === desiredTarget) {
       return;
     }
   } catch (error) {

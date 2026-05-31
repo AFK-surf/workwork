@@ -43,6 +43,18 @@ interface CliOptions extends AuditOptions {
   readonly localOnly: boolean;
 }
 
+const REQUIRED_PREFLIGHT_CHECK_IDS = [
+  "preflight.slack_credentials_present",
+  "preflight.feishu_enabled",
+  "preflight.feishu_credentials_present",
+  "preflight.feishu_bot_identity_present",
+  "scope.china_feishu",
+  "preflight.feishu_api_base_china",
+  "preflight.group_message_mode_all",
+  "preflight.startup_required",
+  "preflight.raw_feishu_events_disabled",
+];
+
 const RFC_DEEP_DIVES = ["architecture.md", "implementation.md", "test-plan.md", "observability.md", "permissions.md", "review-gates.md"];
 
 const REQUIRED_PACKAGE_SCRIPTS: ReadonlyArray<{
@@ -52,8 +64,10 @@ const REQUIRED_PACKAGE_SCRIPTS: ReadonlyArray<{
   { name: "test", includes: "vitest run" },
   { name: "test:e2e:feishu-mock", includes: "test/dual-platform-runtime.test.ts" },
   { name: "manual:feishu-smoke", includes: "run-real-feishu-smoke.ts --" },
+  { name: "manual:self-regression", includes: "run-self-regression.ts --" },
   { name: "rfc:feishu-audit", includes: "run-rfc-0001-local-audit.ts" },
   { name: "rfc:feishu-audit:local", includes: "--local-only" },
+  { name: "rfc:feishu-completion-audit", includes: "run-rfc-0001-completion-audit.ts" },
   { name: "rfc:feishu-test-plan", includes: "run-rfc-0001-test-plan.ts" },
   { name: "ops:auth:real", includes: "scripts/ops/auth-real.mjs" },
   { name: "ops:auth:profiles", includes: "scripts/ops/auth-profiles.mjs" },
@@ -130,6 +144,8 @@ export const RFC0001_REQUIRED_LOCAL_TEST_FILES = [
   "test/job-routes.test.ts",
   "test/ops-feishu-preflight.test.ts",
   "test/slack-routes.test.ts",
+  "test/self-regression-runner.test.ts",
+  "test/rfc-0001-completion-audit.test.ts",
   "test/rfc-0001-docs.test.ts",
   "test/rfc-0001-test-plan.test.ts",
 ];
@@ -265,6 +281,11 @@ export const RFC0001_REQUIRED_LOCAL_EVIDENCE_PATTERNS: ReadonlyArray<{
     id: "smoke.saved_evidence_requires_setup",
     file: "test/feishu-real-smoke.test.ts",
     snippets: ["can evaluate a saved admin status evidence file", "const missingSetupReport = await evaluateFeishuSmokeStatusFile(statusFile", "expect(missingSetupReport.ok).toBe(false)", "setupEvidenceFile", "expect(report.ok).toBe(true)"],
+  },
+  {
+    id: "self_regression.shared_runner",
+    file: "test/self-regression-runner.test.ts",
+    snippets: ["checks Slack preflight without exposing token values", "replays Slack admin status for roundtrip, status, and file evidence", "uses the Feishu smoke evaluator for Feishu preflight under the shared command"],
   },
   {
     id: "admin.platform_health",
@@ -409,6 +430,11 @@ export const RFC0001_REQUIRED_LOCAL_EVIDENCE_PATTERNS: ReadonlyArray<{
     file: "test/rfc-0001-test-plan.test.ts",
     snippets: ["passes against the checked-in RFC 0001 test plan", "fails when the default acceptance command set drifts", "fails when a documented proof file is missing"],
   },
+  {
+    id: "completion.final_gate",
+    file: "test/rfc-0001-completion-audit.test.ts",
+    snippets: ["fails closed until Slack drive evidence is present", "passes for sanitized self-regression and coding smoke evidence bundles"],
+  },
 ];
 
 export async function collectRfc0001LocalAudit(options: AuditOptions = {}): Promise<Rfc0001AuditReport> {
@@ -519,24 +545,90 @@ async function collectRealTenantChecks(cwd: string, env: Record<string, string |
   const envFile = path.join(cwd, ".env");
   const setupEvidenceFile = path.join(evidenceDir, "feishu-setup-evidence.json");
   const statusFile = path.join(evidenceDir, "admin-status.json");
+  const preflightReportFile = path.join(evidenceDir, "feishu-preflight-report.json");
 
-  checks.push(await preflightCheck(env, (await pathExists(envFile)) ? envFile : undefined));
+  checks.push(await preflightCheck(env, (await pathExists(envFile)) ? envFile : undefined, preflightReportFile));
   checks.push(await setupEvidenceCheck(setupEvidenceFile));
   checks.push(await savedSmokeEvidenceCheck(statusFile, setupEvidenceFile, env));
 
   return checks;
 }
 
-async function preflightCheck(env: Record<string, string | undefined>, envFile: string | undefined): Promise<Rfc0001AuditCheck> {
+async function preflightCheck(env: Record<string, string | undefined>, envFile: string | undefined, preflightReportFile: string): Promise<Rfc0001AuditCheck> {
+  let liveFailure: Rfc0001AuditCheck | undefined;
+
   try {
     const loadedEnv = await loadFeishuSmokeEnv(env, envFile);
     const report = evaluateFeishuSmokePreflight(loadedEnv);
-    return {
+    const check = {
       id: "real.preflight",
       label: "Rollout environment preflight passes",
       status: report.ok ? "pass" : "missing",
-      evidence: report.checks.map((check) => `${check.id}=${check.status}`),
+      evidence: ["source=live_env", ...report.checks.map((check) => `${check.id}=${check.status}`)],
       nextAction: report.ok ? undefined : "Provide Slack and Feishu rollout credentials, bot identity, China Feishu mode, all-message mode, strict startup, and raw logging posture, then rerun preflight.",
+    } satisfies Rfc0001AuditCheck;
+    if (check.status === "pass") {
+      return check;
+    }
+    liveFailure = check;
+  } catch (error) {
+    liveFailure = {
+      id: "real.preflight",
+      label: "Rollout environment preflight passes",
+      status: "missing",
+      evidence: [formatFeishuSmokeCliError(error)],
+      nextAction: "Fix the rollout environment or .env file, then rerun preflight.",
+    };
+  }
+
+  const savedReportCheck = await savedPreflightReportCheck(preflightReportFile);
+  if (savedReportCheck.status === "pass") {
+    return savedReportCheck;
+  }
+
+  return {
+    id: "real.preflight",
+    label: "Rollout environment preflight passes",
+    status: "missing",
+    evidence: [...(liveFailure?.evidence ?? []), ...savedReportCheck.evidence],
+    nextAction: liveFailure?.nextAction ?? savedReportCheck.nextAction,
+  };
+}
+
+async function savedPreflightReportCheck(preflightReportFile: string): Promise<Rfc0001AuditCheck> {
+  if (!(await pathExists(preflightReportFile))) {
+    return {
+      id: "real.preflight",
+      label: "Rollout environment preflight passes",
+      status: "missing",
+      evidence: [`missing=${path.basename(preflightReportFile)}`],
+      nextAction: "Run pnpm manual:feishu-smoke -- --preflight --env-file .env --output-dir evidence/feishu-smoke --json and commit the sanitized preflight report.",
+    };
+  }
+
+  try {
+    const report = JSON.parse(await fs.readFile(preflightReportFile, "utf8")) as unknown;
+    const root = asRecord(report);
+    const checks = asArray(root.checks).map(asRecord);
+    const missing: string[] = [];
+    if (root.ok !== true) missing.push(`ok=${String(root.ok)}`);
+    if (reportContainsUnsafeText(report)) missing.push("unsafe_text=present");
+    for (const checkId of REQUIRED_PREFLIGHT_CHECK_IDS) {
+      const check = checks.find((candidate) => readString(candidate.id) === checkId);
+      if (!check) {
+        missing.push(`missing_check=${checkId}`);
+        continue;
+      }
+      if (check.required !== true) missing.push(`${checkId}.required=${String(check.required)}`);
+      if (check.status !== "pass") missing.push(`${checkId}.status=${String(check.status)}`);
+    }
+
+    return {
+      id: "real.preflight",
+      label: "Rollout environment preflight passes",
+      status: missing.length === 0 ? "pass" : "missing",
+      evidence: missing.length === 0 ? ["source=saved_preflight_report", `present=${path.basename(preflightReportFile)}`, ...REQUIRED_PREFLIGHT_CHECK_IDS.map((checkId) => `${checkId}=pass`)] : missing,
+      nextAction: missing.length === 0 ? undefined : "Refresh evidence/feishu-smoke/feishu-preflight-report.json with a passing, sanitized preflight bundle.",
     };
   } catch (error) {
     return {
@@ -544,7 +636,7 @@ async function preflightCheck(env: Record<string, string | undefined>, envFile: 
       label: "Rollout environment preflight passes",
       status: "missing",
       evidence: [formatFeishuSmokeCliError(error)],
-      nextAction: "Fix the rollout environment or .env file, then rerun preflight.",
+      nextAction: "Fix evidence/feishu-smoke/feishu-preflight-report.json, then rerun the audit.",
     };
   }
 }
@@ -757,6 +849,22 @@ async function pathExists(filePath: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function asArray(value: unknown): readonly unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function readString(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function reportContainsUnsafeText(value: unknown): boolean {
+  return /\b(?:xox[abprs]-|xapp-|Bearer\s+\S+|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})\b|-----BEGIN [A-Z ]*PRIVATE KEY-----/iu.test(JSON.stringify(value));
 }
 
 export function parseRfc0001AuditArgs(argv: readonly string[]): CliOptions {

@@ -162,6 +162,9 @@ export async function buildSlackThreadBaseInstructions(options: BuildSlackThread
       rootMessageId,
       platformThreadId: options.platformThreadId,
     }),
+    thread_model_note: isSlack
+      ? "Slack message model: this session is anchored to one Slack thread. Treat each forwarded message in this thread as a possible follow-up in the same product session."
+      : "Feishu message model: this session is anchored to one Feishu topic. Treat `root_message_id` and `platform_thread_id` as the Feishu equivalent of a Slack thread; every forwarded message in this topic is a possible follow-up in the same product session.",
     markdown_note: isSlack
       ? "Write normal Markdown in the `text` field. Do not handcraft Slack `mrkdwn`; the broker converts markdownish output to `mrkdwn` before posting."
       : "For Feishu, set `format` to `markdown` when you want the broker to send Feishu rich-post Markdown; otherwise plain `text` is sent as text or operational cards.",

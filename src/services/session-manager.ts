@@ -142,6 +142,8 @@ export class SessionManager {
     options?: {
       readonly conversationKind?: ChatConversationKind | undefined;
       readonly platformThreadId?: string | undefined;
+      readonly initiatorUserId?: string | undefined;
+      readonly initiatorMessageTs?: string | undefined;
     },
   ): Promise<SlackSessionRecord> {
     const existing = this.getChatSession(coordinates);
@@ -162,6 +164,7 @@ export class SessionManager {
       rootMessageId: coordinates.rootMessageId,
       platformThreadId: options?.platformThreadId,
       channelId: coordinates.conversationId,
+      ...normalizeSessionInitiator(options),
       rootThreadTs: coordinates.rootMessageId,
       workspacePath,
       createdAt: now,
@@ -318,6 +321,12 @@ export class SessionManager {
 
   async setSessionPageLinkPostedAt(channelId: string, rootThreadTs: string, sessionPageLinkPostedAt: string): Promise<SlackSessionRecord> {
     return await this.#patchSession(channelId, rootThreadTs, {
+      sessionPageLinkPostedAt,
+    });
+  }
+
+  async setChatSessionPageLinkPostedAt(coordinates: ChatSessionCoordinates, sessionPageLinkPostedAt: string): Promise<SlackSessionRecord> {
+    return await this.#patchChatSession(coordinates, {
       sessionPageLinkPostedAt,
     });
   }

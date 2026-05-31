@@ -5,6 +5,7 @@ import * as Lark from "@larksuiteoapi/node-sdk";
 
 import { logger } from "../../logger.js";
 import type { ChatPlatformAdapter, ChatPlatformHandlers } from "../chat/chat-platform-adapter.js";
+import { createChatTurnProjection, type ChatTurnProjection } from "../chat/chat-turn-projection.js";
 import {
   CHAT_FILE_SOURCE_REQUIREMENT_MESSAGE,
   CHAT_INLINE_FILE_CONTENT_REQUIREMENT_MESSAGE,
@@ -23,7 +24,10 @@ import {
 } from "../chat/chat-types.js";
 import type { JsonLike } from "../../types.js";
 import { FeishuApi, type FeishuMessageData, createFeishuTextContent, feishuSdkDomainFromApiBaseUrl } from "./feishu-api.js";
+import { classifyFeishuCardUpdateFailure, missingFeishuCardMessageIdFailure } from "./feishu-card-update-failure.js";
 import { type FeishuBotIdentity, routeFeishuReceiveMessageEvent } from "./feishu-event-parser.js";
+import { createFeishuPostContentFromMarkdown } from "./feishu-markdown.js";
+import { createFeishuTurnStateCard } from "./feishu-status-card.js";
 
 interface FeishuWsClientLike {
   start(options: { eventDispatcher: Lark.EventDispatcher }): Promise<void>;
@@ -38,6 +42,10 @@ export class FeishuPlatformAdapter implements ChatPlatformAdapter {
   readonly #groupMessageMode: "all" | "at_only";
   readonly #startupRequired: boolean;
   readonly #sendRateLimiter = new FeishuGroupMessageRateLimiter();
+  readonly #stateCards = new Map<string, FeishuStateCardRecord>();
+  readonly #stateQueues = new Map<string, Promise<void>>();
+  readonly #pendingStateUpdates = new Map<string, FeishuPendingStateUpdate>();
+  readonly #stateCardPatchDebounceMs: number;
   #started = false;
 
   constructor(options: {
@@ -49,6 +57,7 @@ export class FeishuPlatformAdapter implements ChatPlatformAdapter {
     readonly botIdentity?: FeishuBotIdentity | undefined;
     readonly groupMessageMode?: "all" | "at_only" | undefined;
     readonly startupRequired?: boolean | undefined;
+    readonly stateCardPatchDebounceMs?: number | undefined;
   }) {
     this.#api =
       options.api ??
@@ -71,6 +80,7 @@ export class FeishuPlatformAdapter implements ChatPlatformAdapter {
     };
     this.#groupMessageMode = options.groupMessageMode ?? "all";
     this.#startupRequired = options.startupRequired ?? true;
+    this.#stateCardPatchDebounceMs = Math.max(0, options.stateCardPatchDebounceMs ?? FEISHU_STATE_CARD_PATCH_DEBOUNCE_MS);
   }
 
   async start(handlers: ChatPlatformHandlers): Promise<void> {
@@ -247,8 +257,12 @@ export class FeishuPlatformAdapter implements ChatPlatformAdapter {
     };
   }
 
-  async postThreadState(_target: ChatThreadTarget, _state: ChatTurnState): Promise<void> {
-    // Feishu does not have an equivalent to Slack assistant thread status.
+  async postThreadState(target: ChatThreadTarget, state: ChatTurnState): Promise<void> {
+    await this.postThreadProjection(target, createChatTurnProjection(target, state));
+  }
+
+  async postThreadProjection(target: ChatThreadTarget, projection: ChatTurnProjection): Promise<void> {
+    await this.#scheduleStateCardWrite(target, projection);
   }
 
   async uploadThreadFile(target: ChatThreadTarget, file: ChatOutboundFile): Promise<ChatUploadedFile> {
@@ -367,9 +381,149 @@ export class FeishuPlatformAdapter implements ChatPlatformAdapter {
       await delay(delayMs);
     }
   }
+
+  async #runWithStateQueue(target: ChatThreadTarget, run: () => Promise<void>): Promise<void> {
+    const queueKey = feishuStateCardKey(target);
+    const previous = this.#stateQueues.get(queueKey) ?? Promise.resolve();
+    const current = previous.catch(() => undefined).then(run);
+    this.#stateQueues.set(queueKey, current);
+    try {
+      await current;
+    } finally {
+      if (this.#stateQueues.get(queueKey) === current) {
+        this.#stateQueues.delete(queueKey);
+      }
+    }
+  }
+
+  #scheduleStateCardWrite(target: ChatThreadTarget, projection: ChatTurnProjection): Promise<void> {
+    const stateKey = feishuStateCardKey(target);
+    let pending = this.#pendingStateUpdates.get(stateKey);
+    if (pending?.timer) {
+      clearTimeout(pending.timer);
+    }
+
+    if (!pending) {
+      pending = {
+        target,
+        projection,
+        waiters: [],
+      };
+      this.#pendingStateUpdates.set(stateKey, pending);
+    }
+
+    pending.target = target;
+    pending.projection = projection;
+    const promise = new Promise<void>((resolve, reject) => {
+      pending!.waiters.push({ resolve, reject });
+    });
+
+    const flush = () => {
+      void this.#flushPendingStateCardWrite(stateKey, pending);
+    };
+    if (this.#stateCardPatchDebounceMs === 0) {
+      queueMicrotask(flush);
+    } else {
+      pending.timer = setTimeout(flush, this.#stateCardPatchDebounceMs);
+    }
+
+    return promise;
+  }
+
+  async #flushPendingStateCardWrite(stateKey: string, pending: FeishuPendingStateUpdate): Promise<void> {
+    if (this.#pendingStateUpdates.get(stateKey) !== pending) {
+      return;
+    }
+
+    this.#pendingStateUpdates.delete(stateKey);
+    pending.timer = undefined;
+    try {
+      await this.#runWithStateQueue(pending.target, async () => {
+        await this.#writeThreadStateCard(pending.target, pending.projection);
+      });
+      for (const waiter of pending.waiters) {
+        waiter.resolve();
+      }
+    } catch (error) {
+      for (const waiter of pending.waiters) {
+        waiter.reject(error);
+      }
+    }
+  }
+
+  async #writeThreadStateCard(target: ChatThreadTarget, projection: ChatTurnProjection): Promise<void> {
+    const card = createFeishuTurnStateCard(projection);
+    const hash = stableFeishuCardHash(card);
+    const stateKey = feishuStateCardKey(target);
+    const existing = this.#stateCards.get(stateKey);
+    if (existing?.hash === hash) {
+      return;
+    }
+
+    if (existing && !existing.messageId) {
+      this.#recordStateCardPatchFailure(target, missingFeishuCardMessageIdFailure());
+    }
+
+    if (existing?.messageId) {
+      try {
+        await this.#api.patchMessage({
+          messageId: existing.messageId,
+          content: card,
+        });
+        this.#stateCards.set(stateKey, {
+          messageId: existing.messageId,
+          hash,
+        });
+        return;
+      } catch (error) {
+        this.#recordStateCardPatchFailure(target, classifyFeishuCardUpdateFailure(error));
+        // Fall back to a fresh state card when Feishu can no longer patch the
+        // previous one. The bridge logs final delivery failure with session
+        // coordinates if the fallback send also fails.
+      }
+    }
+
+    await this.#waitForGroupSendSlot(target.conversationId);
+    const posted = await this.#api.replyMessage({
+      messageId: target.rootMessageId,
+      msgType: "interactive",
+      content: card,
+      replyInThread: true,
+    });
+    this.#stateCards.set(stateKey, {
+      messageId: posted.message_id,
+      hash,
+    });
+  }
+
+  #recordStateCardPatchFailure(target: ChatThreadTarget, failure: { readonly kind: string; readonly statusCode?: number | undefined }): void {
+    logger.debug("chat.state_card.patch_failed", {
+      platform: "feishu",
+      conversationId: target.conversationId,
+      rootMessageId: target.rootMessageId,
+      failureKind: failure.kind,
+      statusCode: failure.statusCode ?? "unknown",
+    });
+  }
+}
+
+interface FeishuStateCardRecord {
+  readonly messageId?: string | undefined;
+  readonly hash: string;
+}
+
+interface FeishuPendingStateUpdate {
+  target: ChatThreadTarget;
+  projection: ChatTurnProjection;
+  timer?: ReturnType<typeof setTimeout> | undefined;
+  readonly waiters: Array<{
+    readonly resolve: () => void;
+    readonly reject: (error: unknown) => void;
+  }>;
 }
 
 export const FEISHU_GROUP_MESSAGE_MIN_INTERVAL_MS = 200;
+export const FEISHU_STATE_CARD_PATCH_DEBOUNCE_MS = 100;
 const FEISHU_MESSAGE_IMAGE_RESOURCE_MAX_BYTES = 10 * 1024 * 1024;
 const FEISHU_MESSAGE_FILE_RESOURCE_MAX_BYTES = 30 * 1024 * 1024;
 
@@ -388,6 +542,14 @@ export class FeishuGroupMessageRateLimiter {
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function feishuStateCardKey(target: ChatThreadTarget): string {
+  return `${target.conversationId}:${target.rootMessageId}`;
+}
+
+function stableFeishuCardHash(card: JsonLike): string {
+  return JSON.stringify(card);
 }
 
 async function prepareFeishuOutboundFile(file: ChatOutboundFile): Promise<{
@@ -532,31 +694,13 @@ function toFeishuOutboundPayload(message: ChatOutboundMessage): {
   if (message.format === "markdown") {
     return {
       msgType: "post",
-      content: createFeishuPostContent(message.text),
+      content: createFeishuPostContentFromMarkdown(message.text),
     };
   }
 
   return {
     msgType: "text",
     content: createFeishuTextContent(message.text),
-  };
-}
-
-function createFeishuPostContent(text: string): JsonLike {
-  const blocks = text
-    .split(/\n{2,}/)
-    .map((block) => block.trim())
-    .filter(Boolean);
-
-  return {
-    zh_cn: {
-      content: (blocks.length > 0 ? blocks : [text]).map((block) => [
-        {
-          tag: "text",
-          text: block,
-        },
-      ]),
-    },
   };
 }
 

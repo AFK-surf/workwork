@@ -222,6 +222,8 @@ describe("AppServerClient disconnect handling", () => {
     expect(baseInstructions).toContain("conversation_id: oc_group");
     expect(baseInstructions).toContain("root_message_id: om_root");
     expect(baseInstructions).toContain("platform_thread_id: omt_thread");
+    expect(baseInstructions).toContain("this session is anchored to one Feishu topic");
+    expect(baseInstructions).toContain("Feishu equivalent of a Slack thread");
     expect(baseInstructions).toContain("/chat/post-message");
     expect(baseInstructions).toContain('"platform":"feishu"');
     expect(baseInstructions).toContain("/chat/post-state");

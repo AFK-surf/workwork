@@ -11,6 +11,7 @@ import { type ParsedSlackEvent, isSlackMessageEffectivelyEmpty, parseSlackEvent 
 import { SlackApi } from "./slack-api.js";
 import { SlackCoauthorService } from "./slack-coauthor-service.js";
 import { SlackConversationService } from "./slack-conversation-service.js";
+import { isSlackPlatformSession } from "./slack-conversation-utils.js";
 import { SlackSelfMessageFilter } from "./slack-self-filter.js";
 import { SlackSocketModeClient } from "./socket-mode-client.js";
 
@@ -264,18 +265,41 @@ export class SlackAgentBridge {
       return await this.#requireFeishuBridge().postChatFile(options);
     }
 
-    return await this.postSlackFile({
-      channelId: options.conversationId,
-      rootThreadTs: options.rootMessageId,
-      filePath: options.filePath,
-      contentBase64: options.contentBase64,
-      filename: options.filename,
-      title: options.title,
-      initialComment: options.initialComment,
-      altText: options.altText,
-      snippetType: options.snippetType,
-      contentType: options.contentType,
-    });
+    const startedAt = Date.now();
+    try {
+      const uploaded = await this.postSlackFile({
+        channelId: options.conversationId,
+        rootThreadTs: options.rootMessageId,
+        filePath: options.filePath,
+        contentBase64: options.contentBase64,
+        filename: options.filename,
+        title: options.title,
+        initialComment: options.initialComment,
+        altText: options.altText,
+        snippetType: options.snippetType,
+        contentType: options.contentType,
+      });
+      logger.info("chat.outbound.posted", {
+        platform: "slack",
+        sessionKey: `${options.conversationId}:${options.rootMessageId}`,
+        conversationId: options.conversationId,
+        rootMessageId: options.rootMessageId,
+        format: options.contentType?.startsWith("image/") ? "image" : "file",
+        durationMs: Date.now() - startedAt,
+      });
+      return uploaded;
+    } catch (error) {
+      logger.warn("chat.outbound.failed", {
+        platform: "slack",
+        sessionKey: `${options.conversationId}:${options.rootMessageId}`,
+        conversationId: options.conversationId,
+        rootMessageId: options.rootMessageId,
+        format: options.contentType?.startsWith("image/") ? "image" : "file",
+        durationMs: Date.now() - startedAt,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
   }
 
   async getCommitCoauthorStatus(cwd: string) {
@@ -601,6 +625,10 @@ export class SlackAgentBridge {
   async #backfillSessionChannelMetadata(reason: string): Promise<void> {
     const sessionsByChannel = new Map<string, SlackSessionRecord[]>();
     for (const session of this.#sessions.listSessions()) {
+      if (!isSlackPlatformSession(session)) {
+        continue;
+      }
+
       if (session.channelName && session.channelType) {
         continue;
       }

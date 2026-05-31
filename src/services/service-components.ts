@@ -127,11 +127,12 @@ export function createSlackBridge(options: {
       sessions: options.sessions,
       codex: options.codex,
       mappings: options.githubAuthorMappings,
+      githubPrIdentity: options.githubPrIdentity,
     }),
   });
 }
 
-function createFeishuBridge(options: { readonly config: AppConfig; readonly sessions: SessionManager; readonly codex?: CodexBroker | undefined; readonly mappings?: GitHubAuthorMappingService | undefined }): FeishuCodexBridge | undefined {
+function createFeishuBridge(options: { readonly config: AppConfig; readonly sessions: SessionManager; readonly codex?: CodexBroker | undefined; readonly mappings?: GitHubAuthorMappingService | undefined; readonly githubPrIdentity: GitHubPrIdentityService }): FeishuCodexBridge | undefined {
   if (!options.config.feishuEnabled) {
     return undefined;
   }
@@ -149,6 +150,8 @@ function createFeishuBridge(options: { readonly config: AppConfig; readonly sess
     initialThreadHistoryCount: options.config.feishuInitialThreadHistoryCount,
     historyApiMaxLimit: options.config.feishuHistoryApiMaxLimit,
     mappings: options.mappings,
+    adminBaseUrl: options.config.adminBaseUrl,
+    githubPrIdentity: options.githubPrIdentity,
     adapter: new FeishuPlatformAdapter({
       appId: options.config.feishuAppId,
       appSecret: options.config.feishuAppSecret,

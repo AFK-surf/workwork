@@ -2,11 +2,14 @@
 import { logger } from "../../logger.js";
 import type { ChatAttachment, ChatInputMessage, ChatOutboundFile, ChatOutboundMessage, ChatPostedMessage, ChatThreadPage, ChatThreadMessage, ChatThreadTarget, ChatUploadedFile } from "../chat/chat-types.js";
 import type { ChatPlatformAdapter } from "../chat/chat-platform-adapter.js";
+import { createChatTurnProjectionFromOutboundMessage, createChatTurnProjectionFromUploadedFile } from "../chat/chat-turn-projection.js";
+import { createSessionPageLinkMessage, type SessionPageLinkMessage } from "../chat/session-page-link-message.js";
 import type { CodexBroker } from "../codex/codex-broker.js";
 import type { CodexInputItem } from "../codex/app-server-client.js";
 import { type ChatSessionCoordinates } from "../chat/chat-session-key.js";
 import { appendCoAuthorTrailers } from "../git/github-author-utils.js";
 import { GitHubAuthorMappingService } from "../github-author-mapping-service.js";
+import type { GitHubPrIdentityService } from "../github-pr-identity-service.js";
 import { SessionManager } from "../session-manager.js";
 import type { BackgroundJobEventPayload, GitHubAuthorMappingRecord, JsonLike, SlackSessionRecord } from "../../types.js";
 
@@ -34,6 +37,8 @@ export class FeishuCodexBridge {
   readonly #initialThreadHistoryCount: number;
   readonly #historyApiMaxLimit: number;
   readonly #mappings?: GitHubAuthorMappingService | undefined;
+  readonly #adminBaseUrl: string;
+  readonly #githubPrIdentity?: GitHubPrIdentityService | undefined;
   readonly #outboundQueues = new Map<string, Promise<void>>();
   #started = false;
 
@@ -45,6 +50,8 @@ export class FeishuCodexBridge {
     readonly initialThreadHistoryCount?: number | undefined;
     readonly historyApiMaxLimit?: number | undefined;
     readonly mappings?: GitHubAuthorMappingService | undefined;
+    readonly adminBaseUrl?: string | undefined;
+    readonly githubPrIdentity?: GitHubPrIdentityService | undefined;
   }) {
     this.#sessions = options.sessions;
     this.#adapter = options.adapter;
@@ -53,6 +60,8 @@ export class FeishuCodexBridge {
     this.#initialThreadHistoryCount = options.initialThreadHistoryCount ?? DEFAULT_FEISHU_INITIAL_THREAD_HISTORY_COUNT;
     this.#historyApiMaxLimit = options.historyApiMaxLimit ?? DEFAULT_FEISHU_HISTORY_API_MAX_LIMIT;
     this.#mappings = options.mappings;
+    this.#adminBaseUrl = options.adminBaseUrl ?? "";
+    this.#githubPrIdentity = options.githubPrIdentity;
   }
 
   async start(): Promise<void> {
@@ -87,8 +96,36 @@ export class FeishuCodexBridge {
       conversationId: options.conversationId,
       rootMessageId: options.rootMessageId,
     };
+    this.#requireVisibleChatTurnSignalSession(target, options);
 
     return await this.#runWithOutboundQueue(target, async () => {
+      const projection = createChatTurnProjectionFromOutboundMessage(target, {
+        text: options.text,
+        format: options.format,
+        kind: options.kind,
+        reason: options.reason,
+        richText: options.richText,
+        card: options.card,
+      });
+      if (options.kind === "progress" && this.#adapter.postThreadProjection) {
+        await this.#adapter.postThreadProjection(target, projection);
+        logger.info("chat.outbound.posted", {
+          platform: "feishu",
+          sessionKey: this.#sessionKeyFor(target),
+          conversationId: options.conversationId,
+          rootMessageId: options.rootMessageId,
+          messageId: "state",
+          format: "card",
+          durationMs: 0,
+        });
+        return {
+          platform: "feishu",
+          conversationId: target.conversationId,
+          rootMessageId: target.rootMessageId,
+          messageId: "state",
+        };
+      }
+
       const chunks = chunkFeishuOutboundText(options.text);
       let posted: ChatPostedMessage | undefined;
 
@@ -105,8 +142,17 @@ export class FeishuCodexBridge {
         throw new Error("Feishu outbound message did not produce a post result");
       }
 
+      await this.#recordVisibleChatTurnSignal(target, options);
       return posted;
     });
+  }
+
+  #requireVisibleChatTurnSignalSession(target: ChatThreadTarget, options: Pick<FeishuPostChatMessageOptions, "kind">): void {
+    if (!isStopExplainingChatTurnSignalKind(options.kind)) {
+      return;
+    }
+
+    this.#requireChatTurnSignalSession(target);
   }
 
   async postChatState(options: { readonly conversationId: string; readonly rootMessageId: string; readonly kind: "wait" | "block" | "final"; readonly reason?: string | undefined }): Promise<void> {
@@ -115,12 +161,45 @@ export class FeishuCodexBridge {
       conversationId: options.conversationId,
       rootMessageId: options.rootMessageId,
     } as const;
-    const session = this.#sessions.getChatSession(coordinates);
-    if (!session) {
-      throw new Error(`Unknown session for Feishu state update: ${options.conversationId}:${options.rootMessageId}`);
+    await this.#recordChatTurnSignal(coordinates, {
+      kind: options.kind,
+      reason: options.reason,
+      batchId: "state",
+    });
+  }
+
+  async #recordVisibleChatTurnSignal(target: ChatThreadTarget, options: Pick<FeishuPostChatMessageOptions, "kind" | "reason">): Promise<void> {
+    if (!isStopExplainingChatTurnSignalKind(options.kind)) {
+      return;
     }
 
-    const updated = await this.#sessions.recordChatTurnSignal(coordinates, {
+    await this.#recordChatTurnSignal(target, {
+      kind: options.kind,
+      reason: options.reason,
+      batchId: "message",
+    });
+  }
+
+  #requireChatTurnSignalSession(target: ChatThreadTarget): SlackSessionRecord {
+    const session = this.#sessions.getChatSession(target);
+    if (!session) {
+      throw new Error(`Unknown session for Feishu state update: ${target.conversationId}:${target.rootMessageId}`);
+    }
+
+    return session;
+  }
+
+  async #recordChatTurnSignal(
+    target: ChatThreadTarget,
+    options: {
+      readonly kind: "final" | "block" | "wait";
+      readonly reason?: string | undefined;
+      readonly batchId: "state" | "message";
+    },
+  ): Promise<void> {
+    const session = this.#requireChatTurnSignalSession(target);
+
+    const updated = await this.#sessions.recordChatTurnSignal(target, {
       turnId: session.activeTurnId,
       kind: options.kind,
       reason: options.reason,
@@ -132,7 +211,7 @@ export class FeishuCodexBridge {
       turnId: updated.lastTurnSignalTurnId ?? "none",
       codexThreadId: updated.codexThreadId ?? "none",
       durationMs: 0,
-      batchId: "state",
+      batchId: options.batchId,
       status: options.kind,
       reason: options.reason,
     });
@@ -176,6 +255,47 @@ export class FeishuCodexBridge {
           format: uploaded.kind ?? (uploaded.mimetype?.startsWith("image/") ? "image" : "file"),
           durationMs: 0,
         });
+        if (this.#adapter.postThreadProjection) {
+          try {
+            await this.#adapter.postThreadProjection(
+              target,
+              createChatTurnProjectionFromUploadedFile(
+                target,
+                {
+                  filePath: options.filePath,
+                  contentBase64: options.contentBase64,
+                  filename: options.filename,
+                  title: options.title,
+                  initialComment: options.initialComment,
+                  altText: options.altText,
+                  snippetType: options.snippetType,
+                  contentType: options.contentType,
+                },
+                uploaded,
+              ),
+            );
+            logger.info("chat.outbound.posted", {
+              platform: "feishu",
+              sessionKey: this.#sessionKeyFor(target),
+              conversationId: options.conversationId,
+              rootMessageId: options.rootMessageId,
+              messageId: "state",
+              format: "card",
+              durationMs: 0,
+            });
+          } catch (error) {
+            logger.warn("chat.outbound.failed", {
+              platform: "feishu",
+              sessionKey: this.#sessionKeyFor(target),
+              conversationId: options.conversationId,
+              rootMessageId: options.rootMessageId,
+              format: "card",
+              errorClass: error instanceof Error ? error.name : "Error",
+              statusCode: statusCodeFromError(error) ?? "unknown",
+              attempt: 1,
+            });
+          }
+        }
         return uploaded;
       } catch (error) {
         logger.warn("chat.outbound.failed", {
@@ -397,6 +517,8 @@ export class FeishuCodexBridge {
       (await this.#sessions.ensureChatSession(coordinates, {
         conversationKind: message.conversationKind,
         platformThreadId: message.platformThreadId,
+        initiatorUserId: message.sender.kind === "user" ? message.sender.userId : undefined,
+        initiatorMessageTs: message.messageId,
       }));
     session = await this.#sessions.setChatLastObservedMessageTs(sessionCoordinates, message.messageCursor ?? message.messageId);
 
@@ -409,6 +531,7 @@ export class FeishuCodexBridge {
         messageId: message.messageId,
         groupMessageMode: this.#groupMessageMode,
       });
+      session = await this.#postSessionPageLinkIfNeeded(session);
     } else {
       logger.info("chat.session.resumed", {
         platform: "feishu",
@@ -675,6 +798,35 @@ export class FeishuCodexBridge {
 
   #sessionKeyFor(coordinates: ChatSessionCoordinates): string {
     return this.#sessions.getChatSession(coordinates)?.key ?? SessionManager.createChatKey(coordinates);
+  }
+
+  async #postSessionPageLinkIfNeeded(session: SlackSessionRecord): Promise<SlackSessionRecord> {
+    const latestSession = this.#sessions.getSessionByKey(session.key) ?? session;
+    if (latestSession.sessionPageLinkPostedAt || !this.#adminBaseUrl.trim()) {
+      return latestSession;
+    }
+
+    const message = createSessionPageLinkMessage({
+      adminBaseUrl: this.#adminBaseUrl,
+      session: latestSession,
+      githubPrIdentity: this.#githubPrIdentity,
+      style: "plain",
+    });
+
+    try {
+      await this.#postLoggedThreadMessage(threadTargetForSession(latestSession), {
+        text: message.text,
+        format: "card",
+        card: createFeishuSessionPageLinkCard(message),
+      });
+      return await this.#sessions.setChatSessionPageLinkPostedAt(coordinatesForSession(latestSession), new Date().toISOString());
+    } catch (error) {
+      logger.warn("Failed to post admin session link into Feishu thread", {
+        sessionKey: latestSession.key,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return latestSession;
+    }
   }
 
   async #runWithOutboundQueue<T>(target: ChatThreadTarget, operation: () => Promise<T>): Promise<T> {
@@ -1083,7 +1235,11 @@ function createFeishuOutboundMessage(options: FeishuPostChatMessageOptions, text
 function shouldRenderOperationalCard(options: FeishuPostChatMessageOptions): options is FeishuPostChatMessageOptions & {
   readonly kind: NonNullable<ChatOutboundMessage["kind"]>;
 } {
-  return Boolean(options.kind) && !options.format && !options.richText && !options.card;
+  return (options.kind === "wait" || options.kind === "block") && !options.format && !options.richText && !options.card;
+}
+
+function isStopExplainingChatTurnSignalKind(kind: ChatOutboundMessage["kind"] | undefined): kind is "final" | "block" | "wait" {
+  return kind === "final" || kind === "block" || kind === "wait";
 }
 
 function createFeishuOperationalCard(kind: NonNullable<ChatOutboundMessage["kind"]>, text: string, reason: string | undefined): JsonLike {
@@ -1118,6 +1274,75 @@ function createFeishuOperationalCard(kind: NonNullable<ChatOutboundMessage["kind
       title: {
         tag: "plain_text",
         content: feishuOperationalCardTitle(kind),
+      },
+    },
+    elements,
+  };
+}
+
+function createFeishuSessionPageLinkCard(message: SessionPageLinkMessage): JsonLike {
+  const elements: JsonLike[] = [
+    {
+      tag: "div",
+      text: {
+        tag: "lark_md",
+        content: "Codex 已开始处理这个话题。你可以打开 dashboard 查看会话活动时间线。",
+      },
+    },
+    {
+      tag: "action",
+      actions: [
+        {
+          tag: "button",
+          type: "primary",
+          text: {
+            tag: "plain_text",
+            content: "查看会话活动时间线",
+          },
+          url: message.sessionUrl,
+        },
+      ],
+    },
+  ];
+
+  if (message.warning) {
+    elements.push(
+      {
+        tag: "hr",
+      },
+      {
+        tag: "div",
+        text: {
+          tag: "lark_md",
+          content: message.warning,
+        },
+      },
+      {
+        tag: "action",
+        actions: [
+          {
+            tag: "button",
+            type: "default",
+            text: {
+              tag: "plain_text",
+              content: "绑定 GitHub",
+            },
+            url: message.bindUrl,
+          },
+        ],
+      },
+    );
+  }
+
+  return {
+    config: {
+      wide_screen_mode: true,
+    },
+    header: {
+      template: message.warning ? "yellow" : "blue",
+      title: {
+        tag: "plain_text",
+        content: "Codex session ready",
       },
     },
     elements,
