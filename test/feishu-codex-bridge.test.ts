@@ -205,7 +205,36 @@ describe("FeishuCodexBridge", () => {
       },
       message: {
         text: expect.stringContaining("查看会话活动时间线"),
-        format: "markdown",
+        format: "card",
+        card: expect.objectContaining({
+          header: expect.objectContaining({
+            template: "yellow",
+          }),
+          elements: expect.arrayContaining([
+            expect.objectContaining({
+              tag: "action",
+              actions: expect.arrayContaining([
+                expect.objectContaining({
+                  text: expect.objectContaining({
+                    content: "查看会话活动时间线",
+                  }),
+                  url: sessionUrl,
+                }),
+              ]),
+            }),
+            expect.objectContaining({
+              tag: "action",
+              actions: expect.arrayContaining([
+                expect.objectContaining({
+                  text: expect.objectContaining({
+                    content: "绑定 GitHub",
+                  }),
+                  url: `${sessionUrl}/github/bind`,
+                }),
+              ]),
+            }),
+          ]),
+        }),
       },
     });
     expect(asPostedMessageText(linkMessages[0])).toContain("当前发起人还没有绑定 GitHub 账号");

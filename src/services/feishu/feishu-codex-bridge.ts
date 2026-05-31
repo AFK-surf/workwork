@@ -3,7 +3,7 @@ import { logger } from "../../logger.js";
 import type { ChatAttachment, ChatInputMessage, ChatOutboundFile, ChatOutboundMessage, ChatPostedMessage, ChatThreadPage, ChatThreadMessage, ChatThreadTarget, ChatUploadedFile } from "../chat/chat-types.js";
 import type { ChatPlatformAdapter } from "../chat/chat-platform-adapter.js";
 import { createChatTurnProjectionFromOutboundMessage, createChatTurnProjectionFromUploadedFile } from "../chat/chat-turn-projection.js";
-import { formatSessionPageLinkMessage } from "../chat/session-page-link-message.js";
+import { createSessionPageLinkMessage, type SessionPageLinkMessage } from "../chat/session-page-link-message.js";
 import type { CodexBroker } from "../codex/codex-broker.js";
 import type { CodexInputItem } from "../codex/app-server-client.js";
 import { type ChatSessionCoordinates } from "../chat/chat-session-key.js";
@@ -798,7 +798,7 @@ export class FeishuCodexBridge {
       return latestSession;
     }
 
-    const text = formatSessionPageLinkMessage({
+    const message = createSessionPageLinkMessage({
       adminBaseUrl: this.#adminBaseUrl,
       session: latestSession,
       githubPrIdentity: this.#githubPrIdentity,
@@ -807,8 +807,9 @@ export class FeishuCodexBridge {
 
     try {
       await this.#postLoggedThreadMessage(threadTargetForSession(latestSession), {
-        text,
-        format: "markdown",
+        text: message.text,
+        format: "card",
+        card: createFeishuSessionPageLinkCard(message),
       });
       return await this.#sessions.setChatSessionPageLinkPostedAt(coordinatesForSession(latestSession), new Date().toISOString());
     } catch (error) {
@@ -1261,6 +1262,75 @@ function createFeishuOperationalCard(kind: NonNullable<ChatOutboundMessage["kind
       title: {
         tag: "plain_text",
         content: feishuOperationalCardTitle(kind),
+      },
+    },
+    elements,
+  };
+}
+
+function createFeishuSessionPageLinkCard(message: SessionPageLinkMessage): JsonLike {
+  const elements: JsonLike[] = [
+    {
+      tag: "div",
+      text: {
+        tag: "lark_md",
+        content: "Codex 已开始处理这个话题。你可以打开 dashboard 查看会话活动时间线。",
+      },
+    },
+    {
+      tag: "action",
+      actions: [
+        {
+          tag: "button",
+          type: "primary",
+          text: {
+            tag: "plain_text",
+            content: "查看会话活动时间线",
+          },
+          url: message.sessionUrl,
+        },
+      ],
+    },
+  ];
+
+  if (message.warning) {
+    elements.push(
+      {
+        tag: "hr",
+      },
+      {
+        tag: "div",
+        text: {
+          tag: "lark_md",
+          content: message.warning,
+        },
+      },
+      {
+        tag: "action",
+        actions: [
+          {
+            tag: "button",
+            type: "default",
+            text: {
+              tag: "plain_text",
+              content: "绑定 GitHub",
+            },
+            url: message.bindUrl,
+          },
+        ],
+      },
+    );
+  }
+
+  return {
+    config: {
+      wide_screen_mode: true,
+    },
+    header: {
+      template: message.warning ? "yellow" : "blue",
+      title: {
+        tag: "plain_text",
+        content: "Codex session ready",
       },
     },
     elements,
