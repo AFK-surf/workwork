@@ -1981,7 +1981,7 @@ describe("FeishuCodexBridge", () => {
     expect(JSON.stringify(logs)).not.toContain("ou_user");
   });
 
-  it("records Feishu chat state as a persisted turn signal", async () => {
+  it("records Feishu chat state as a silent persisted turn signal", async () => {
     const dataRoot = await fs.mkdtemp(path.join(os.tmpdir(), "feishu-codex-state-"));
     const logDir = path.join(dataRoot, "logs");
     configureLogger({
@@ -2028,15 +2028,9 @@ describe("FeishuCodexBridge", () => {
       lastTurnSignalKind: "final",
       lastTurnSignalReason: "done",
     });
-    expect(adapter.postedStates).toEqual([
-      {
-        target: coordinates,
-        state: {
-          kind: "final",
-          reason: "done",
-        },
-      },
-    ]);
+    expect(adapter.postedStates).toEqual([]);
+    expect(adapter.postedProjections).toEqual([]);
+    expect(adapter.postedMessages).toEqual([]);
     const logs = await readJsonl(path.join(logDir, "broker.jsonl"));
     expect(logs).toEqual(
       expect.arrayContaining([
@@ -2051,6 +2045,10 @@ describe("FeishuCodexBridge", () => {
             batchId: "state",
           }),
         }),
+      ]),
+    );
+    expect(logs).not.toEqual(
+      expect.arrayContaining([
         expect.objectContaining({
           message: "chat.outbound.posted",
           meta: expect.objectContaining({

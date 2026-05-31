@@ -4,14 +4,14 @@ This file contains the implementation-facing architecture detail for [RFC 0001](
 
 ## One-Screen Summary
 
-| Decision area   | Current contract                                                                                                                                                                     |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Product target  | China Feishu group support beside existing Slack; global Lark and Feishu private chats stay out of scope.                                                                            |
-| Runtime shape   | Slack and Feishu share one broker process through platform-aware adapters, session coordinates, and `/chat/*` APIs.                                                                  |
-| Session rule    | New session identity includes `platform`; legacy Slack keys remain readable and are never reinterpreted as Feishu.                                                                   |
-| Feishu routing  | Group @bot starts/resumes; non-@ group follow-up needs an active session plus verified all-message delivery or bounded recovery; private/self/bot/app events do not create sessions. |
-| Content rule    | Text, rich `post`, interactive cards, images, and files preserve enough structure/raw references for current behavior and later UX polish.                                           |
-| Release blocker | Slack compatibility and platform isolation must remain provable while Feishu is added.                                                                                               |
+| Decision area   | Current contract                                                                                                                                                                                                                                                            |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Product target  | China Feishu group support beside existing Slack; global Lark and Feishu private chats stay out of scope.                                                                                                                                                                   |
+| Runtime shape   | Slack and Feishu share one broker process through platform-aware adapters, session coordinates, and `/chat/*` APIs.                                                                                                                                                         |
+| Session rule    | New session identity includes `platform`; legacy Slack keys remain readable and are never reinterpreted as Feishu.                                                                                                                                                          |
+| Feishu routing  | Group @bot starts/resumes a Feishu topic session; replies in that topic are the Slack-thread equivalent. Rootless non-@ group follow-up needs an active session plus verified all-message delivery or bounded recovery; private/self/bot/app events do not create sessions. |
+| Content rule    | Text, rich `post`, interactive cards, images, and files preserve enough structure/raw references for current behavior and later UX polish.                                                                                                                                  |
+| Release blocker | Slack compatibility and platform isolation must remain provable while Feishu is added.                                                                                                                                                                                      |
 
 ## Read Layers
 
@@ -33,7 +33,7 @@ Feishu adds different platform constraints:
 
 - group messages and private chats have different event shapes and permissions;
 - all-group-message delivery is permission-gated;
-- message trees are not identical to Slack threads;
+- Feishu topics are the product equivalent of Slack threads when `root_id` / `thread_id` is present, but rootless group messages and permissions still differ;
 - rich text, cards, files, and callbacks are separate payload families;
 - long connection delivery requires fast ack and queued work;
 - real tenant setup is necessary to prove sensitive permissions.
@@ -82,15 +82,15 @@ The design must add Feishu without turning Slack into a compatibility afterthoug
 
 ## Terminology
 
-| Term             | Meaning                                                                                                    |
-| ---------------- | ---------------------------------------------------------------------------------------------------------- |
-| `platform`       | `slack` or `feishu`. Required on new shared contracts.                                                     |
-| `conversationId` | Slack channel ID or Feishu chat ID.                                                                        |
-| `rootMessageId`  | Platform root for a session: Slack `thread_ts` or Feishu root/message/thread coordinate chosen by adapter. |
-| `messageId`      | Platform message identifier used for idempotency.                                                          |
-| `sessionKey`     | Canonical key derived from `platform`, `conversationId`, and `rootMessageId`.                              |
-| `all` mode       | Feishu mode expecting all group messages through `im:message.group_msg`.                                   |
-| `at_only` mode   | Degraded Feishu mode assuming only @bot delivery.                                                          |
+| Term             | Meaning                                                                                                       |
+| ---------------- | ------------------------------------------------------------------------------------------------------------- |
+| `platform`       | `slack` or `feishu`. Required on new shared contracts.                                                        |
+| `conversationId` | Slack channel ID or Feishu chat ID.                                                                           |
+| `rootMessageId`  | Platform root for a session: Slack `thread_ts` or the Feishu topic root/message coordinate chosen by adapter. |
+| `messageId`      | Platform message identifier used for idempotency.                                                             |
+| `sessionKey`     | Canonical key derived from `platform`, `conversationId`, and `rootMessageId`.                                 |
+| `all` mode       | Feishu mode expecting all group messages through `im:message.group_msg`.                                      |
+| `at_only` mode   | Degraded Feishu mode assuming only @bot delivery.                                                             |
 
 ## Target Architecture
 
@@ -172,21 +172,23 @@ Explicitly unsupported in MVP:
 
 Inbound Feishu events should normalize into one of these routes:
 
-| Event                                              | Route                                    | Session behavior                                                                                                              |
-| -------------------------------------------------- | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| group @bot text                                    | `accepted_start_or_resume`               | Create or resume session                                                                                                      |
-| group non-@ text in `all` mode with active session | `accepted_followup`                      | Queue or steer into active turn; if no Feishu root/thread coordinate matches, use the latest active session in the same group |
-| group non-@ text without active session            | `ignored_no_active_session`              | No session                                                                                                                    |
-| private chat                                       | `ignored_private_chat`                   | No session                                                                                                                    |
-| bot/app/self message                               | `ignored_self`                           | No session                                                                                                                    |
-| duplicate `message_id`                             | `deduped`                                | No duplicate turn/reply                                                                                                       |
-| rich `post`                                        | `accepted_rich` when group route matches | Preserve raw payload and readable summary                                                                                     |
-| interactive card callback                          | `accepted_card_callback`                 | Ack quickly, enqueue session action                                                                                           |
+| Event                                   | Route                                    | Session behavior                                                                              |
+| --------------------------------------- | ---------------------------------------- | --------------------------------------------------------------------------------------------- |
+| group @bot text                         | `accepted_start_or_resume`               | Create or resume session                                                                      |
+| group reply in the same Feishu topic    | `accepted_followup`                      | Resume the same session; if idle, start a new turn, and if active, steer into the active turn |
+| rootless group non-@ text in `all` mode | `accepted_followup`                      | Queue or steer only when a latest active session exists in the same group                     |
+| group non-@ text without active session | `ignored_no_active_session`              | No session                                                                                    |
+| private chat                            | `ignored_private_chat`                   | No session                                                                                    |
+| bot/app/self message                    | `ignored_self`                           | No session                                                                                    |
+| duplicate `message_id`                  | `deduped`                                | No duplicate turn/reply                                                                       |
+| rich `post`                             | `accepted_rich` when group route matches | Preserve raw payload and readable summary                                                     |
+| interactive card callback               | `accepted_card_callback`                 | Ack quickly, enqueue session action                                                           |
 
 Rules:
 
 - [x] Session creation requires explicit group @bot.
-- [x] Non-@ follow-up requires an existing active session and all-message delivery or recovered history; rootless group follow-ups in `all` mode attach to the latest active session in the same group.
+- [x] Feishu topic replies use the topic root as the session root, matching Slack thread lifecycle semantics.
+- [x] Rootless non-@ follow-up requires an existing active session and all-message delivery or recovered history; rootless group follow-ups in `all` mode attach to the latest active session in the same group.
 - [x] All callbacks must ack before Codex work runs.
 - [x] Dedupe must prefer Feishu `message_id` for message events.
 
@@ -277,6 +279,8 @@ Platform-aware `/jobs/register` coordinates share the same `platform` validation
 
 `GET /chat/thread-history` also accepts `beforeCursor`/`before_cursor` for platform pagination. Feishu maps it to the Open Platform `page_token`, returns `hasMore`, and exposes `nextCursor` when Feishu reports another bounded page. Explicit history `limit` values must be positive integers before broker delegation and are clamped by the target platform max history limit. History `format` values must be `json` or `text`; invalid values return 400 `invalid_format` before broker delegation.
 
+`POST /chat/post-state` is a silent lifecycle API, matching `/slack/post-state`: it records `final`, `block`, or `wait` state for broker bookkeeping and must not create a visible Feishu `Codex finished` card. Visible updates must go through `/chat/post-message`; Feishu progress messages may update the active turn-state card, but terminal silent state must not masquerade as a user-facing reply.
+
 Compatibility:
 
 - Existing `/slack/*` routes remain.
@@ -290,7 +294,7 @@ Runtime instructions must:
 - [x] Say which platform a session came from.
 - [x] State that Feishu private chats are unsupported.
 - [x] Explain that non-@ follow-up reliability depends on all-group-message permission.
-- [x] Tell Codex not to assume Slack thread semantics for Feishu.
+- [x] Tell Codex that a Feishu topic is the Slack-thread equivalent when `root_message_id` / `platform_thread_id` are present, while rootless group messages remain a Feishu-specific degraded case.
 - [x] Use rich/card formats only through broker-supported `/chat/post-message` payloads.
 - [x] Keep Feishu prompts on platform-aware `/chat/*` APIs and platform-aware `/jobs/register` coordinates; Slack legacy job coordinate aliases remain compatible.
 - [x] Show Slack legacy coordinate aliases only in Slack prompts; Feishu prompts use `conversation_id` and `root_message_id`.
