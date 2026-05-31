@@ -1,8 +1,16 @@
+import fs from "node:fs/promises";
 import http from "node:http";
+import os from "node:os";
+import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createHttpHandler } from "../src/http/router.js";
+import type { ChatOutboundMessage, ChatPostedMessage, ChatThreadMessage, ChatThreadQuery, ChatThreadTarget, ChatUserIdentity } from "../src/services/chat/chat-types.js";
+import type { ChatPlatformAdapter, ChatPlatformHandlers } from "../src/services/chat/chat-platform-adapter.js";
+import { FeishuCodexBridge } from "../src/services/feishu/feishu-codex-bridge.js";
+import { SessionManager } from "../src/services/session-manager.js";
+import { StateStore } from "../src/store/state-store.js";
 
 describe("chat routes", () => {
   const cleanups: Array<() => Promise<void>> = [];
@@ -454,6 +462,92 @@ describe("chat routes", () => {
     ]);
   });
 
+  it("records Feishu visible final lifecycle through generic chat coordinates", async () => {
+    const dataRoot = await fs.mkdtemp(path.join(os.tmpdir(), "chat-route-feishu-final-"));
+    const sessions = new SessionManager({
+      stateStore: new StateStore(path.join(dataRoot, "state"), path.join(dataRoot, "sessions")),
+      sessionsRoot: path.join(dataRoot, "sessions"),
+    });
+    const coordinates = {
+      platform: "feishu" as const,
+      conversationId: "oc_group",
+      rootMessageId: "om_root",
+    };
+    await sessions.load();
+    await sessions.ensureChatSession(coordinates, {
+      conversationKind: "group",
+    });
+    await sessions.setChatCodexThreadId(coordinates, "thread-1");
+    await sessions.setChatActiveTurnId(coordinates, "turn-1");
+    const adapter = new RouteFeishuAdapter();
+    const feishu = new FeishuCodexBridge({
+      sessions,
+      adapter,
+      codex: {} as never,
+      groupMessageMode: "all",
+    });
+    const server = http.createServer(
+      createHttpHandler({
+        bridge: {
+          postChatMessage: async (payload: {
+            readonly platform: string;
+            readonly conversationId: string;
+            readonly rootMessageId: string;
+            readonly text: string;
+            readonly kind?: ChatOutboundMessage["kind"] | undefined;
+            readonly reason?: string | undefined;
+            readonly format?: ChatOutboundMessage["format"] | undefined;
+            readonly richText?: ChatOutboundMessage["richText"] | undefined;
+            readonly card?: ChatOutboundMessage["card"] | undefined;
+          }) => {
+            if (payload.platform !== "feishu") {
+              throw new Error(`unexpected platform: ${payload.platform}`);
+            }
+            await feishu.postChatMessage(payload);
+          },
+        } as never,
+        config: {
+          serviceName: "test-broker",
+        } as never,
+      }),
+    );
+    const baseUrl = await listen(server);
+    cleanups.push(() => close(server));
+
+    const response = await fetch(`${baseUrl}/chat/post-message`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        platform: "feishu",
+        conversation_id: "oc_group",
+        root_message_id: "om_root",
+        text: "Final answer is visible.",
+        kind: "final",
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ ok: true });
+    expect(adapter.postedMessages).toEqual([
+      {
+        target: coordinates,
+        message: {
+          text: "Final answer is visible.",
+          format: undefined,
+          richText: undefined,
+          card: undefined,
+        },
+      },
+    ]);
+    expect(sessions.getChatSession(coordinates)).toMatchObject({
+      activeTurnId: "turn-1",
+      lastTurnSignalTurnId: "turn-1",
+      lastTurnSignalKind: "final",
+    });
+  });
+
   it("rejects invalid rich/card JSON fields before delegation", async () => {
     const calls: unknown[] = [];
     const server = http.createServer(
@@ -861,6 +955,37 @@ describe("chat routes", () => {
     expect(calls).toEqual([]);
   });
 });
+
+class RouteFeishuAdapter implements ChatPlatformAdapter {
+  readonly platform = "feishu" as const;
+  readonly postedMessages: Array<{ readonly target: ChatThreadTarget; readonly message: ChatOutboundMessage }> = [];
+
+  async start(_handlers: ChatPlatformHandlers): Promise<void> {}
+
+  async stop(): Promise<void> {}
+
+  async getBotIdentity(): Promise<ChatUserIdentity | null> {
+    return null;
+  }
+
+  async listThreadMessages(_query: ChatThreadQuery): Promise<readonly ChatThreadMessage[]> {
+    return [];
+  }
+
+  async postThreadMessage(target: ChatThreadTarget, message: ChatOutboundMessage): Promise<ChatPostedMessage> {
+    this.postedMessages.push({ target, message });
+    return {
+      platform: "feishu",
+      conversationId: target.conversationId,
+      rootMessageId: target.rootMessageId,
+      messageId: "om_reply",
+    };
+  }
+
+  async getUserIdentity(_userId: string): Promise<ChatUserIdentity | null> {
+    return null;
+  }
+}
 
 async function listen(server: http.Server): Promise<string> {
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));

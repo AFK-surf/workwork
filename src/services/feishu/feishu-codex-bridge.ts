@@ -96,6 +96,7 @@ export class FeishuCodexBridge {
       conversationId: options.conversationId,
       rootMessageId: options.rootMessageId,
     };
+    this.#requireVisibleChatTurnSignalSession(target, options);
 
     return await this.#runWithOutboundQueue(target, async () => {
       const projection = createChatTurnProjectionFromOutboundMessage(target, {
@@ -141,8 +142,17 @@ export class FeishuCodexBridge {
         throw new Error("Feishu outbound message did not produce a post result");
       }
 
+      await this.#recordVisibleChatTurnSignal(target, options);
       return posted;
     });
+  }
+
+  #requireVisibleChatTurnSignalSession(target: ChatThreadTarget, options: Pick<FeishuPostChatMessageOptions, "kind">): void {
+    if (!isStopExplainingChatTurnSignalKind(options.kind)) {
+      return;
+    }
+
+    this.#requireChatTurnSignalSession(target);
   }
 
   async postChatState(options: { readonly conversationId: string; readonly rootMessageId: string; readonly kind: "wait" | "block" | "final"; readonly reason?: string | undefined }): Promise<void> {
@@ -151,12 +161,45 @@ export class FeishuCodexBridge {
       conversationId: options.conversationId,
       rootMessageId: options.rootMessageId,
     } as const;
-    const session = this.#sessions.getChatSession(coordinates);
-    if (!session) {
-      throw new Error(`Unknown session for Feishu state update: ${options.conversationId}:${options.rootMessageId}`);
+    await this.#recordChatTurnSignal(coordinates, {
+      kind: options.kind,
+      reason: options.reason,
+      batchId: "state",
+    });
+  }
+
+  async #recordVisibleChatTurnSignal(target: ChatThreadTarget, options: Pick<FeishuPostChatMessageOptions, "kind" | "reason">): Promise<void> {
+    if (!isStopExplainingChatTurnSignalKind(options.kind)) {
+      return;
     }
 
-    const updated = await this.#sessions.recordChatTurnSignal(coordinates, {
+    await this.#recordChatTurnSignal(target, {
+      kind: options.kind,
+      reason: options.reason,
+      batchId: "message",
+    });
+  }
+
+  #requireChatTurnSignalSession(target: ChatThreadTarget): SlackSessionRecord {
+    const session = this.#sessions.getChatSession(target);
+    if (!session) {
+      throw new Error(`Unknown session for Feishu state update: ${target.conversationId}:${target.rootMessageId}`);
+    }
+
+    return session;
+  }
+
+  async #recordChatTurnSignal(
+    target: ChatThreadTarget,
+    options: {
+      readonly kind: "final" | "block" | "wait";
+      readonly reason?: string | undefined;
+      readonly batchId: "state" | "message";
+    },
+  ): Promise<void> {
+    const session = this.#requireChatTurnSignalSession(target);
+
+    const updated = await this.#sessions.recordChatTurnSignal(target, {
       turnId: session.activeTurnId,
       kind: options.kind,
       reason: options.reason,
@@ -168,7 +211,7 @@ export class FeishuCodexBridge {
       turnId: updated.lastTurnSignalTurnId ?? "none",
       codexThreadId: updated.codexThreadId ?? "none",
       durationMs: 0,
-      batchId: "state",
+      batchId: options.batchId,
       status: options.kind,
       reason: options.reason,
     });
@@ -1193,6 +1236,10 @@ function shouldRenderOperationalCard(options: FeishuPostChatMessageOptions): opt
   readonly kind: NonNullable<ChatOutboundMessage["kind"]>;
 } {
   return (options.kind === "wait" || options.kind === "block") && !options.format && !options.richText && !options.card;
+}
+
+function isStopExplainingChatTurnSignalKind(kind: ChatOutboundMessage["kind"] | undefined): kind is "final" | "block" | "wait" {
+  return kind === "final" || kind === "block" || kind === "wait";
 }
 
 function createFeishuOperationalCard(kind: NonNullable<ChatOutboundMessage["kind"]>, text: string, reason: string | undefined): JsonLike {
