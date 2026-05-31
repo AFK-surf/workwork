@@ -581,6 +581,31 @@ describe("RFC 0001 local audit", () => {
     expect(report.realTenantOk).toBe(false);
     expect(report.realTenantChecks).toEqual(expect.arrayContaining([expect.objectContaining({ id: "real.preflight", status: "pass" }), expect.objectContaining({ id: "real.setup_evidence", status: "missing" }), expect.objectContaining({ id: "real.saved_smoke", status: "missing" })]));
   });
+
+  it("marks preflight ready from saved evidence without requiring live rollout secrets", async () => {
+    const repo = await createFixtureRepo();
+    await writeJson(path.join(repo, "evidence", "feishu-smoke", "feishu-preflight-report.json"), fixturePreflightReport());
+
+    const report = await collectRfc0001LocalAudit({
+      cwd: repo,
+      env: {},
+      evidenceDir: path.join(repo, "evidence", "feishu-smoke"),
+    });
+
+    expect(report.realTenantOk).toBe(false);
+    expect(report.realTenantChecks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "real.preflight",
+          status: "pass",
+          evidence: expect.arrayContaining(["source=saved_preflight_report", "present=feishu-preflight-report.json", "preflight.slack_credentials_present=pass"]),
+        }),
+        expect.objectContaining({ id: "real.setup_evidence", status: "missing" }),
+        expect.objectContaining({ id: "real.saved_smoke", status: "missing" }),
+      ]),
+    );
+    expect(report.nextActions.join("\n")).not.toContain("real.preflight");
+  });
 });
 
 async function createFixtureRepo(
@@ -644,6 +669,35 @@ function fixtureContentForFile(file: string, omitEvidenceProbe: string | undefin
 async function writeFile(filePath: string, content: string): Promise<void> {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
   await fs.writeFile(filePath, content);
+}
+
+async function writeJson(filePath: string, content: unknown): Promise<void> {
+  await writeFile(filePath, `${JSON.stringify(content, null, 2)}\n`);
+}
+
+function fixturePreflightReport(): unknown {
+  return {
+    ok: true,
+    checkedAt: "2026-05-30T07:47:46.534Z",
+    checks: [
+      "preflight.slack_credentials_present",
+      "preflight.feishu_enabled",
+      "preflight.feishu_credentials_present",
+      "preflight.feishu_bot_identity_present",
+      "scope.china_feishu",
+      "preflight.feishu_api_base_china",
+      "preflight.group_message_mode_all",
+      "preflight.startup_required",
+      "preflight.raw_feishu_events_disabled",
+    ].map((id) => ({
+      id,
+      label: id,
+      required: true,
+      status: "pass",
+      evidence: [`${id}=pass`],
+    })),
+    nextActions: [],
+  };
 }
 
 function fixtureSetupEvidenceTemplateContent(): string {
