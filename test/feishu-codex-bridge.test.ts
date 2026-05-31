@@ -2062,6 +2062,112 @@ describe("FeishuCodexBridge", () => {
     );
   });
 
+  it("starts a new turn for Feishu topic replies after a silent final state", async () => {
+    const dataRoot = await fs.mkdtemp(path.join(os.tmpdir(), "feishu-codex-state-followup-"));
+    const logDir = path.join(dataRoot, "logs");
+    configureLogger({
+      logDir,
+      level: "debug",
+      rawSlackEvents: false,
+      rawFeishuEvents: false,
+      rawCodexRpc: false,
+      rawHttpRequests: false,
+    });
+    const sessions = new SessionManager({
+      stateStore: new StateStore(path.join(dataRoot, "state"), path.join(dataRoot, "sessions")),
+      sessionsRoot: path.join(dataRoot, "sessions"),
+    });
+    await sessions.load();
+    const coordinates = {
+      platform: "feishu" as const,
+      conversationId: "oc_group",
+      rootMessageId: "om_root",
+    };
+    const adapter = new FakeFeishuAdapter();
+    const codex = new DeferredFakeCodex();
+    const bridge = new FeishuCodexBridge({
+      sessions,
+      adapter,
+      codex: codex as never,
+      groupMessageMode: "all",
+    });
+
+    await bridge.start();
+    const firstMessage = adapter.emit({
+      platform: "feishu",
+      conversationId: "oc_group",
+      conversationKind: "group",
+      rootMessageId: "om_root",
+      platformThreadId: "omt_thread",
+      messageId: "om_root",
+      source: "bot_mention",
+      sender: {
+        kind: "user",
+        userId: "ou_user",
+      },
+      text: "start the topic session",
+    });
+    await waitForCondition(() => codex.startedTurns.length === 1, "first Feishu topic turn start");
+    await waitForCondition(() => sessions.getChatSession(coordinates)?.activeTurnId === "turn-1", "first Feishu topic turn active");
+
+    await bridge.postChatState({
+      conversationId: "oc_group",
+      rootMessageId: "om_root",
+      kind: "final",
+      reason: "done",
+    });
+    codex.completeNext();
+    await firstMessage;
+    await waitForCondition(() => sessions.getChatSession(coordinates)?.activeTurnId === undefined, "first Feishu topic turn completion");
+
+    const followupMessage = adapter.emit({
+      platform: "feishu",
+      conversationId: "oc_group",
+      conversationKind: "group",
+      rootMessageId: "om_root",
+      platformThreadId: "omt_thread",
+      messageId: "om_followup",
+      source: "thread_reply",
+      sender: {
+        kind: "user",
+        userId: "ou_user",
+      },
+      text: "follow-up in the same topic",
+    });
+    await waitForCondition(() => codex.startedTurns.length === 2, "follow-up Feishu topic turn start");
+    codex.completeNext();
+    await followupMessage;
+    await waitForCondition(() => sessions.getChatSession(coordinates)?.activeTurnId === undefined, "follow-up Feishu topic turn completion");
+    await flushLogger();
+
+    expect(codex.steers).toEqual([]);
+    expect(codex.startedTurns[1]).toEqual(
+      expect.objectContaining({
+        inputText: expect.stringContaining("follow-up in the same topic"),
+      }),
+    );
+    expect(sessions.getChatSession(coordinates)).toMatchObject({
+      lastTurnSignalTurnId: "turn-1",
+      lastTurnSignalKind: "final",
+      lastObservedMessageTs: "om_followup",
+    });
+    expect(adapter.postedStates).toEqual([]);
+    expect(adapter.postedProjections).toEqual([]);
+    const logs = await readJsonl(path.join(logDir, "broker.jsonl"));
+    expect(logs).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: "chat.outbound.posted",
+          meta: expect.objectContaining({
+            platform: "feishu",
+            format: "card",
+            messageId: "state",
+          }),
+        }),
+      ]),
+    );
+  });
+
   it("returns Feishu bounded history page cursors through the bridge", async () => {
     const dataRoot = await fs.mkdtemp(path.join(os.tmpdir(), "feishu-codex-history-page-"));
     const sessions = new SessionManager({
@@ -3151,6 +3257,45 @@ class FakeCodex {
 
   async interrupt(session: unknown) {
     this.interruptedSessions.push(session);
+  }
+}
+
+class DeferredFakeCodex extends FakeCodex {
+  readonly #pendingTurns: Array<{
+    readonly turnId: string;
+    readonly resolve: (result: { readonly threadId: string; readonly turnId: string; readonly finalMessage: string; readonly aborted: boolean }) => void;
+  }> = [];
+
+  override async startTurn(session: unknown, input: readonly { type: string; text?: string }[]) {
+    const turnId = `turn-${this.startedTurns.length + 1}`;
+    this.startedTurns.push({
+      session,
+      inputText: input.map((item) => item.text ?? "").join("\n"),
+      imageUrls: input.filter((item): item is { type: string; url: string } => item.type === "image" && "url" in item).map((item) => item.url),
+    });
+    const completion = new Promise<{ readonly threadId: string; readonly turnId: string; readonly finalMessage: string; readonly aborted: boolean }>((resolve) => {
+      this.#pendingTurns.push({
+        turnId,
+        resolve,
+      });
+    });
+    return {
+      turnId,
+      completion,
+    };
+  }
+
+  completeNext(): void {
+    const pending = this.#pendingTurns.shift();
+    if (!pending) {
+      throw new Error("No pending deferred Codex turn");
+    }
+    pending.resolve({
+      threadId: "thread-1",
+      turnId: pending.turnId,
+      finalMessage: "",
+      aborted: false,
+    });
   }
 }
 
