@@ -3,11 +3,13 @@ import { logger } from "../../logger.js";
 import type { ChatAttachment, ChatInputMessage, ChatOutboundFile, ChatOutboundMessage, ChatPostedMessage, ChatThreadPage, ChatThreadMessage, ChatThreadTarget, ChatUploadedFile } from "../chat/chat-types.js";
 import type { ChatPlatformAdapter } from "../chat/chat-platform-adapter.js";
 import { createChatTurnProjectionFromOutboundMessage, createChatTurnProjectionFromUploadedFile } from "../chat/chat-turn-projection.js";
+import { formatSessionPageLinkMessage } from "../chat/session-page-link-message.js";
 import type { CodexBroker } from "../codex/codex-broker.js";
 import type { CodexInputItem } from "../codex/app-server-client.js";
 import { type ChatSessionCoordinates } from "../chat/chat-session-key.js";
 import { appendCoAuthorTrailers } from "../git/github-author-utils.js";
 import { GitHubAuthorMappingService } from "../github-author-mapping-service.js";
+import type { GitHubPrIdentityService } from "../github-pr-identity-service.js";
 import { SessionManager } from "../session-manager.js";
 import type { BackgroundJobEventPayload, GitHubAuthorMappingRecord, JsonLike, SlackSessionRecord } from "../../types.js";
 
@@ -35,6 +37,8 @@ export class FeishuCodexBridge {
   readonly #initialThreadHistoryCount: number;
   readonly #historyApiMaxLimit: number;
   readonly #mappings?: GitHubAuthorMappingService | undefined;
+  readonly #adminBaseUrl: string;
+  readonly #githubPrIdentity?: GitHubPrIdentityService | undefined;
   readonly #outboundQueues = new Map<string, Promise<void>>();
   #started = false;
 
@@ -46,6 +50,8 @@ export class FeishuCodexBridge {
     readonly initialThreadHistoryCount?: number | undefined;
     readonly historyApiMaxLimit?: number | undefined;
     readonly mappings?: GitHubAuthorMappingService | undefined;
+    readonly adminBaseUrl?: string | undefined;
+    readonly githubPrIdentity?: GitHubPrIdentityService | undefined;
   }) {
     this.#sessions = options.sessions;
     this.#adapter = options.adapter;
@@ -54,6 +60,8 @@ export class FeishuCodexBridge {
     this.#initialThreadHistoryCount = options.initialThreadHistoryCount ?? DEFAULT_FEISHU_INITIAL_THREAD_HISTORY_COUNT;
     this.#historyApiMaxLimit = options.historyApiMaxLimit ?? DEFAULT_FEISHU_HISTORY_API_MAX_LIMIT;
     this.#mappings = options.mappings;
+    this.#adminBaseUrl = options.adminBaseUrl ?? "";
+    this.#githubPrIdentity = options.githubPrIdentity;
   }
 
   async start(): Promise<void> {
@@ -131,32 +139,6 @@ export class FeishuCodexBridge {
 
       if (!posted) {
         throw new Error("Feishu outbound message did not produce a post result");
-      }
-
-      if (options.kind && this.#adapter.postThreadProjection) {
-        try {
-          await this.#adapter.postThreadProjection(target, projection);
-          logger.info("chat.outbound.posted", {
-            platform: "feishu",
-            sessionKey: this.#sessionKeyFor(target),
-            conversationId: options.conversationId,
-            rootMessageId: options.rootMessageId,
-            messageId: "state",
-            format: "card",
-            durationMs: 0,
-          });
-        } catch (error) {
-          logger.warn("chat.outbound.failed", {
-            platform: "feishu",
-            sessionKey: this.#sessionKeyFor(target),
-            conversationId: options.conversationId,
-            rootMessageId: options.rootMessageId,
-            format: "card",
-            errorClass: error instanceof Error ? error.name : "Error",
-            statusCode: statusCodeFromError(error) ?? "unknown",
-            attempt: 1,
-          });
-        }
       }
 
       return posted;
@@ -527,6 +509,8 @@ export class FeishuCodexBridge {
       (await this.#sessions.ensureChatSession(coordinates, {
         conversationKind: message.conversationKind,
         platformThreadId: message.platformThreadId,
+        initiatorUserId: message.sender.kind === "user" ? message.sender.userId : undefined,
+        initiatorMessageTs: message.messageId,
       }));
     session = await this.#sessions.setChatLastObservedMessageTs(sessionCoordinates, message.messageCursor ?? message.messageId);
 
@@ -539,6 +523,7 @@ export class FeishuCodexBridge {
         messageId: message.messageId,
         groupMessageMode: this.#groupMessageMode,
       });
+      session = await this.#postSessionPageLinkIfNeeded(session);
     } else {
       logger.info("chat.session.resumed", {
         platform: "feishu",
@@ -805,6 +790,34 @@ export class FeishuCodexBridge {
 
   #sessionKeyFor(coordinates: ChatSessionCoordinates): string {
     return this.#sessions.getChatSession(coordinates)?.key ?? SessionManager.createChatKey(coordinates);
+  }
+
+  async #postSessionPageLinkIfNeeded(session: SlackSessionRecord): Promise<SlackSessionRecord> {
+    const latestSession = this.#sessions.getSessionByKey(session.key) ?? session;
+    if (latestSession.sessionPageLinkPostedAt || !this.#adminBaseUrl.trim()) {
+      return latestSession;
+    }
+
+    const text = formatSessionPageLinkMessage({
+      adminBaseUrl: this.#adminBaseUrl,
+      session: latestSession,
+      githubPrIdentity: this.#githubPrIdentity,
+      style: "plain",
+    });
+
+    try {
+      await this.#postLoggedThreadMessage(threadTargetForSession(latestSession), {
+        text,
+        format: "markdown",
+      });
+      return await this.#sessions.setChatSessionPageLinkPostedAt(coordinatesForSession(latestSession), new Date().toISOString());
+    } catch (error) {
+      logger.warn("Failed to post admin session link into Feishu thread", {
+        sessionKey: latestSession.key,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return latestSession;
+    }
   }
 
   async #runWithOutboundQueue<T>(target: ChatThreadTarget, operation: () => Promise<T>): Promise<T> {
@@ -1213,7 +1226,7 @@ function createFeishuOutboundMessage(options: FeishuPostChatMessageOptions, text
 function shouldRenderOperationalCard(options: FeishuPostChatMessageOptions): options is FeishuPostChatMessageOptions & {
   readonly kind: NonNullable<ChatOutboundMessage["kind"]>;
 } {
-  return Boolean(options.kind) && !options.format && !options.richText && !options.card;
+  return (options.kind === "wait" || options.kind === "block") && !options.format && !options.richText && !options.card;
 }
 
 function createFeishuOperationalCard(kind: NonNullable<ChatOutboundMessage["kind"]>, text: string, reason: string | undefined): JsonLike {

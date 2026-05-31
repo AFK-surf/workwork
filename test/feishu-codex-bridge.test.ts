@@ -13,6 +13,7 @@ import type { ChatPlatformAdapter, ChatPlatformHandlers } from "../src/services/
 import { FeishuCodexBridge } from "../src/services/feishu/feishu-codex-bridge.js";
 import { FeishuPlatformAdapter } from "../src/services/feishu/feishu-platform-adapter.js";
 import { GitHubAuthorMappingService } from "../src/services/github-author-mapping-service.js";
+import { GitHubPrIdentityService } from "../src/services/github-pr-identity-service.js";
 import { SessionManager } from "../src/services/session-manager.js";
 import { StateStore } from "../src/store/state-store.js";
 
@@ -74,6 +75,8 @@ describe("FeishuCodexBridge", () => {
       platformThreadId: "omt_thread",
       codexThreadId: "thread-1",
       activeTurnId: undefined,
+      initiatorUserId: "ou_user",
+      initiatorMessageTs: "om_root",
       lastObservedMessageTs: "1710000000000",
       coAuthorCandidateUserIds: ["ou_user"],
       coAuthorCandidateRevision: 1,
@@ -133,6 +136,90 @@ describe("FeishuCodexBridge", () => {
         }),
       ]),
     );
+  });
+
+  it("posts the Feishu session dashboard link and GitHub bind prompt once on session start", async () => {
+    const dataRoot = await fs.mkdtemp(path.join(os.tmpdir(), "feishu-codex-session-link-"));
+    const sessions = new SessionManager({
+      stateStore: new StateStore(path.join(dataRoot, "state"), path.join(dataRoot, "sessions")),
+      sessionsRoot: path.join(dataRoot, "sessions"),
+    });
+    const githubPrIdentity = new GitHubPrIdentityService({
+      stateDir: path.join(dataRoot, "state"),
+      defaultGitHubLogin: "default-bot",
+      defaultGitHubToken: "default-token",
+    });
+    await sessions.load();
+    await githubPrIdentity.load();
+    const adapter = new FakeFeishuAdapter();
+    const codex = new FakeCodex();
+    const bridge = new FeishuCodexBridge({
+      sessions,
+      adapter,
+      codex: codex as never,
+      groupMessageMode: "all",
+      adminBaseUrl: "https://admin.example.test",
+      githubPrIdentity,
+    });
+
+    await bridge.start();
+    await adapter.emit({
+      platform: "feishu",
+      conversationId: "oc_group",
+      conversationKind: "group",
+      rootMessageId: "om_root",
+      platformThreadId: "omt_thread",
+      messageId: "om_root",
+      messageCursor: "1710000000000",
+      source: "bot_mention",
+      sender: {
+        kind: "user",
+        userId: "ou_user",
+      },
+      text: "please check this",
+    });
+    await adapter.emit({
+      platform: "feishu",
+      conversationId: "oc_group",
+      conversationKind: "group",
+      rootMessageId: "om_root",
+      platformThreadId: "omt_thread",
+      messageId: "om_followup",
+      messageCursor: "1710000001000",
+      source: "thread_reply",
+      sender: {
+        kind: "user",
+        userId: "ou_user",
+      },
+      text: "follow up",
+    });
+
+    const sessionUrl = "https://admin.example.test/admin/sessions/feishu%3Ab2NfZ3JvdXA%3Ab21fcm9vdA";
+    const linkMessages = adapter.postedMessages.filter((entry) => asPostedMessageText(entry)?.includes(sessionUrl));
+    expect(linkMessages).toHaveLength(1);
+    expect(linkMessages[0]).toMatchObject({
+      target: {
+        platform: "feishu",
+        conversationId: "oc_group",
+        rootMessageId: "om_root",
+      },
+      message: {
+        text: expect.stringContaining("查看会话活动时间线"),
+        format: "markdown",
+      },
+    });
+    expect(asPostedMessageText(linkMessages[0])).toContain("当前发起人还没有绑定 GitHub 账号");
+    expect(asPostedMessageText(linkMessages[0])).toContain("默认账号 default-bot");
+    expect(asPostedMessageText(linkMessages[0])).toContain(`${sessionUrl}/github/bind`);
+    expect(
+      sessions.getChatSession({
+        platform: "feishu",
+        conversationId: "oc_group",
+        rootMessageId: "om_root",
+      }),
+    ).toMatchObject({
+      sessionPageLinkPostedAt: expect.any(String),
+    });
   });
 
   it("accepts a raw Feishu group mention through the adapter and creates matching session evidence", async () => {
@@ -1305,7 +1392,7 @@ describe("FeishuCodexBridge", () => {
     );
   });
 
-  it("keeps Feishu final replies readable when state-card projection fails", async () => {
+  it("posts Feishu final replies as regular messages without an extra state card", async () => {
     const dataRoot = await fs.mkdtemp(path.join(os.tmpdir(), "feishu-codex-final-projection-fail-"));
     const logDir = path.join(dataRoot, "logs");
     configureLogger({
@@ -1322,9 +1409,6 @@ describe("FeishuCodexBridge", () => {
     });
     await sessions.load();
     const adapter = new FakeFeishuAdapter();
-    adapter.projectionError = Object.assign(new Error("card expired"), {
-      statusCode: 404,
-    });
     const bridge = new FeishuCodexBridge({
       sessions,
       adapter,
@@ -1348,10 +1432,12 @@ describe("FeishuCodexBridge", () => {
       expect.objectContaining({
         message: expect.objectContaining({
           text: "Final answer is still visible.",
+          format: undefined,
+          card: undefined,
         }),
       }),
     ]);
-    expect(adapter.postedProjections).toHaveLength(1);
+    expect(adapter.postedProjections).toEqual([]);
     const logs = await readJsonl(path.join(logDir, "broker.jsonl"));
     expect(logs).toEqual(
       expect.arrayContaining([
@@ -1360,16 +1446,7 @@ describe("FeishuCodexBridge", () => {
           meta: expect.objectContaining({
             platform: "feishu",
             messageId: "om_reply",
-            format: "card",
-          }),
-        }),
-        expect.objectContaining({
-          level: "warn",
-          message: "chat.outbound.failed",
-          meta: expect.objectContaining({
-            platform: "feishu",
-            format: "card",
-            statusCode: 404,
+            format: "text",
           }),
         }),
       ]),
