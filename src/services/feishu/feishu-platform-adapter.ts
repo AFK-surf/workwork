@@ -26,6 +26,7 @@ import type { JsonLike } from "../../types.js";
 import { FeishuApi, type FeishuMessageData, createFeishuTextContent, feishuSdkDomainFromApiBaseUrl } from "./feishu-api.js";
 import { classifyFeishuCardUpdateFailure, missingFeishuCardMessageIdFailure } from "./feishu-card-update-failure.js";
 import { type FeishuBotIdentity, routeFeishuReceiveMessageEvent } from "./feishu-event-parser.js";
+import { createFeishuPostContentFromMarkdown } from "./feishu-markdown.js";
 import { createFeishuTurnStateCard } from "./feishu-status-card.js";
 
 interface FeishuWsClientLike {
@@ -693,31 +694,13 @@ function toFeishuOutboundPayload(message: ChatOutboundMessage): {
   if (message.format === "markdown") {
     return {
       msgType: "post",
-      content: createFeishuPostContent(message.text),
+      content: createFeishuPostContentFromMarkdown(message.text),
     };
   }
 
   return {
     msgType: "text",
     content: createFeishuTextContent(message.text),
-  };
-}
-
-function createFeishuPostContent(text: string): JsonLike {
-  const blocks = text
-    .split(/\n{2,}/)
-    .map((block) => block.trim())
-    .filter(Boolean);
-
-  return {
-    zh_cn: {
-      content: (blocks.length > 0 ? blocks : [text]).map((block) => [
-        {
-          tag: "text",
-          text: block,
-        },
-      ]),
-    },
   };
 }
 

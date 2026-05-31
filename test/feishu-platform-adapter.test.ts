@@ -1447,11 +1447,68 @@ describe("FeishuPlatformAdapter", () => {
           msgType: "post",
           content: {
             zh_cn: {
-              content: [[{ tag: "text", text: "Build passed" }], [{ tag: "text", text: "- tests green" }]],
+              content: [
+                [{ tag: "text", text: "Build passed" }],
+                [
+                  { tag: "text", text: "- " },
+                  { tag: "text", text: "tests green" },
+                ],
+              ],
             },
           },
           replyInThread: true,
         },
+      },
+    ]);
+  });
+
+  it("uses a Markdown parser when converting inline code, links, and code blocks to Feishu post messages", async () => {
+    const calls: unknown[] = [];
+    const adapter = new FeishuPlatformAdapter({
+      appId: "cli-test",
+      appSecret: "secret-test",
+      api: createFakeApi(calls),
+      wsClient: new FakeWsClient(),
+    });
+
+    await adapter.postThreadMessage(
+      {
+        platform: "feishu",
+        conversationId: "oc_group",
+        rootMessageId: "om_root",
+      },
+      {
+        text: "看过 PR #73 啦：\n- GitHub CI: `Build and test` 已通过；PR 状态 **open** / mergeable。\n- [docs](https://example.com)\n\n```sh\npnpm test\n```",
+        format: "markdown",
+      },
+    );
+
+    expect(calls).toEqual([
+      {
+        operation: "replyMessage",
+        options: expect.objectContaining({
+          msgType: "post",
+          content: {
+            zh_cn: {
+              content: [
+                [{ tag: "text", text: "看过 PR #73 啦：" }],
+                [
+                  { tag: "text", text: "- " },
+                  { tag: "text", text: "GitHub CI: " },
+                  { tag: "text", text: "Build and test", style: ["codeInline"] },
+                  { tag: "text", text: " 已通过；PR 状态 " },
+                  { tag: "text", text: "open", style: ["bold"] },
+                  { tag: "text", text: " / mergeable。" },
+                ],
+                [
+                  { tag: "text", text: "- " },
+                  { tag: "a", text: "docs", href: "https://example.com" },
+                ],
+                [{ tag: "code_block", language: "sh", text: "pnpm test" }],
+              ],
+            },
+          },
+        }),
       },
     ]);
   });
