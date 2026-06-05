@@ -66,6 +66,15 @@ export class SlackAgentBridge {
   async start(): Promise<void> {
     await this.#agentRuntime.start();
 
+    if (this.#config.slackDisabled) {
+      logger.info("chat.platform.disabled", {
+        platform: "slack",
+        reason: "SLACK_DISABLED",
+      });
+      await this.#startFeishuBridge();
+      return;
+    }
+
     const auth = await this.#slackApi.authTest();
     this.#botUserId = auth.userId;
     this.#selfMessageFilter.setIdentity(auth);
@@ -103,9 +112,13 @@ export class SlackAgentBridge {
   async stop(): Promise<void> {
     this.#clearSlackEventDrainTimer();
     this.#clearSlackEventRetryTimer();
-    await this.#slackSocket.stop();
+    if (!this.#config.slackDisabled) {
+      await this.#slackSocket.stop();
+    }
     await this.#feishuBridge?.stop();
-    await this.#conversations.stop();
+    if (!this.#config.slackDisabled) {
+      await this.#conversations.stop();
+    }
     await this.#agentRuntime.stop();
   }
 

@@ -220,8 +220,9 @@ function buildSlackPlatformHealth(config: AppConfig, logs: readonly unknown[]): 
   const lifecycle = platformLifecycle(logs, "slack");
   const ready = lastLifecycle(lifecycle, "chat.platform.ready");
   const degraded = lastLifecycle(lifecycle, "chat.platform.degraded");
+  const enabled = !config.slackDisabled && Boolean(config.slackAppToken && config.slackBotToken);
   const state = platformState({
-    enabled: Boolean(config.slackAppToken && config.slackBotToken),
+    enabled,
     ready,
     degraded,
     startupRequired: true,
@@ -229,7 +230,7 @@ function buildSlackPlatformHealth(config: AppConfig, logs: readonly unknown[]): 
 
   return {
     platform: "slack",
-    enabled: Boolean(config.slackAppToken && config.slackBotToken),
+    enabled,
     state,
     startupRequired: true,
     connection: {

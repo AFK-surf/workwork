@@ -12,6 +12,15 @@ export interface ParsedFeishuMessageEvent {
   readonly route: "bot_mention" | "thread_reply" | "group_message";
   readonly controlText: string;
   readonly input: ChatInputMessage;
+  readonly mentionDebug: readonly FeishuMentionDebug[];
+}
+
+export interface FeishuMentionDebug {
+  readonly key?: string | undefined;
+  readonly openId?: string | undefined;
+  readonly userId?: string | undefined;
+  readonly unionId?: string | undefined;
+  readonly matchedBot: boolean;
 }
 
 export type FeishuIgnoredReason = "ignored_invalid_event" | "ignored_private_chat" | "ignored_self";
@@ -120,6 +129,7 @@ export function routeFeishuReceiveMessageEvent(
     parsed: {
       route: source === "bot_mention" ? "bot_mention" : source === "thread_reply" ? "thread_reply" : "group_message",
       controlText,
+      mentionDebug: mentions.map((mention) => createFeishuMentionDebug(mention, options?.botIdentity)),
       input: {
         platform: "feishu",
         conversationId,
@@ -335,6 +345,18 @@ function mentionMatchesBot(mention: FeishuMention, botIdentity?: FeishuBotIdenti
   const rawUser = asJsonRecord(mention.identity.rawUser);
   const id = asJsonRecord(rawUser?.id);
   return Boolean((botIdentity.openId && mention.identity.userId === botIdentity.openId) || (botIdentity.userId && readString(id?.user_id) === botIdentity.userId) || (botIdentity.unionId && readString(id?.union_id) === botIdentity.unionId));
+}
+
+function createFeishuMentionDebug(mention: FeishuMention, botIdentity?: FeishuBotIdentity): FeishuMentionDebug {
+  const rawUser = asJsonRecord(mention.identity.rawUser);
+  const id = asJsonRecord(rawUser?.id);
+  return {
+    key: mention.key,
+    openId: readString(id?.open_id),
+    userId: readString(id?.user_id),
+    unionId: readString(id?.union_id),
+    matchedBot: mentionMatchesBot(mention, botIdentity),
+  };
 }
 
 function removeBotMentions(text: string, mentions: readonly FeishuMention[], botIdentity?: FeishuBotIdentity): string {

@@ -2,6 +2,7 @@ import path from "node:path";
 
 export interface AppConfig {
   readonly serviceRoot?: string | undefined;
+  readonly slackDisabled: boolean;
   readonly slackAppToken: string;
   readonly slackBotToken: string;
   readonly slackApiBaseUrl: string;
@@ -238,6 +239,7 @@ export function loadConfig(env = process.env): AppConfig {
   const port = getNumber(env, "PORT", 3000);
   const workerPort = getNumber(env, "WORKER_PORT", port);
   const workerBindHost = env.WORKER_BIND_HOST?.trim() || "127.0.0.1";
+  const slackDisabled = getBoolean(env, "SLACK_DISABLED", false);
   const feishuEnabled = getBoolean(env, "FEISHU_ENABLED", false);
   const feishuAppId = getOptional(env, "FEISHU_APP_ID");
   const feishuAppSecret = getOptional(env, "FEISHU_APP_SECRET");
@@ -263,8 +265,9 @@ export function loadConfig(env = process.env): AppConfig {
 
   return {
     serviceRoot,
-    slackAppToken: getRequired(env, "SLACK_APP_TOKEN"),
-    slackBotToken: getRequired(env, "SLACK_BOT_TOKEN"),
+    slackDisabled,
+    slackAppToken: slackDisabled ? "" : getRequired(env, "SLACK_APP_TOKEN"),
+    slackBotToken: slackDisabled ? "" : getRequired(env, "SLACK_BOT_TOKEN"),
     slackApiBaseUrl: env.SLACK_API_BASE_URL ?? "https://slack.com/api",
     slackSocketOpenUrl: env.SLACK_SOCKET_OPEN_URL ?? "apps.connections.open",
     slackInitialThreadHistoryCount: getNumber(env, "SLACK_INITIAL_THREAD_HISTORY_COUNT", 8),

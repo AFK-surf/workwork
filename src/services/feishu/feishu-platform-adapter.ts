@@ -132,6 +132,19 @@ export class FeishuPlatformAdapter implements ChatPlatformAdapter {
           route: routed.parsed.route,
           payloadRef: payloadRefForRetainedMessage(routed.parsed.input),
         });
+        if (routed.parsed.mentionDebug.length > 0) {
+          logger.info("chat.message.mentions", {
+            platform: "feishu",
+            conversationId: routed.parsed.input.conversationId,
+            conversationKind: routed.parsed.input.conversationKind,
+            rootMessageId: routed.parsed.input.rootMessageId,
+            messageId: routed.parsed.input.messageId,
+            eventId: routed.parsed.input.eventId ?? routed.parsed.input.messageId,
+            route: routed.parsed.route,
+            mentionCount: routed.parsed.mentionDebug.length,
+            mentions: routed.parsed.mentionDebug,
+          });
+        }
         dispatchFeishuHandler("message", async () => {
           await handlers.onMessage(routed.parsed.input);
         });

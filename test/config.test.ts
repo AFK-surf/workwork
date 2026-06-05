@@ -13,6 +13,7 @@ describe("loadConfig", () => {
       SLACK_BOT_TOKEN: "xoxb-test",
     } as NodeJS.ProcessEnv);
 
+    expect(config.slackDisabled).toBe(false);
     expect(config.slackAppToken).toBe("xapp-test");
     expect(config.slackBotToken).toBe("xoxb-test");
     expect(config.stateDir.endsWith(".data/state")).toBe(true);
@@ -52,6 +53,21 @@ describe("loadConfig", () => {
     expect(config.defaultGitHubLogin).toBeUndefined();
     expect(config.defaultGitHubToken).toBeUndefined();
     expect(config.adminBaseUrl).toBe("http://127.0.0.1:3000");
+  });
+
+  it("allows Slack credentials to be omitted when Slack is disabled", () => {
+    const config = loadConfig({
+      SLACK_DISABLED: "true",
+      FEISHU_ENABLED: "true",
+      FEISHU_APP_ID: "cli-test",
+      FEISHU_APP_SECRET: "secret-test",
+      FEISHU_BOT_OPEN_ID: "ou-bot",
+    } as NodeJS.ProcessEnv);
+
+    expect(config.slackDisabled).toBe(true);
+    expect(config.slackAppToken).toBe("");
+    expect(config.slackBotToken).toBe("");
+    expect(config.feishuEnabled).toBe(true);
   });
 
   it("rejects invalid numeric values", () => {
