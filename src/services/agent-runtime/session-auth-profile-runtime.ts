@@ -260,6 +260,13 @@ function createDefaultProfileRuntime(options: { readonly config: AppConfig; read
     geminiHttpsProxy: options.config.geminiHttpsProxy,
     geminiAllProxy: options.config.geminiAllProxy,
     openAiApiKey: options.config.codexOpenAiApiKey,
+    fin: options.config.finEnabled
+      ? {
+          supervisorPath: options.config.finSupervisorPath!,
+          finDir: options.config.finDir,
+          disableSandbox: options.config.finDisableSandbox,
+        }
+      : undefined,
   });
   return new CodexAppServerRuntime({
     codex,

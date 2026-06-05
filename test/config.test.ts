@@ -1,3 +1,6 @@
+import os from "node:os";
+import path from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import { loadConfig } from "../src/config.js";
@@ -22,6 +25,10 @@ describe("loadConfig", () => {
     expect(config.logDir.endsWith(".data/logs")).toBe(true);
     expect(config.codexHostHomePath).toBeUndefined();
     expect(config.codexTeamHomePath.endsWith(".data/team-codex-home")).toBe(true);
+    expect(config.finEnabled).toBe(false);
+    expect(config.finSupervisorPath).toBeUndefined();
+    expect(config.finDir).toBeUndefined();
+    expect(config.finDisableSandbox).toBe(false);
     expect(config.slackInitialThreadHistoryCount).toBe(8);
     expect(config.slackHistoryApiMaxLimit).toBe(50);
     expect(config.slackActiveTurnReconcileIntervalMs).toBe(15_000);
@@ -124,6 +131,43 @@ describe("loadConfig", () => {
     } as NodeJS.ProcessEnv);
 
     expect(config.tempadLinkServiceUrl).toBe("http://host.docker.internal:4320");
+  });
+
+  it("loads Fin supervisor configuration", () => {
+    const config = loadConfig({
+      SLACK_APP_TOKEN: "xapp-test",
+      SLACK_BOT_TOKEN: "xoxb-test",
+      FIN_ENABLED: "true",
+      FIN_SUPERVISOR_PATH: "/Users/dev-01/Projects/fin/target/debug/fin-supervisor",
+      FIN_DIR: "/Users/dev-01/.fin",
+      FIN_DISABLE_SANDBOX: "true",
+    } as NodeJS.ProcessEnv);
+
+    expect(config.finEnabled).toBe(true);
+    expect(config.finSupervisorPath).toBe("/Users/dev-01/Projects/fin/target/debug/fin-supervisor");
+    expect(config.finDir).toBe("/Users/dev-01/.fin");
+    expect(config.finDisableSandbox).toBe(true);
+  });
+
+  it("defaults FIN_DIR to ~/.fin when Fin is enabled", () => {
+    const config = loadConfig({
+      SLACK_APP_TOKEN: "xapp-test",
+      SLACK_BOT_TOKEN: "xoxb-test",
+      FIN_ENABLED: "true",
+      FIN_SUPERVISOR_PATH: "/Users/dev-01/Projects/fin/target/release/fin-supervisor",
+    } as NodeJS.ProcessEnv);
+
+    expect(config.finDir).toBe(path.join(os.homedir(), ".fin"));
+  });
+
+  it("requires a Fin supervisor path when Fin is enabled", () => {
+    expect(() =>
+      loadConfig({
+        SLACK_APP_TOKEN: "xapp-test",
+        SLACK_BOT_TOKEN: "xoxb-test",
+        FIN_ENABLED: "true",
+      } as NodeJS.ProcessEnv),
+    ).toThrowError("Missing required environment variable: FIN_SUPERVISOR_PATH");
   });
 
   it("parses disabled MCP servers as a csv list and unions isolated MCP servers", () => {

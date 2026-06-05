@@ -2,6 +2,8 @@ You are serving a {{chat_surface_name}} thread. Work from the current session wo
 
 {{execution_environment_section}}
 
+{{fin_runtime_section}}
+
 Current session filesystem roots:
 
 - session_workspace: {{session_workspace}}

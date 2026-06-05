@@ -48,6 +48,70 @@ describe("SessionManager", () => {
     });
   });
 
+  it("creates Slack thread workspaces under the Fin agent when Fin is enabled", async () => {
+    const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "slack-codex-state-"));
+    const sessionsRoot = await fs.mkdtemp(path.join(os.tmpdir(), "slack-codex-sessions-"));
+    const finDir = await fs.mkdtemp(path.join(os.tmpdir(), "slack-codex-fin-"));
+    const store = new StateStore(stateDir, sessionsRoot);
+    const manager = new SessionManager({
+      stateStore: store,
+      sessionsRoot,
+      finDir,
+    });
+
+    await manager.load();
+    const session = await manager.ensureSession("C123", "111.222");
+
+    expect(session.workspacePath).toBe(path.join(finDir, "agents", "slack_C123", "threads", "C123:111.222"));
+  });
+
+  it("creates Feishu thread workspaces under the Fin agent when Fin is enabled", async () => {
+    const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "slack-codex-state-"));
+    const sessionsRoot = await fs.mkdtemp(path.join(os.tmpdir(), "slack-codex-sessions-"));
+    const finDir = await fs.mkdtemp(path.join(os.tmpdir(), "slack-codex-fin-"));
+    const store = new StateStore(stateDir, sessionsRoot);
+    const manager = new SessionManager({
+      stateStore: store,
+      sessionsRoot,
+      finDir,
+    });
+
+    await manager.load();
+    const session = await manager.ensureChatSession(
+      {
+        platform: "feishu",
+        conversationId: "oc_group",
+        rootMessageId: "om_root",
+      },
+      {
+        conversationKind: "group",
+      },
+    );
+
+    expect(session.workspacePath).toBe(path.join(finDir, "agents", "feishu_oc_group", "threads", "feishu:b2NfZ3JvdXA:b21fcm9vdA"));
+  });
+
+  it("deletes Fin thread workspaces for deleted sessions", async () => {
+    const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "slack-codex-state-"));
+    const sessionsRoot = await fs.mkdtemp(path.join(os.tmpdir(), "slack-codex-sessions-"));
+    const finDir = await fs.mkdtemp(path.join(os.tmpdir(), "slack-codex-fin-"));
+    const store = new StateStore(stateDir, sessionsRoot);
+    const manager = new SessionManager({
+      stateStore: store,
+      sessionsRoot,
+      finDir,
+    });
+
+    await manager.load();
+    const session = await manager.ensureSession("C123", "111.222");
+    await fs.writeFile(path.join(session.workspacePath, "marker.txt"), "marker");
+
+    await expect(manager.deleteSessionByKey(session.key)).resolves.toBe(true);
+    await expect(fs.stat(session.workspacePath)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
   it("records the session initiator once and never replaces it with later input", async () => {
     const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "slack-codex-state-"));
     const sessionsRoot = await fs.mkdtemp(path.join(os.tmpdir(), "slack-codex-sessions-"));

@@ -437,6 +437,12 @@ export class AppServerClientLayer1 extends AppServerClientBase {
       codexGeneratedImagesRoot: this.options.codexGeneratedImagesRoot ?? "$CODEX_HOME/generated_images",
       slackBotIdentity: this.privateSlackBotIdentity,
       personalMemory,
+      fin: this.options.finAgentName
+        ? {
+            agentName: this.options.finAgentName,
+            finDir: this.options.finDir,
+          }
+        : undefined,
     });
   }
 

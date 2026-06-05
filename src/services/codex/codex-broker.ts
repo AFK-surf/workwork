@@ -8,23 +8,31 @@ import type { SlackSessionRecord, SlackUserIdentity } from "../../types.js";
 import type { AppServerAccountSummary, CodexInputItem, AppServerRateLimitsResponse, ReadTurnResultOptions, ReadTurnResult, StartedTurn } from "./app-server-client.js";
 import { logger } from "../../logger.js";
 import { getPersonalMemoryPath } from "./codex-home.js";
+import { resolveFinAgentName } from "../chat/fin-agent-name.js";
+
+export { resolveFinAgentName } from "../chat/fin-agent-name.js";
 
 export class CodexBroker extends EventEmitter {
-  readonly #appServerProcess?: AppServerProcess;
-  #client: AppServerClient;
-  readonly #loadedThreadIds = new Set<string>();
+  readonly #defaultSlot: CodexClientSlot;
+  readonly #slots = new Map<string, CodexClientSlot>();
   readonly #serviceName: string;
   readonly #brokerHttpBaseUrl: string;
   readonly #openAiApiKey?: string | undefined;
-  readonly #codexAppServerUrl?: string | undefined;
-  readonly #personalMemoryFilePath: string;
   readonly #reposRoot: string;
-  readonly #codexGeneratedImagesRoot: string;
+  readonly #codexHome: string;
+  readonly #teamCodexHomePath?: string | undefined;
+  readonly #hostCodexHomePath?: string | undefined;
+  readonly #hostGeminiHomePath?: string | undefined;
+  readonly #codexAuthJsonPath?: string | undefined;
+  readonly #codexDisabledMcpServers: string[];
+  readonly #tempadLinkServiceUrl?: string | undefined;
+  readonly #geminiHttpProxy?: string | undefined;
+  readonly #geminiHttpsProxy?: string | undefined;
+  readonly #geminiAllProxy?: string | undefined;
+  readonly #codexAppServerUrl?: string | undefined;
+  readonly #fin?: CodexBrokerFinOptions | undefined;
   #slackBotIdentity: SlackUserIdentity | null = null;
-  #reconnectPromise: Promise<void> | undefined;
-  #connectQueue: Promise<void> = Promise.resolve();
-  #stopping = false;
-  readonly #ignoredDisconnectClients = new WeakSet<AppServerClient>();
+  #nextPort: number;
 
   constructor(options: {
     readonly serviceName: string;
@@ -43,73 +51,78 @@ export class CodexBroker extends EventEmitter {
     readonly geminiHttpsProxy?: string | undefined;
     readonly geminiAllProxy?: string | undefined;
     readonly openAiApiKey?: string | undefined;
+    readonly fin?: CodexBrokerFinOptions | undefined;
   }) {
     super();
     this.#serviceName = options.serviceName;
     this.#brokerHttpBaseUrl = options.brokerHttpBaseUrl;
     this.#openAiApiKey = options.openAiApiKey;
     this.#codexAppServerUrl = options.codexAppServerUrl;
-    this.#personalMemoryFilePath = choosePersonalMemoryFilePath({
-      codexHome: options.codexHome,
-      teamCodexHomePath: options.teamCodexHomePath,
-    });
     this.#reposRoot = options.reposRoot;
-    this.#codexGeneratedImagesRoot = path.join(options.codexHome, "generated_images");
-
-    if (options.codexAppServerUrl) {
-      this.#client = this.#createClient(options.codexAppServerUrl);
-      this.#bindClient(this.#client);
-      return;
-    }
-
-    this.#appServerProcess = new AppServerProcess({
-      brokerHttpBaseUrl: options.brokerHttpBaseUrl,
-      codexHome: options.codexHome,
-      teamCodexHomePath: options.teamCodexHomePath,
-      hostCodexHomePath: options.hostCodexHomePath,
-      hostGeminiHomePath: options.hostGeminiHomePath,
+    this.#codexHome = options.codexHome;
+    this.#teamCodexHomePath = options.teamCodexHomePath;
+    this.#hostCodexHomePath = options.hostCodexHomePath;
+    this.#hostGeminiHomePath = options.hostGeminiHomePath;
+    this.#codexAuthJsonPath = options.codexAuthJsonPath;
+    this.#codexDisabledMcpServers = options.codexDisabledMcpServers;
+    this.#tempadLinkServiceUrl = options.tempadLinkServiceUrl;
+    this.#geminiHttpProxy = options.geminiHttpProxy;
+    this.#geminiHttpsProxy = options.geminiHttpsProxy;
+    this.#geminiAllProxy = options.geminiAllProxy;
+    this.#fin = options.fin;
+    this.#nextPort = options.codexAppServerPort + (options.codexAppServerUrl ? 0 : 1);
+    this.#defaultSlot = this.#createSlot({
+      key: "default",
       port: options.codexAppServerPort,
-      authJsonPath: options.codexAuthJsonPath,
-      disabledMcpServers: options.codexDisabledMcpServers,
-      tempadLinkServiceUrl: options.tempadLinkServiceUrl,
-      geminiHttpProxy: options.geminiHttpProxy,
-      geminiHttpsProxy: options.geminiHttpsProxy,
-      geminiAllProxy: options.geminiAllProxy,
-      openAiApiKey: options.openAiApiKey,
+      codexHome: options.codexHome,
+      codexAppServerUrl: options.codexAppServerUrl,
+      finAgentName: options.fin ? "broker_admin" : undefined,
+      finDescription: "Broker admin Codex app-server",
     });
-    this.#client = this.#createClient(this.#appServerProcess.url);
-    this.#bindClient(this.#client);
   }
 
   get client(): AppServerClient {
-    return this.#client;
+    return this.#defaultSlot.client;
   }
 
   async start(): Promise<void> {
-    this.#stopping = false;
-    await this.#queueConnectClient({
+    this.#defaultSlot.stopping = false;
+    if (this.#fin) {
+      return;
+    }
+    await this.#queueConnectClient(this.#defaultSlot, {
       restartProcess: true,
     });
   }
 
   async stop(): Promise<void> {
-    this.#stopping = true;
-    await this.#client.close();
-    await this.#appServerProcess?.stop();
+    const slots = [this.#defaultSlot, ...this.#slots.values()];
+    this.#slots.clear();
+    await Promise.all(
+      slots.map(async (slot) => {
+        slot.stopping = true;
+        await slot.client.close().catch(() => {});
+        await slot.appServerProcess?.stop().catch(() => {});
+      }),
+    );
   }
 
   setSlackBotIdentity(identity: SlackUserIdentity | null): void {
     this.#slackBotIdentity = identity;
-    this.#client.setSlackBotIdentity(identity);
+    this.#defaultSlot.client.setSlackBotIdentity(identity);
+    for (const slot of this.#slots.values()) {
+      slot.client.setSlackBotIdentity(identity);
+    }
   }
 
   async ensureThread(session: SlackSessionRecord): Promise<string> {
-    if (session.agentSessionId && this.#loadedThreadIds.has(session.agentSessionId)) {
+    const slot = this.#slotForSession(session);
+    if (session.agentSessionId && slot.loadedThreadIds.has(session.agentSessionId)) {
       return session.agentSessionId;
     }
 
-    const threadId = await this.#withRecovery(() => this.#client.ensureThread(session));
-    this.#loadedThreadIds.add(threadId);
+    const threadId = await this.#withRecovery(slot, () => slot.client.ensureThread(session));
+    slot.loadedThreadIds.add(threadId);
     return threadId;
   }
 
@@ -118,7 +131,8 @@ export class CodexBroker extends EventEmitter {
       throw new Error(`Session ${session.key} has no Codex thread id`);
     }
 
-    return await this.#withRecovery(() => this.#client.startTurn(session.agentSessionId!, session.workspacePath, input));
+    const slot = this.#slotForSession(session);
+    return await this.#withRecovery(slot, () => slot.client.startTurn(session.agentSessionId!, session.workspacePath, input));
   }
 
   async steer(session: SlackSessionRecord, input: readonly CodexInputItem[]): Promise<void> {
@@ -126,8 +140,9 @@ export class CodexBroker extends EventEmitter {
       throw new Error(`Session ${session.key} has no active Codex turn to steer`);
     }
 
-    await this.#withRecovery(() =>
-      this.#client.steerTurn({
+    const slot = this.#slotForSession(session);
+    await this.#withRecovery(slot, () =>
+      slot.client.steerTurn({
         threadId: session.agentSessionId!,
         turnId: session.activeTurnId!,
         input,
@@ -140,7 +155,8 @@ export class CodexBroker extends EventEmitter {
       return;
     }
 
-    await this.#withRecovery(() => this.#client.interruptTurn(session.agentSessionId!, session.activeTurnId!));
+    const slot = this.#slotForSession(session);
+    await this.#withRecovery(slot, () => slot.client.interruptTurn(session.agentSessionId!, session.activeTurnId!));
   }
 
   async readTurnResult(session: SlackSessionRecord, turnId: string, options?: ReadTurnResultOptions): Promise<ReadTurnResult | null> {
@@ -148,70 +164,75 @@ export class CodexBroker extends EventEmitter {
       return null;
     }
 
-    return await this.#withRecovery(() => this.#client.readTurnResult(session.agentSessionId!, turnId, options));
+    const slot = this.#slotForSession(session);
+    return await this.#withRecovery(slot, () => slot.client.readTurnResult(session.agentSessionId!, turnId, options));
   }
 
   async readAccountSummary(refreshToken = false): Promise<AppServerAccountSummary> {
-    return await this.#withRecovery(() => this.#client.readAccountSummary(refreshToken));
+    return await this.#withRecovery(this.#defaultSlot, () => this.#defaultSlot.client.readAccountSummary(refreshToken));
   }
 
   async readAccountRateLimits(): Promise<AppServerRateLimitsResponse> {
-    return await this.#withRecovery(() => this.#client.readAccountRateLimits());
+    return await this.#withRecovery(this.#defaultSlot, () => this.#defaultSlot.client.readAccountRateLimits());
   }
 
   async restartRuntime(reason = "admin runtime restart"): Promise<void> {
-    await this.#queueConnectClient({
-      restartProcess: true,
-      reason,
-    });
+    for (const slot of [this.#defaultSlot, ...this.#slots.values()]) {
+      await this.#queueConnectClient(slot, {
+        restartProcess: true,
+        reason,
+      });
+    }
   }
 
-  #createClient(url: string): AppServerClient {
+  #createClient(slot: CodexClientSlot, url: string): AppServerClient {
     const client = new AppServerClient({
       url,
       serviceName: this.#serviceName,
       brokerHttpBaseUrl: this.#brokerHttpBaseUrl,
       openAiApiKey: this.#openAiApiKey,
-      personalMemoryFilePath: this.#personalMemoryFilePath,
+      personalMemoryFilePath: slot.personalMemoryFilePath,
       reposRoot: this.#reposRoot,
-      codexGeneratedImagesRoot: this.#codexGeneratedImagesRoot,
+      codexGeneratedImagesRoot: slot.codexGeneratedImagesRoot,
+      finAgentName: slot.agentName,
+      finDir: this.#fin?.finDir,
     });
     client.setSlackBotIdentity(this.#slackBotIdentity);
     return client;
   }
 
-  #bindClient(client: AppServerClient): void {
+  #bindClient(slot: CodexClientSlot, client: AppServerClient): void {
     client.on("notification", (method, params) => {
-      if (client !== this.#client) {
+      if (client !== slot.client) {
         return;
       }
       this.emit("notification", method, params);
     });
 
     client.on("disconnected", (error) => {
-      if (this.#ignoredDisconnectClients.has(client)) {
+      if (slot.ignoredDisconnectClients.has(client)) {
         return;
       }
 
-      if (client !== this.#client) {
+      if (client !== slot.client) {
         return;
       }
 
-      this.#loadedThreadIds.clear();
-      if (this.#stopping) {
+      slot.loadedThreadIds.clear();
+      if (slot.stopping) {
         return;
       }
 
-      this.#handleClientDisconnect(error instanceof Error ? error : new Error(String(error)));
+      this.#handleClientDisconnect(slot, error instanceof Error ? error : new Error(String(error)));
     });
   }
 
-  #handleClientDisconnect(error: Error): void {
-    void this.#recoverClient(error);
+  #handleClientDisconnect(slot: CodexClientSlot, error: Error): void {
+    void this.#recoverClient(slot, error);
   }
 
-  async #withRecovery<T>(operation: () => Promise<T>): Promise<T> {
-    await this.#ensureConnected();
+  async #withRecovery<T>(slot: CodexClientSlot, operation: () => Promise<T>): Promise<T> {
+    await this.#ensureConnected(slot);
 
     try {
       return await operation();
@@ -220,28 +241,30 @@ export class CodexBroker extends EventEmitter {
         throw error;
       }
 
-      await this.#recoverClient(error instanceof Error ? error : new Error(String(error)));
+      await this.#recoverClient(slot, error instanceof Error ? error : new Error(String(error)));
       return await operation();
     }
   }
 
-  async #ensureConnected(): Promise<void> {
-    if (this.#client.isConnected()) {
+  async #ensureConnected(slot: CodexClientSlot): Promise<void> {
+    if (slot.client.isConnected()) {
       return;
     }
 
-    await this.#recoverClient(new Error("Codex app-server websocket is not connected"));
+    await this.#recoverClient(slot, new Error("Codex app-server websocket is not connected"));
   }
 
-  async #recoverClient(error: Error): Promise<void> {
-    if (!this.#reconnectPromise) {
+  async #recoverClient(slot: CodexClientSlot, error: Error): Promise<void> {
+    if (!slot.reconnectPromise) {
       logger.warn("Recovering Codex app-server client", {
+        slot: slot.key,
+        agentName: slot.agentName ?? null,
         reason: error.message,
       });
-      this.#reconnectPromise = (async () => {
+      slot.reconnectPromise = (async () => {
         try {
-          await this.#queueConnectClient({
-            restartProcess: false,
+          await this.#queueConnectClient(slot, {
+            restartProcess: Boolean(slot.appServerProcess && !slot.connectedOnce),
             reason: error.message,
           });
         } catch (reconnectError) {
@@ -249,63 +272,68 @@ export class CodexBroker extends EventEmitter {
             reason: error.message,
             reconnectError: reconnectError instanceof Error ? reconnectError.message : String(reconnectError),
           });
-          await this.#queueConnectClient({
+          await this.#queueConnectClient(slot, {
             restartProcess: true,
             reason: error.message,
           });
         }
       })().finally(() => {
-        this.#reconnectPromise = undefined;
+        slot.reconnectPromise = undefined;
       });
     }
 
-    await this.#reconnectPromise;
+    await slot.reconnectPromise;
   }
 
-  async #queueConnectClient(options: { readonly restartProcess: boolean; readonly reason?: string | undefined }): Promise<void> {
-    const run = this.#connectQueue
+  async #queueConnectClient(slot: CodexClientSlot, options: { readonly restartProcess: boolean; readonly reason?: string | undefined }): Promise<void> {
+    const run = slot.connectQueue
       .catch(() => {})
       .then(async () => {
-        await this.#performConnectClient(options);
+        await this.#performConnectClient(slot, options);
       });
-    this.#connectQueue = run.catch(() => {});
+    slot.connectQueue = run.catch(() => {});
     await run;
   }
 
-  async #performConnectClient(options: { readonly restartProcess: boolean; readonly reason?: string | undefined }): Promise<void> {
-    this.#loadedThreadIds.clear();
+  async #performConnectClient(slot: CodexClientSlot, options: { readonly restartProcess: boolean; readonly reason?: string | undefined }): Promise<void> {
+    slot.loadedThreadIds.clear();
     logger.info("Connecting Codex app-server client", {
+      slot: slot.key,
+      agentName: slot.agentName ?? null,
       restartProcess: options.restartProcess,
       reason: options.reason ?? null,
     });
 
-    await this.#retireCurrentClient();
+    await this.#retireCurrentClient(slot);
 
     if (options.restartProcess) {
-      if (this.#appServerProcess) {
-        await this.#appServerProcess.restart();
+      if (slot.appServerProcess) {
+        await slot.appServerProcess.restart();
       }
     } else {
-      await this.#appServerProcess?.start();
+      await slot.appServerProcess?.start();
     }
 
-    const nextClient = this.#createClient(this.#appServerProcess?.url ?? this.#codexAppServerUrl!);
-    this.#bindClient(nextClient);
+    const nextClient = this.#createClient(slot, slot.appServerProcess?.url ?? slot.codexAppServerUrl!);
+    slot.client = nextClient;
+    this.#bindClient(slot, nextClient);
     await nextClient.connect();
     await nextClient.ensureAuthenticated();
-    this.#client = nextClient;
+    slot.connectedOnce = true;
     logger.info("Codex app-server client connected", {
-      url: this.#appServerProcess?.url ?? this.#codexAppServerUrl ?? null,
+      slot: slot.key,
+      agentName: slot.agentName ?? null,
+      url: slot.appServerProcess?.url ?? slot.codexAppServerUrl ?? null,
     });
   }
 
-  async #retireCurrentClient(): Promise<void> {
-    const previousClient = this.#client;
+  async #retireCurrentClient(slot: CodexClientSlot): Promise<void> {
+    const previousClient = slot.client;
     if (!previousClient) {
       return;
     }
 
-    this.#ignoredDisconnectClients.add(previousClient);
+    slot.ignoredDisconnectClients.add(previousClient);
     try {
       await previousClient.close();
     } catch (error) {
@@ -314,6 +342,117 @@ export class CodexBroker extends EventEmitter {
       });
     }
   }
+
+  #slotForSession(session: SlackSessionRecord): CodexClientSlot {
+    if (!this.#fin || this.#codexAppServerUrl) {
+      return this.#defaultSlot;
+    }
+
+    const agentName = resolveFinAgentName(session);
+    const existing = this.#slots.get(agentName);
+    if (existing) {
+      return existing;
+    }
+
+    const slot = this.#createSlot({
+      key: agentName,
+      port: this.#allocatePort(),
+      codexHome: path.join(this.#codexHome, "fin-agents", agentName),
+      finAgentName: agentName,
+      finDescription: describeFinAgent(session),
+    });
+    this.#slots.set(agentName, slot);
+    logger.info("Created Fin Codex app-server slot", {
+      agentName,
+      platform: session.platform ?? "slack",
+      conversationId: session.conversationId ?? session.channelId,
+      port: slot.port,
+    });
+    return slot;
+  }
+
+  #createSlot(options: { readonly key: string; readonly port: number; readonly codexHome: string; readonly codexAppServerUrl?: string | undefined; readonly finAgentName?: string | undefined; readonly finDescription?: string | undefined }): CodexClientSlot {
+    const appServerProcess = options.codexAppServerUrl
+      ? undefined
+      : new AppServerProcess({
+          brokerHttpBaseUrl: this.#brokerHttpBaseUrl,
+          codexHome: options.codexHome,
+          teamCodexHomePath: this.#teamCodexHomePath,
+          hostCodexHomePath: this.#hostCodexHomePath,
+          hostGeminiHomePath: this.#hostGeminiHomePath,
+          port: options.port,
+          authJsonPath: this.#codexAuthJsonPath,
+          disabledMcpServers: this.#codexDisabledMcpServers,
+          tempadLinkServiceUrl: this.#tempadLinkServiceUrl,
+          geminiHttpProxy: this.#geminiHttpProxy,
+          geminiHttpsProxy: this.#geminiHttpsProxy,
+          geminiAllProxy: this.#geminiAllProxy,
+          openAiApiKey: this.#openAiApiKey,
+          fin:
+            this.#fin && options.finAgentName
+              ? {
+                  supervisorPath: this.#fin.supervisorPath,
+                  finDir: this.#fin.finDir,
+                  agentName: options.finAgentName,
+                  description: options.finDescription ?? `Codex agent ${options.finAgentName}`,
+                  disableSandbox: this.#fin.disableSandbox,
+                }
+              : undefined,
+        });
+    const slot: CodexClientSlot = {
+      key: options.key,
+      agentName: options.finAgentName,
+      port: options.port,
+      appServerProcess,
+      codexAppServerUrl: options.codexAppServerUrl,
+      codexHome: options.codexHome,
+      personalMemoryFilePath: choosePersonalMemoryFilePath({
+        codexHome: options.codexHome,
+        teamCodexHomePath: this.#teamCodexHomePath,
+      }),
+      codexGeneratedImagesRoot: path.join(options.codexHome, "generated_images"),
+      loadedThreadIds: new Set(),
+      reconnectPromise: undefined,
+      connectQueue: Promise.resolve(),
+      stopping: false,
+      connectedOnce: false,
+      ignoredDisconnectClients: new WeakSet(),
+      client: undefined as unknown as AppServerClient,
+    };
+    slot.client = this.#createClient(slot, appServerProcess?.url ?? options.codexAppServerUrl!);
+    this.#bindClient(slot, slot.client);
+    return slot;
+  }
+
+  #allocatePort(): number {
+    const port = this.#nextPort;
+    this.#nextPort += 1;
+    return port;
+  }
+}
+
+export interface CodexBrokerFinOptions {
+  readonly supervisorPath: string;
+  readonly finDir?: string | undefined;
+  readonly disableSandbox: boolean;
+}
+
+interface CodexClientSlot {
+  readonly key: string;
+  readonly agentName?: string | undefined;
+  readonly port: number;
+  readonly appServerProcess?: AppServerProcess | undefined;
+  readonly codexAppServerUrl?: string | undefined;
+  readonly codexHome: string;
+  readonly personalMemoryFilePath: string;
+  readonly codexGeneratedImagesRoot: string;
+  readonly loadedThreadIds: Set<string>;
+  reconnectPromise: Promise<void> | undefined;
+  connectQueue: Promise<void>;
+  stopping: boolean;
+  connectedOnce: boolean;
+  readonly ignoredDisconnectClients: WeakSet<AppServerClient>;
+  client: AppServerClient;
 }
 
 function choosePersonalMemoryFilePath(options: { readonly codexHome: string; readonly teamCodexHomePath?: string | undefined }): string {
@@ -326,6 +465,13 @@ function choosePersonalMemoryFilePath(options: { readonly codexHome: string; rea
   });
   const teamMemory = fs.existsSync(teamMemoryPath) ? fs.readFileSync(teamMemoryPath, "utf8").trim() : "";
   return teamMemory ? teamMemoryPath : getPersonalMemoryPath(options.codexHome);
+}
+
+function describeFinAgent(session: SlackSessionRecord): string {
+  const platform = session.platform ?? "slack";
+  const conversationId = session.conversationId ?? session.channelId;
+  const kind = session.conversationKind ?? session.channelType ?? "conversation";
+  return `Codex agent for ${platform} ${kind} ${conversationId}`;
 }
 
 export function isRecoverableCodexConnectionError(error: unknown): boolean {

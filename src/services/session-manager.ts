@@ -21,6 +21,7 @@ import type {
 import { StateStore } from "../store/state-store.js";
 import { ensureDir } from "../utils/fs.js";
 import { type ChatSessionCoordinates, createChatSessionKey, createChatWorkspacePath } from "./chat/chat-session-key.js";
+import { resolveFinAgentName } from "./chat/fin-agent-name.js";
 import type { ChatConversationKind, ChatPlatform } from "./chat/chat-types.js";
 
 export interface SessionChannelMetadata {
@@ -38,10 +39,12 @@ export type EnsureSessionMetadata = SessionChannelMetadata & SessionInitiatorMet
 export class SessionManager {
   readonly #stateStore: StateStore;
   readonly #sessionsRoot: string;
+  readonly #finDir?: string | undefined;
 
-  constructor(options: { readonly stateStore: StateStore; readonly sessionsRoot: string }) {
+  constructor(options: { readonly stateStore: StateStore; readonly sessionsRoot: string; readonly finDir?: string | undefined }) {
     this.#stateStore = options.stateStore;
     this.#sessionsRoot = options.sessionsRoot;
+    this.#finDir = options.finDir;
   }
 
   static createKey(channelId: string, rootThreadTs: string): string {
@@ -119,11 +122,18 @@ export class SessionManager {
       return await this.#applyChannelMetadata(existing, metadata);
     }
 
-    const workspacePath = this.#createWorkspacePath(channelId, rootThreadTs);
+    const sessionKey = SessionManager.createKey(channelId, rootThreadTs);
+    const workspacePath = this.#createWorkspacePath({
+      platform: "slack",
+      conversationId: channelId,
+      channelId,
+      sessionKey,
+      rootMessageId: rootThreadTs,
+    });
     await ensureDir(workspacePath);
 
     const record: SlackSessionRecord = {
-      key: SessionManager.createKey(channelId, rootThreadTs),
+      key: sessionKey,
       channelId,
       ...normalizeChannelMetadata(metadata),
       ...normalizeSessionInitiator(metadata),
@@ -152,12 +162,13 @@ export class SessionManager {
       return existing;
     }
 
-    const workspacePath = coordinates.platform === "slack" ? this.#createWorkspacePath(coordinates.conversationId, coordinates.rootMessageId) : createChatWorkspacePath(this.#sessionsRoot, coordinates);
+    const sessionKey = SessionManager.createChatKey(coordinates);
+    const workspacePath = this.#createChatWorkspacePath(coordinates, sessionKey);
     await ensureDir(workspacePath);
 
     const now = new Date().toISOString();
     const record: SlackSessionRecord = {
-      key: SessionManager.createChatKey(coordinates),
+      key: sessionKey,
       platform: coordinates.platform,
       conversationId: coordinates.conversationId,
       conversationKind: options?.conversationKind,
@@ -704,8 +715,32 @@ export class SessionManager {
     });
   }
 
-  #createWorkspacePath(channelId: string, rootThreadTs: string): string {
-    return path.join(this.#sessionsRoot, `${channelId}-${rootThreadTs}`.replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-+|-+$/g, ""), "workspace");
+  #createChatWorkspacePath(coordinates: ChatSessionCoordinates, sessionKey: string): string {
+    if (this.#finDir) {
+      return createFinThreadWorkspacePath({
+        finDir: this.#finDir,
+        platform: coordinates.platform,
+        conversationId: coordinates.conversationId,
+        channelId: coordinates.conversationId,
+        sessionKey,
+      });
+    }
+
+    return coordinates.platform === "slack" ? this.#createWorkspacePath({ platform: "slack", conversationId: coordinates.conversationId, channelId: coordinates.conversationId, rootMessageId: coordinates.rootMessageId, sessionKey }) : createChatWorkspacePath(this.#sessionsRoot, coordinates);
+  }
+
+  #createWorkspacePath(options: { readonly platform: "slack"; readonly conversationId: string; readonly channelId: string; readonly rootMessageId: string; readonly sessionKey: string }): string {
+    if (this.#finDir) {
+      return createFinThreadWorkspacePath({
+        finDir: this.#finDir,
+        platform: options.platform,
+        conversationId: options.conversationId,
+        channelId: options.channelId,
+        sessionKey: options.sessionKey,
+      });
+    }
+
+    return path.join(this.#sessionsRoot, `${options.channelId}-${options.rootMessageId}`.replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-+|-+$/g, ""), "workspace");
   }
 
   #resolveSessionRoot(workspacePath: string): string | undefined {
@@ -713,7 +748,15 @@ export class SessionManager {
     const resolvedWorkspacePath = path.resolve(workspacePath);
     const sessionRoot = path.basename(resolvedWorkspacePath) === "workspace" ? path.dirname(resolvedWorkspacePath) : resolvedWorkspacePath;
 
-    return isSubpathOf(resolvedSessionsRoot, sessionRoot) ? sessionRoot : undefined;
+    if (isSubpathOf(resolvedSessionsRoot, sessionRoot)) {
+      return sessionRoot;
+    }
+
+    if (this.#finDir && isSubpathOf(path.join(path.resolve(this.#finDir), "agents"), sessionRoot)) {
+      return sessionRoot;
+    }
+
+    return undefined;
   }
 
   async #applyChannelMetadata(session: SlackSessionRecord, metadata?: SessionChannelMetadata | undefined): Promise<SlackSessionRecord> {
@@ -775,6 +818,15 @@ function normalizeNonEmptyString(value: unknown): string | undefined {
   }
   const trimmed = value.trim();
   return trimmed ? trimmed : undefined;
+}
+
+function createFinThreadWorkspacePath(options: { readonly finDir: string; readonly platform: ChatPlatform; readonly conversationId: string; readonly channelId: string; readonly sessionKey: string }): string {
+  const agentName = resolveFinAgentName({
+    platform: options.platform,
+    conversationId: options.conversationId,
+    channelId: options.channelId,
+  });
+  return path.join(options.finDir, "agents", agentName, "threads", options.sessionKey);
 }
 
 function isSubpathOf(rootPath: string, targetPath: string): boolean {

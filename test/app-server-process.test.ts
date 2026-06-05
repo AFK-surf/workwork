@@ -356,6 +356,101 @@ describe("AppServerProcess", () => {
     }
   });
 
+  it("starts codex app-server through fin-supervisor", async () => {
+    const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "broker-app-server-process-fin-"));
+    const tempadServer = await startHealthyHttpServer();
+    const fakeBinDir = path.join(tempRoot, "bin");
+    const fakeCodexPath = path.join(fakeBinDir, "codex");
+    const fakeGitPath = path.join(fakeBinDir, "git");
+    const fakeGhPath = path.join(fakeBinDir, "gh");
+    const fakeSupervisorPath = path.join(fakeBinDir, "fin-supervisor");
+    const supervisorArgsFile = path.join(tempRoot, "supervisor-args.txt");
+    const codexArgsFile = path.join(tempRoot, "codex-args.txt");
+    const operatorHome = path.join(tempRoot, "operator-home");
+    const codexHome = path.join(tempRoot, "codex-home");
+    const previousEnv = {
+      PATH: process.env.PATH,
+      HOME: process.env.HOME,
+    };
+
+    await fs.mkdir(fakeBinDir, { recursive: true });
+    await fs.mkdir(operatorHome, { recursive: true });
+    await fs.writeFile(
+      fakeSupervisorPath,
+      [
+        "#!/usr/bin/env bash",
+        "set -euo pipefail",
+        `printf '%s\\n' "$@" > ${shellQuote(supervisorArgsFile)}`,
+        "while [ \"$#\" -gt 0 ] && [ \"$1\" != \"--\" ]; do shift; done",
+        "shift",
+        'exec "$@"',
+        "",
+      ].join("\n"),
+      { mode: 0o755 },
+    );
+    await fs.writeFile(
+      fakeCodexPath,
+      [
+        "#!/usr/bin/env bash",
+        "set -euo pipefail",
+        `printf '%s\\n' "$@" > ${shellQuote(codexArgsFile)}`,
+        "node -e \"require('net').createServer(function(){}).listen(4594, '127.0.0.1'); setInterval(function(){}, 1000)\"",
+        "",
+      ].join("\n"),
+      { mode: 0o755 },
+    );
+    await fs.writeFile(fakeGitPath, "#!/usr/bin/env bash\nexit 0\n", { mode: 0o755 });
+    await fs.writeFile(fakeGhPath, "#!/usr/bin/env bash\nexit 0\n", { mode: 0o755 });
+
+    process.env.PATH = `${fakeBinDir}:${previousEnv.PATH ?? ""}`;
+    process.env.HOME = operatorHome;
+
+    const processManager = new AppServerProcess({
+      brokerHttpBaseUrl: "http://127.0.0.1:3001",
+      codexHome,
+      port: 4594,
+      tempadLinkServiceUrl: tempadServer.url,
+      fin: {
+        supervisorPath: fakeSupervisorPath,
+        finDir: path.join(tempRoot, "fin"),
+        agentName: "feishu_oc_group",
+        description: "Codex agent for Feishu group",
+        disableSandbox: true,
+      },
+    });
+
+    try {
+      await processManager.start();
+      expect((await fs.readFile(supervisorArgsFile, "utf8")).trim().split("\n")).toEqual([
+        "--fin-dir",
+        path.join(tempRoot, "fin"),
+        "--agent",
+        "feishu_oc_group",
+        "--description",
+        "Codex agent for Feishu group",
+        "--disable-sandbox",
+        "--",
+        "codex",
+        "app-server",
+        "--disable",
+        "apps",
+        "--listen",
+        "ws://127.0.0.1:4594",
+      ]);
+      expect((await fs.readFile(codexArgsFile, "utf8")).trim().split("\n")).toEqual(["app-server", "--disable", "apps", "--listen", "ws://127.0.0.1:4594"]);
+    } finally {
+      await processManager.stop().catch(() => {});
+      await tempadServer.close().catch(() => {});
+      process.env.PATH = previousEnv.PATH;
+      if (previousEnv.HOME === undefined) {
+        delete process.env.HOME;
+      } else {
+        process.env.HOME = previousEnv.HOME;
+      }
+      await fs.rm(tempRoot, { force: true, recursive: true });
+    }
+  });
+
   it("finds app-server listeners in ps output when feature flags appear before --listen", () => {
     const output = [
       "123 /opt/homebrew/bin/codex app-server --disable apps --listen ws://127.0.0.1:4590",

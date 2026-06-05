@@ -37,6 +37,7 @@ export function createSessionServices(config: AppConfig): {
   const sessions = new SessionManager({
     stateStore,
     sessionsRoot: config.sessionsRoot,
+    finDir: config.finEnabled ? config.finDir : undefined,
   });
 
   return {
@@ -91,6 +92,13 @@ export function createCodexBroker(config: AppConfig): CodexBroker {
     geminiHttpsProxy: config.geminiHttpsProxy,
     geminiAllProxy: config.geminiAllProxy,
     openAiApiKey: config.codexOpenAiApiKey,
+    fin: config.finEnabled
+      ? {
+          supervisorPath: config.finSupervisorPath!,
+          finDir: config.finDir,
+          disableSandbox: config.finDisableSandbox,
+        }
+      : undefined,
   });
 }
 

@@ -121,6 +121,7 @@ describe("AppServerClient disconnect handling", () => {
     expect(threadStartParams?.baseInstructions).toEqual(expect.stringContaining(`runtime_hostname: ${os.hostname()}`));
     expect(threadStartParams?.baseInstructions).toEqual(expect.stringContaining("runtime_containerized:"));
     expect(threadStartParams?.baseInstructions).toEqual(expect.stringContaining("Verify platform-specific app/runtime behavior from the runtime you can actually observe"));
+    expect(threadStartParams?.baseInstructions).not.toEqual(expect.stringContaining("Fin supervisor runtime"));
     expect(threadStartParams?.baseInstructions).not.toEqual(expect.stringContaining("You are running inside the broker's Linux Docker container, not on a macOS host."));
     expect(threadStartParams?.baseInstructions).toEqual(expect.stringContaining("~/.codex/AGENT.md"));
     expect(threadStartParams?.baseInstructions).toEqual(expect.stringContaining("remember this"));
@@ -230,5 +231,67 @@ describe("AppServerClient disconnect handling", () => {
     expect(baseInstructions).toContain("/chat/thread-history?platform=feishu");
     expect(baseInstructions).not.toContain("/slack/post-message");
     expect(baseInstructions).not.toContain("channel_id: oc_group");
+  });
+
+  it("teaches Codex how to use Fin elevation when the app-server runs under Fin", async () => {
+    let threadStartParams: Record<string, unknown> | undefined;
+    const server = await createServer((socket, message) => {
+      if (message.method === "initialize") {
+        socket.send(
+          JSON.stringify({
+            id: message.id,
+            result: { ok: true },
+          }),
+        );
+        return;
+      }
+
+      if (message.method === "thread/start") {
+        threadStartParams = (message as { params?: Record<string, unknown> }).params;
+        socket.send(
+          JSON.stringify({
+            id: message.id,
+            result: {
+              thread: {
+                id: "thread-fin",
+              },
+            },
+          }),
+        );
+      }
+    });
+    servers.push(server);
+
+    const client = new AppServerClient({
+      url: server.url,
+      serviceName: "test",
+      brokerHttpBaseUrl: "http://127.0.0.1:3000",
+      reposRoot: "/tmp/repos",
+      finAgentName: "feishu_oc_group",
+      finDir: "/Users/dev-01/.fin",
+    });
+
+    await client.connect();
+    await expect(
+      client.ensureThread({
+        platform: "feishu",
+        conversationId: "oc_group",
+        conversationKind: "group",
+        rootMessageId: "om_root",
+        channelId: "oc_group",
+        rootThreadTs: "om_root",
+        workspacePath: "/tmp/feishu-workspace",
+      }),
+    ).resolves.toBe("thread-fin");
+
+    const baseInstructions = String(threadStartParams?.baseInstructions ?? "");
+    expect(baseInstructions).toContain("Fin supervisor runtime");
+    expect(baseInstructions).toContain("agent_name: feishu_oc_group");
+    expect(baseInstructions).toContain("FIN_DIR is expected to be: /Users/dev-01/.fin");
+    expect(baseInstructions).toContain("AGENT_NAME, FIN_DIR, and FIN_ELEVATE_SOCK");
+    expect(baseInstructions).toContain("Use fin-elevate only when a command is necessary");
+    expect(baseInstructions).toContain("fin-elevate /bin/cp /source/path /destination/path");
+    expect(baseInstructions).toContain("Do not use fin-elevate to bypass repository instructions");
+    expect(baseInstructions).toContain("If fin-elevate denies the command");
   });
 });

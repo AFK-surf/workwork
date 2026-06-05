@@ -1,5 +1,6 @@
 import { constants as fsConstants } from "node:fs";
 import fs from "node:fs/promises";
+import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { spawn, type ChildProcessByStdio } from "node:child_process";
@@ -35,6 +36,7 @@ export class AppServerProcess {
   readonly #geminiHttpProxy: string | undefined;
   readonly #geminiHttpsProxy: string | undefined;
   readonly #geminiAllProxy: string | undefined;
+  readonly #fin: FinSupervisorOptions | undefined;
   #child: ChildProcessByStdio<null, Readable, Readable> | undefined;
   #startPromise: Promise<void> | undefined;
   #homePrepared = false;
@@ -53,6 +55,7 @@ export class AppServerProcess {
     readonly geminiHttpProxy?: string | undefined;
     readonly geminiHttpsProxy?: string | undefined;
     readonly geminiAllProxy?: string | undefined;
+    readonly fin?: FinSupervisorOptions | undefined;
   }) {
     this.#brokerHttpBaseUrl = options.brokerHttpBaseUrl;
     this.#codexHome = options.codexHome;
@@ -68,6 +71,7 @@ export class AppServerProcess {
     this.#geminiHttpProxy = options.geminiHttpProxy;
     this.#geminiHttpsProxy = options.geminiHttpsProxy;
     this.#geminiAllProxy = options.geminiAllProxy;
+    this.#fin = options.fin;
   }
 
   get url(): string {
@@ -153,8 +157,30 @@ export class AppServerProcess {
 
   async #startProcess(env: NodeJS.ProcessEnv, allowPortRecovery: boolean): Promise<void> {
     const args = ["app-server", ...DISABLED_CODEX_APP_SERVER_FEATURES.flatMap((feature) => ["--disable", feature]), "--listen", this.url];
+    if (this.#fin && allowPortRecovery) {
+      await reclaimPortListeners(this.#port, [process.pid]);
+    }
+    const command = this.#fin
+      ? {
+          bin: this.#fin.supervisorPath,
+          args: [
+            ...(this.#fin.finDir ? ["--fin-dir", this.#fin.finDir] : []),
+            "--agent",
+            this.#fin.agentName,
+            "--description",
+            this.#fin.description,
+            ...(this.#fin.disableSandbox ? ["--disable-sandbox"] : []),
+            "--",
+            "codex",
+            ...args,
+          ],
+        }
+      : {
+          bin: "codex",
+          args,
+        };
 
-    this.#child = spawn("codex", args, {
+    this.#child = spawn(command.bin, command.args, {
       detached: true,
       env,
       stdio: ["ignore", "pipe", "pipe"],
@@ -173,7 +199,11 @@ export class AppServerProcess {
     });
 
     try {
-      await waitForAppServerListen(child);
+      if (this.#fin) {
+        await waitForPortListen(this.#port, child);
+      } else {
+        await waitForAppServerListen(child);
+      }
     } catch (error) {
       if (this.#child === child) {
         this.#child = undefined;
@@ -385,6 +415,14 @@ export class AppServerProcess {
   }
 }
 
+export interface FinSupervisorOptions {
+  readonly supervisorPath: string;
+  readonly finDir?: string | undefined;
+  readonly agentName: string;
+  readonly description: string;
+  readonly disableSandbox: boolean;
+}
+
 function killChildProcessGroup(child: ChildProcessByStdio<null, Readable, Readable>, signal: NodeJS.Signals): void {
   if (typeof child.pid !== "number") {
     return;
@@ -517,6 +555,62 @@ async function waitForAppServerListen(child: ChildProcessByStdio<null, Readable,
     child.stdout.on("data", onStdout);
     child.stderr.on("data", onStderr);
     child.once("exit", onStartupExit);
+  });
+}
+
+async function waitForPortListen(port: number, child: ChildProcessByStdio<null, Readable, Readable>): Promise<void> {
+  const deadline = Date.now() + 15_000;
+  let stdoutTail = "";
+  let stderrTail = "";
+
+  const onStdout = (chunk: Buffer): void => {
+    const text = chunk.toString();
+    stdoutTail = `${stdoutTail}${text}`.slice(-8_000);
+    logger.debug("codex app-server stdout", { text });
+  };
+  const onStderr = (chunk: Buffer): void => {
+    const text = chunk.toString();
+    stderrTail = `${stderrTail}${text}`.slice(-8_000);
+    logger.warn("codex app-server stderr", { text });
+  };
+
+  child.stdout.on("data", onStdout);
+  child.stderr.on("data", onStderr);
+  try {
+    while (Date.now() < deadline) {
+      if (child.exitCode !== null || child.signalCode !== null) {
+        throw new Error(`codex app-server exited early with code ${child.exitCode ?? "null"}${formatStartupDetails(stdoutTail, stderrTail)}`);
+      }
+      if (await canConnectToPort(port)) {
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    throw new Error(`Timed out waiting for codex app-server to listen on port ${port}${formatStartupDetails(stdoutTail, stderrTail)}`);
+  } finally {
+    child.stdout.off("data", onStdout);
+    child.stderr.off("data", onStderr);
+  }
+}
+
+async function canConnectToPort(port: number): Promise<boolean> {
+  return await new Promise<boolean>((resolve) => {
+    const socket = net.createConnection({
+      host: "127.0.0.1",
+      port,
+    });
+    socket.once("connect", () => {
+      socket.destroy();
+      resolve(true);
+    });
+    socket.once("error", () => {
+      socket.destroy();
+      resolve(false);
+    });
+    socket.setTimeout(250, () => {
+      socket.destroy();
+      resolve(false);
+    });
   });
 }
 

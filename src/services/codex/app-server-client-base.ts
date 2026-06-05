@@ -184,6 +184,8 @@ export class AppServerClientBase extends EventEmitter {
       readonly codexGeneratedImagesRoot?: string | undefined;
       readonly openAiApiKey?: string | undefined;
       readonly personalMemoryFilePath?: string | undefined;
+      readonly finAgentName?: string | undefined;
+      readonly finDir?: string | undefined;
       readonly heartbeatIntervalMs?: number | undefined;
     },
   ) {

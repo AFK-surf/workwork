@@ -1,4 +1,5 @@
 import path from "node:path";
+import os from "node:os";
 
 export interface AppConfig {
   readonly serviceRoot?: string | undefined;
@@ -41,6 +42,10 @@ export interface AppConfig {
   readonly codexAppServerUrl?: string | undefined;
   readonly codexAppServerPort: number;
   readonly codexOpenAiApiKey?: string | undefined;
+  readonly finEnabled: boolean;
+  readonly finSupervisorPath?: string | undefined;
+  readonly finDir?: string | undefined;
+  readonly finDisableSandbox: boolean;
   readonly tempadLinkServiceUrl?: string | undefined;
   readonly githubApiBaseUrl: string;
   readonly githubOAuthScopes: string[];
@@ -246,6 +251,12 @@ export function loadConfig(env = process.env): AppConfig {
   const feishuBotOpenId = getOptional(env, "FEISHU_BOT_OPEN_ID");
   const feishuBotUserId = getOptional(env, "FEISHU_BOT_USER_ID");
   const feishuBotUnionId = getOptional(env, "FEISHU_BOT_UNION_ID");
+  const finEnabled = getBoolean(env, "FIN_ENABLED", false);
+  const finSupervisorPath = getOptional(env, "FIN_SUPERVISOR_PATH");
+
+  if (finEnabled && !finSupervisorPath) {
+    throw new Error("Missing required environment variable: FIN_SUPERVISOR_PATH");
+  }
 
   if (feishuEnabled && !feishuAppId) {
     throw new Error("Missing required environment variable: FEISHU_APP_ID");
@@ -304,6 +315,10 @@ export function loadConfig(env = process.env): AppConfig {
     codexAppServerUrl: getOptional(env, "CODEX_APP_SERVER_URL"),
     codexAppServerPort: getNumber(env, "CODEX_APP_SERVER_PORT", 4590),
     codexOpenAiApiKey: getOptional(env, "OPENAI_API_KEY"),
+    finEnabled,
+    finSupervisorPath,
+    finDir: env.FIN_DIR ? path.resolve(env.FIN_DIR) : finEnabled ? path.join(os.homedir(), ".fin") : undefined,
+    finDisableSandbox: getBoolean(env, "FIN_DISABLE_SANDBOX", false),
     tempadLinkServiceUrl: getOptional(env, "TEMPAD_LINK_SERVICE_URL"),
     githubApiBaseUrl: env.GITHUB_API_BASE_URL ?? "https://api.github.com",
     githubOAuthScopes: getCsvList(env, "GITHUB_OAUTH_SCOPES").length > 0 ? getCsvList(env, "GITHUB_OAUTH_SCOPES") : ["repo", "read:user", "user:email"],

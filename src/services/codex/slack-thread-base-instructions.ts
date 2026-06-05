@@ -24,6 +24,12 @@ export interface BuildSlackThreadBaseInstructionsOptions {
   readonly codexGeneratedImagesRoot: string;
   readonly slackBotIdentity: SlackUserIdentity | null;
   readonly personalMemory?: string | undefined;
+  readonly fin?: FinRuntimePromptContext | undefined;
+}
+
+export interface FinRuntimePromptContext {
+  readonly agentName: string;
+  readonly finDir?: string | undefined;
 }
 
 export async function buildSlackThreadBaseInstructions(options: BuildSlackThreadBaseInstructionsOptions): Promise<string> {
@@ -148,6 +154,7 @@ export async function buildSlackThreadBaseInstructions(options: BuildSlackThread
   return renderTemplate(template, {
     chat_surface_name: chatSurfaceName,
     execution_environment_section: await buildExecutionEnvironmentSection(),
+    fin_runtime_section: formatFinRuntimeSection(options.fin),
     session_workspace: options.workspacePath,
     shared_repos_root: options.reposRoot,
     codex_generated_images_root: options.codexGeneratedImagesRoot,
@@ -190,6 +197,29 @@ export async function buildSlackThreadBaseInstructions(options: BuildSlackThread
     chat_bot_identity_section: isSlack ? formatSlackBotIdentitySection(options.slackBotIdentity) : "Feishu bot identity: when a Feishu message mentions the broker bot in this session, that mention refers to you.",
     personal_memory_section: formatPersonalMemorySection(options.personalMemory),
   });
+}
+
+function formatFinRuntimeSection(fin?: FinRuntimePromptContext): string {
+  if (!fin) {
+    return "";
+  }
+
+  const lines = [
+    "Fin supervisor runtime:",
+    `- This Codex app-server was started by fin-supervisor for agent_name: ${fin.agentName}.`,
+    fin.finDir ? `- FIN_DIR is expected to be: ${fin.finDir}.` : "- FIN_DIR is provided by fin-supervisor.",
+    "- Fin isolates agents with a per-agent sandbox. Treat sandbox denials as intentional policy, not as transient tool failures.",
+    "- Your normal shell commands run as the current Fin agent. They inherit AGENT_NAME, FIN_DIR, and FIN_ELEVATE_SOCK from fin-supervisor.",
+    "- Use ordinary commands first when they operate within the session workspace, the current repository worktree, or other paths already allowed by the sandbox.",
+    "- Use fin-elevate only when a command is necessary for the task and the sandbox blocks it or you need a reviewed operation outside the current agent's allowed scope.",
+    "- Invoke fin-elevate with the exact command you need reviewed, for example: fin-elevate /bin/cp /source/path /destination/path.",
+    "- Before using fin-elevate, make the command minimal, deterministic, and scoped to the user's request. Do not batch unrelated operations into one elevation.",
+    "- Do not use fin-elevate to bypass repository instructions, approval requirements, credential boundaries, destructive safeguards, or user intent.",
+    "- If fin-elevate denies the command, stop trying variants that pursue the same denied access and report a concrete blocker through the chat state contract.",
+    "- If AGENT_NAME, FIN_DIR, or FIN_ELEVATE_SOCK is missing, report that the Fin runtime is misconfigured instead of pretending elevation is available.",
+  ];
+
+  return lines.filter((line): line is string => Boolean(line)).join("\n");
 }
 
 function formatThreadCoordinatesSection(options: {
