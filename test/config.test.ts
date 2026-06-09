@@ -60,6 +60,17 @@ describe("loadConfig", () => {
     expect(config.defaultGitHubLogin).toBeUndefined();
     expect(config.defaultGitHubToken).toBeUndefined();
     expect(config.adminBaseUrl).toBe("http://127.0.0.1:3000");
+    expect(config.sessionTimelineLinkEnabled).toBe(false);
+  });
+
+  it("loads the optional session timeline link flag", () => {
+    const config = loadConfig({
+      SLACK_APP_TOKEN: "xapp-test",
+      SLACK_BOT_TOKEN: "xoxb-test",
+      SESSION_TIMELINE_LINK_ENABLED: "true",
+    } as NodeJS.ProcessEnv);
+
+    expect(config.sessionTimelineLinkEnabled).toBe(true);
   });
 
   it("allows Slack credentials to be omitted when Slack is disabled", () => {

@@ -908,7 +908,11 @@ export class SlackConversationServiceLayer1 extends SlackConversationServiceBase
       session: latestSession,
       githubPrIdentity: this.privateGithubPrIdentity,
       style: "slack_mrkdwn",
+      showSessionTimelineLink: this.privateConfig.sessionTimelineLinkEnabled,
     });
+    if (!text.trim()) {
+      return latestSession;
+    }
     try {
       await this.privatePostBotThreadMessage(latestSession.channelId, latestSession.rootThreadTs, text, { alreadyFormatted: true });
       return await this.privateSessions.setSessionPageLinkPostedAt(latestSession.channelId, latestSession.rootThreadTs, new Date().toISOString());

@@ -113,7 +113,7 @@ describe("FeishuPlatformAdapter", () => {
           header: expect.objectContaining({
             template: "yellow",
             title: expect.objectContaining({
-              content: "Codex is waiting",
+              content: "Bridge is waiting",
             }),
           }),
         }),
@@ -127,7 +127,7 @@ describe("FeishuPlatformAdapter", () => {
           header: expect.objectContaining({
             template: "green",
             title: expect.objectContaining({
-              content: "Codex finished",
+              content: "Bridge finished",
             }),
           }),
         }),
@@ -153,8 +153,8 @@ describe("FeishuPlatformAdapter", () => {
     await adapter.postThreadProjection(target, {
       target,
       status: "running_tool",
-      title: "Codex is running a tool",
-      summary: "Codex is using a tool to make progress.",
+      title: "Bridge is running a tool",
+      summary: "Bridge is using a tool to make progress.",
       slots: [
         {
           kind: "tool",
@@ -206,7 +206,7 @@ describe("FeishuPlatformAdapter", () => {
     await adapter.postThreadProjection(target, {
       target,
       status: "thinking",
-      title: "Codex shared an artifact",
+      title: "Bridge shared an artifact",
       summary: "A file or artifact was uploaded to the chat.",
       slots: [
         {
@@ -293,7 +293,7 @@ describe("FeishuPlatformAdapter", () => {
           header: expect.objectContaining({
             template: "green",
             title: expect.objectContaining({
-              content: "Codex finished",
+              content: "Bridge finished",
             }),
           }),
         }),
@@ -352,7 +352,7 @@ describe("FeishuPlatformAdapter", () => {
           header: expect.objectContaining({
             template: "green",
             title: expect.objectContaining({
-              content: "Codex finished",
+              content: "Bridge finished",
             }),
           }),
         }),

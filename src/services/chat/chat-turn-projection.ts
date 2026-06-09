@@ -48,7 +48,7 @@ export function createChatTurnProjectionFromUploadedFile(target: ChatThreadTarge
   return {
     target,
     status: "thinking",
-    title: "Codex shared an artifact",
+    title: "Bridge shared an artifact",
     summary: "A file or artifact was uploaded to the chat.",
     slots: [slot],
   };
@@ -191,7 +191,7 @@ function parseToolName(text: string): string | undefined {
 
 function chatTurnProjectionSummaryForOutboundMessage(status: ChatTurnProjectionStatus, message: ChatOutboundMessage): string {
   if (message.kind === "progress" && status !== "running_tool") {
-    return "Codex shared a progress update.";
+    return "Bridge shared a progress update.";
   }
   return chatTurnProjectionSummaryFor(status);
 }
@@ -199,19 +199,19 @@ function chatTurnProjectionSummaryForOutboundMessage(status: ChatTurnProjectionS
 function chatTurnProjectionTitleFor(status: ChatTurnProjectionStatus): string {
   switch (status) {
     case "queued":
-      return "Codex is queued";
+      return "Bridge is queued";
     case "thinking":
-      return "Codex is thinking";
+      return "Bridge is thinking";
     case "running_tool":
-      return "Codex is running a tool";
+      return "Bridge is running a tool";
     case "waiting":
-      return "Codex is waiting";
+      return "Bridge is waiting";
     case "blocked":
-      return "Codex is blocked";
+      return "Bridge is blocked";
     case "failed":
-      return "Codex failed";
+      return "Bridge failed";
     case "final":
-      return "Codex finished";
+      return "Bridge finished";
   }
 }
 
@@ -220,13 +220,13 @@ function chatTurnProjectionSummaryFor(status: ChatTurnProjectionStatus): string 
     case "queued":
       return "The turn is queued and will start shortly.";
     case "thinking":
-      return "Codex is working through the request.";
+      return "Bridge is working through the request.";
     case "running_tool":
-      return "Codex is using a tool to make progress.";
+      return "Bridge is using a tool to make progress.";
     case "waiting":
-      return "Codex is waiting for another system or user input.";
+      return "Bridge is waiting for another system or user input.";
     case "blocked":
-      return "Codex needs attention before it can continue.";
+      return "Bridge needs attention before it can continue.";
     case "failed":
       return "The turn failed before completing.";
     case "final":

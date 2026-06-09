@@ -159,6 +159,7 @@ describe("FeishuCodexBridge", () => {
       codex: codex as never,
       groupMessageMode: "all",
       adminBaseUrl: "https://admin.example.test",
+      sessionTimelineLinkEnabled: true,
       githubPrIdentity,
     });
 
@@ -1064,7 +1065,7 @@ describe("FeishuCodexBridge", () => {
           rootMessageId: "om_root",
         },
         projection: expect.objectContaining({
-          title: "Codex shared an artifact",
+          title: "Bridge shared an artifact",
           slots: [
             expect.objectContaining({
               kind: "artifact",

@@ -53,6 +53,7 @@ export interface AppConfig {
   readonly defaultGitHubToken?: string | undefined;
   readonly port: number;
   readonly adminBaseUrl: string;
+  readonly sessionTimelineLinkEnabled: boolean;
   readonly workerPort: number;
   readonly workerBindHost: string;
   readonly workerBaseUrl: string;
@@ -329,6 +330,7 @@ export function loadConfig(env = process.env): AppConfig {
     workerBindHost,
     workerBaseUrl: env.WORKER_BASE_URL ?? `http://${workerBindHost}:${workerPort}`,
     adminBaseUrl: env.ADMIN_BASE_URL ?? `http://127.0.0.1:${port}`,
+    sessionTimelineLinkEnabled: getBoolean(env, "SESSION_TIMELINE_LINK_ENABLED", false),
     brokerHttpBaseUrl: env.BROKER_HTTP_BASE_URL ?? `http://127.0.0.1:${port}`,
     serviceName: env.SERVICE_NAME ?? "slack-codex-broker",
     brokerAdminToken: getOptional(env, "BROKER_ADMIN_TOKEN"),

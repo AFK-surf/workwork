@@ -159,6 +159,7 @@ function createFeishuBridge(options: { readonly config: AppConfig; readonly sess
     historyApiMaxLimit: options.config.feishuHistoryApiMaxLimit,
     mappings: options.mappings,
     adminBaseUrl: options.config.adminBaseUrl,
+    sessionTimelineLinkEnabled: options.config.sessionTimelineLinkEnabled,
     githubPrIdentity: options.githubPrIdentity,
     adapter: new FeishuPlatformAdapter({
       appId: options.config.feishuAppId,

@@ -26,6 +26,7 @@ async function main(): Promise<void> {
       SLACK_SOCKET_OPEN_URL: "apps.connections.open",
       SLACK_INITIAL_THREAD_HISTORY_COUNT: "1",
       SLACK_HISTORY_API_MAX_LIMIT: "20",
+      SESSION_TIMELINE_LINK_ENABLED: "true",
       STATE_DIR: stateDir,
       SESSIONS_ROOT: sessionsRoot,
       REPOS_ROOT: reposRoot,

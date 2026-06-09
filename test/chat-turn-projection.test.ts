@@ -20,8 +20,8 @@ describe("chat turn projection", () => {
     ).toEqual({
       target,
       status: "waiting",
-      title: "Codex is waiting",
-      summary: "Codex is waiting for another system or user input.",
+      title: "Bridge is waiting",
+      summary: "Bridge is waiting for another system or user input.",
       reason: "CI is still running",
     });
 
@@ -31,7 +31,7 @@ describe("chat turn projection", () => {
       }),
     ).toMatchObject({
       status: "blocked",
-      title: "Codex is blocked",
+      title: "Bridge is blocked",
     });
 
     expect(
@@ -40,7 +40,7 @@ describe("chat turn projection", () => {
       }),
     ).toMatchObject({
       status: "final",
-      title: "Codex finished",
+      title: "Bridge finished",
     });
   });
 
@@ -64,7 +64,7 @@ describe("chat turn projection", () => {
         header: expect.objectContaining({
           template: "red",
           title: expect.objectContaining({
-            content: "Codex is blocked",
+            content: "Bridge is blocked",
           }),
         }),
       }),
@@ -87,7 +87,7 @@ describe("chat turn projection", () => {
       }),
     ).toMatchObject({
       status: "thinking",
-      summary: "Codex shared a progress update.",
+      summary: "Bridge shared a progress update.",
       slots: [
         {
           kind: "commentary",
@@ -104,7 +104,7 @@ describe("chat turn projection", () => {
       }),
     ).toMatchObject({
       status: "running_tool",
-      summary: "Codex is using a tool to make progress.",
+      summary: "Bridge is using a tool to make progress.",
       slots: [
         {
           kind: "tool",
@@ -159,7 +159,7 @@ describe("chat turn projection", () => {
       ),
     ).toMatchObject({
       status: "thinking",
-      title: "Codex shared an artifact",
+      title: "Bridge shared an artifact",
       slots: [
         {
           kind: "artifact",

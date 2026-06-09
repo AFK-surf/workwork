@@ -180,6 +180,7 @@ describe.sequential("slack-codex-broker e2e", () => {
       tempRoot,
       extraEnv: {
         ADMIN_BASE_URL: "https://admin.example.test",
+        SESSION_TIMELINE_LINK_ENABLED: "true",
       },
     });
     cleanups.push(() => broker.stop());
@@ -236,6 +237,7 @@ describe.sequential("slack-codex-broker e2e", () => {
       tempRoot,
       extraEnv: {
         ADMIN_BASE_URL: "https://admin.example.test",
+        SESSION_TIMELINE_LINK_ENABLED: "true",
         BROKER_DEFAULT_GITHUB_LOGIN: "default-bot",
         BROKER_DEFAULT_GITHUB_TOKEN: "default-token",
       },
@@ -309,6 +311,7 @@ describe.sequential("slack-codex-broker e2e", () => {
       tempRoot,
       extraEnv: {
         ADMIN_BASE_URL: "https://admin.example.test",
+        SESSION_TIMELINE_LINK_ENABLED: "true",
       },
     });
     cleanups.push(() => broker.stop());

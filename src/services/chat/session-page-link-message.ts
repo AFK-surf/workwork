@@ -7,18 +7,20 @@ export type SessionPageLinkMessageStyle = "slack_mrkdwn" | "plain";
 export interface SessionPageLinkMessage {
   readonly sessionUrl: string;
   readonly bindUrl: string;
+  readonly showSessionTimelineLink: boolean;
   readonly warning?: string | undefined;
   readonly text: string;
 }
 
-export function formatSessionPageLinkMessage(options: { readonly adminBaseUrl: string; readonly session: SlackSessionRecord; readonly githubPrIdentity?: GitHubPrIdentityService | undefined; readonly style: SessionPageLinkMessageStyle }): string {
+export function formatSessionPageLinkMessage(options: { readonly adminBaseUrl: string; readonly session: SlackSessionRecord; readonly githubPrIdentity?: GitHubPrIdentityService | undefined; readonly style: SessionPageLinkMessageStyle; readonly showSessionTimelineLink?: boolean | undefined }): string {
   return createSessionPageLinkMessage(options).text;
 }
 
-export function createSessionPageLinkMessage(options: { readonly adminBaseUrl: string; readonly session: SlackSessionRecord; readonly githubPrIdentity?: GitHubPrIdentityService | undefined; readonly style: SessionPageLinkMessageStyle }): SessionPageLinkMessage {
+export function createSessionPageLinkMessage(options: { readonly adminBaseUrl: string; readonly session: SlackSessionRecord; readonly githubPrIdentity?: GitHubPrIdentityService | undefined; readonly style: SessionPageLinkMessageStyle; readonly showSessionTimelineLink?: boolean | undefined }): SessionPageLinkMessage {
   const url = buildAdminSessionUrl(options.adminBaseUrl, options.session.key);
   const bindUrl = `${url}/github/bind`;
-  const lines = [formatLink(options.style, url, "查看会话活动时间线")];
+  const showSessionTimelineLink = options.showSessionTimelineLink === true;
+  const lines = showSessionTimelineLink ? [formatLink(options.style, url, "查看会话活动时间线")] : [];
   const identity = options.githubPrIdentity?.getSessionIdentityStatus(options.session);
   let warning: string | undefined;
 
@@ -30,6 +32,7 @@ export function createSessionPageLinkMessage(options: { readonly adminBaseUrl: s
   return {
     sessionUrl: url,
     bindUrl,
+    showSessionTimelineLink,
     warning,
     text: lines.join("\n"),
   };

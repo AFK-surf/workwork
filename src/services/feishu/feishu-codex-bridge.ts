@@ -38,6 +38,7 @@ export class FeishuCodexBridge {
   readonly #historyApiMaxLimit: number;
   readonly #mappings?: GitHubAuthorMappingService | undefined;
   readonly #adminBaseUrl: string;
+  readonly #sessionTimelineLinkEnabled: boolean;
   readonly #githubPrIdentity?: GitHubPrIdentityService | undefined;
   readonly #outboundQueues = new Map<string, Promise<void>>();
   #started = false;
@@ -51,6 +52,7 @@ export class FeishuCodexBridge {
     readonly historyApiMaxLimit?: number | undefined;
     readonly mappings?: GitHubAuthorMappingService | undefined;
     readonly adminBaseUrl?: string | undefined;
+    readonly sessionTimelineLinkEnabled?: boolean | undefined;
     readonly githubPrIdentity?: GitHubPrIdentityService | undefined;
   }) {
     this.#sessions = options.sessions;
@@ -61,6 +63,7 @@ export class FeishuCodexBridge {
     this.#historyApiMaxLimit = options.historyApiMaxLimit ?? DEFAULT_FEISHU_HISTORY_API_MAX_LIMIT;
     this.#mappings = options.mappings;
     this.#adminBaseUrl = options.adminBaseUrl ?? "";
+    this.#sessionTimelineLinkEnabled = options.sessionTimelineLinkEnabled === true;
     this.#githubPrIdentity = options.githubPrIdentity;
   }
 
@@ -841,7 +844,11 @@ export class FeishuCodexBridge {
       session: latestSession,
       githubPrIdentity: this.#githubPrIdentity,
       style: "plain",
+      showSessionTimelineLink: this.#sessionTimelineLinkEnabled,
     });
+    if (!message.text.trim() && !message.showSessionTimelineLink) {
+      return latestSession;
+    }
 
     try {
       await this.#postLoggedThreadMessage(threadTargetForSession(latestSession), {
@@ -1316,23 +1323,27 @@ function createFeishuSessionPageLinkCard(message: SessionPageLinkMessage): JsonL
       tag: "div",
       text: {
         tag: "lark_md",
-        content: "Codex 已开始处理这个话题。你可以打开 dashboard 查看会话活动时间线。",
+        content: message.showSessionTimelineLink ? "Bridge 已开始处理这个话题。你可以打开 dashboard 查看会话活动时间线。" : "Bridge 已开始处理这个话题。",
       },
     },
-    {
-      tag: "action",
-      actions: [
-        {
-          tag: "button",
-          type: "primary",
-          text: {
-            tag: "plain_text",
-            content: "查看会话活动时间线",
+    ...(message.showSessionTimelineLink
+      ? [
+          {
+            tag: "action",
+            actions: [
+              {
+                tag: "button",
+                type: "primary",
+                text: {
+                  tag: "plain_text",
+                  content: "查看会话活动时间线",
+                },
+                url: message.sessionUrl,
+              },
+            ],
           },
-          url: message.sessionUrl,
-        },
-      ],
-    },
+        ]
+      : []),
   ];
 
   if (message.warning) {
@@ -1372,7 +1383,7 @@ function createFeishuSessionPageLinkCard(message: SessionPageLinkMessage): JsonL
       template: message.warning ? "yellow" : "blue",
       title: {
         tag: "plain_text",
-        content: "Codex session ready",
+        content: "Bridge session ready",
       },
     },
     elements,

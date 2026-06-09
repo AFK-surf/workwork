@@ -39,6 +39,7 @@ export const TEST_CONFIG = {
   slackActiveTurnReconcileIntervalMs: 15_000,
   slackMissedThreadRecoveryIntervalMs: 15_000,
   adminBaseUrl: "https://admin.example",
+  sessionTimelineLinkEnabled: true,
 } as AppConfig;
 
 afterEach(() => {
