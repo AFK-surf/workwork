@@ -194,7 +194,7 @@ export class FeishuCodexBridge {
     options: {
       readonly kind: "final" | "block" | "wait";
       readonly reason?: string | undefined;
-      readonly batchId: "state" | "message";
+      readonly batchId: "state" | "message" | "completion_fallback";
     },
   ): Promise<void> {
     const session = this.#requireChatTurnSignalSession(target);
@@ -577,6 +577,7 @@ export class FeishuCodexBridge {
 
     try {
       const result = await started.completion;
+      await this.#postCompletionFallbackIfNeeded(sessionCoordinates, result);
       await this.#sessions.setChatActiveTurnId(sessionCoordinates, undefined);
       logger.info("chat.turn.completed", {
         platform: "feishu",
@@ -599,6 +600,35 @@ export class FeishuCodexBridge {
       });
       throw error;
     }
+  }
+
+  async #postCompletionFallbackIfNeeded(
+    target: ChatThreadTarget,
+    result: {
+      readonly threadId: string;
+      readonly turnId: string;
+      readonly finalMessage: string;
+      readonly aborted: boolean;
+    },
+  ): Promise<void> {
+    const finalMessage = result.finalMessage.trim();
+    if (!finalMessage || result.aborted) {
+      return;
+    }
+
+    const latest = this.#sessions.getChatSession(target);
+    if (latest?.lastTurnSignalTurnId === result.turnId && latest.lastTurnSignalKind) {
+      return;
+    }
+
+    await this.#postLoggedThreadMessage(target, {
+      text: finalMessage,
+      kind: "final",
+    });
+    await this.#recordChatTurnSignal(target, {
+      kind: "final",
+      batchId: "completion_fallback",
+    });
   }
 
   async #handleInteractivePayload(payload: unknown): Promise<void> {

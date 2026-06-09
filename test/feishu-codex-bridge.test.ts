@@ -1645,6 +1645,94 @@ describe("FeishuCodexBridge", () => {
     );
   });
 
+  it("posts Codex completion final text when the agent did not explicitly send a Feishu reply", async () => {
+    const dataRoot = await fs.mkdtemp(path.join(os.tmpdir(), "feishu-codex-completion-fallback-"));
+    const logDir = path.join(dataRoot, "logs");
+    configureLogger({
+      logDir,
+      level: "debug",
+      rawSlackEvents: false,
+      rawFeishuEvents: false,
+      rawCodexRpc: false,
+      rawHttpRequests: false,
+    });
+    const sessions = new SessionManager({
+      stateStore: new StateStore(path.join(dataRoot, "state"), path.join(dataRoot, "sessions")),
+      sessionsRoot: path.join(dataRoot, "sessions"),
+    });
+    await sessions.load();
+    const coordinates = {
+      platform: "feishu" as const,
+      conversationId: "oc_external_group",
+      rootMessageId: "om_external_root",
+    };
+    const adapter = new FakeFeishuAdapter();
+    const codex = new DeferredFakeCodex();
+    const bridge = new FeishuCodexBridge({
+      sessions,
+      adapter,
+      codex: codex as never,
+      groupMessageMode: "all",
+    });
+
+    await bridge.start();
+    const message = adapter.emit({
+      platform: "feishu",
+      conversationId: "oc_external_group",
+      conversationKind: "group",
+      rootMessageId: "om_external_root",
+      messageId: "om_external_root",
+      source: "bot_mention",
+      sender: {
+        kind: "user",
+        userId: "ou_external_user",
+      },
+      text: "please reply from the fallback path",
+    });
+    await waitForCondition(() => codex.startedTurns.length === 1, "Feishu external group turn start");
+    codex.completeNext("Fallback final answer.");
+    await message;
+    await flushLogger();
+
+    expect(adapter.postedMessages).toEqual([
+      expect.objectContaining({
+        target: expect.objectContaining(coordinates),
+        message: expect.objectContaining({
+          text: "Fallback final answer.",
+          kind: "final",
+        }),
+      }),
+    ]);
+    expect(sessions.getChatSession(coordinates)).toMatchObject({
+      activeTurnId: undefined,
+      lastTurnSignalTurnId: "turn-1",
+      lastTurnSignalKind: "final",
+    });
+    const logs = await readJsonl(path.join(logDir, "broker.jsonl"));
+    expect(logs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: "chat.outbound.posted",
+          meta: expect.objectContaining({
+            platform: "feishu",
+            conversationId: "oc_external_group",
+            rootMessageId: "om_external_root",
+            format: "text",
+          }),
+        }),
+        expect.objectContaining({
+          message: "chat.turn.completed",
+          meta: expect.objectContaining({
+            platform: "feishu",
+            turnId: "turn-1",
+            batchId: "completion_fallback",
+            status: "final",
+          }),
+        }),
+      ]),
+    );
+  });
+
   it("confirms Feishu co-authors through a card callback before resolving commit trailers", async () => {
     const dataRoot = await fs.mkdtemp(path.join(os.tmpdir(), "feishu-codex-coauthors-"));
     const logDir = path.join(dataRoot, "logs");
@@ -2279,7 +2367,7 @@ describe("FeishuCodexBridge", () => {
       kind: "final",
       reason: "done",
     });
-    codex.completeNext();
+    codex.completeNext("This internal final should not be posted again.");
     await firstMessage;
     await waitForCondition(() => sessions.getChatSession(coordinates)?.activeTurnId === undefined, "first Feishu topic turn completion");
 
@@ -2415,17 +2503,15 @@ describe("FeishuCodexBridge", () => {
         inputText: expect.stringContaining("new work in the same topic"),
       }),
     );
-    expect(adapter.postedMessages).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          message: expect.objectContaining({
-            text: "Final answer is visible.",
-            format: undefined,
-            card: undefined,
-          }),
+    expect(adapter.postedMessages).toEqual([
+      expect.objectContaining({
+        message: expect.objectContaining({
+          text: "Final answer is visible.",
+          format: undefined,
+          card: undefined,
         }),
-      ]),
-    );
+      }),
+    ]);
     expect(adapter.postedStates).toEqual([]);
     expect(adapter.postedProjections).toEqual([]);
     expect(sessions.getChatSession(coordinates)).toMatchObject({
@@ -3567,7 +3653,7 @@ class DeferredFakeCodex extends FakeCodex {
     };
   }
 
-  completeNext(): void {
+  completeNext(finalMessage = ""): void {
     const pending = this.#pendingTurns.shift();
     if (!pending) {
       throw new Error("No pending deferred Codex turn");
@@ -3575,7 +3661,7 @@ class DeferredFakeCodex extends FakeCodex {
     pending.resolve({
       threadId: "thread-1",
       turnId: pending.turnId,
-      finalMessage: "",
+      finalMessage,
       aborted: false,
     });
   }
