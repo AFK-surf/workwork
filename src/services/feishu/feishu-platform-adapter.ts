@@ -587,6 +587,7 @@ async function prepareFeishuOutboundFile(file: ChatOutboundFile): Promise<{
     filename ??= path.basename(filePath);
   } else {
     bytes = Buffer.from(file.contentBase64!.trim(), "base64");
+    filename ??= inferFeishuInlineImageFilename(contentType);
     if (!filename) {
       throw new Error(CHAT_INLINE_FILE_FILENAME_REQUIREMENT_MESSAGE);
     }
@@ -610,6 +611,38 @@ async function prepareFeishuOutboundFile(file: ChatOutboundFile): Promise<{
 function isFeishuImageUpload(filename: string, contentType: string | undefined): boolean {
   const extension = path.extname(filename).toLowerCase();
   return Boolean(contentType?.toLowerCase().startsWith("image/")) || [".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".ico", ".tiff", ".tif", ".heic"].includes(extension);
+}
+
+function inferFeishuInlineImageFilename(contentType: string | undefined): string | undefined {
+  const normalized = contentType?.trim().toLowerCase();
+  if (!normalized?.startsWith("image/")) {
+    return undefined;
+  }
+
+  const subtype = normalized.slice("image/".length).split(";")[0]?.trim();
+  switch (subtype) {
+    case "jpeg":
+    case "jpg":
+      return "image.jpg";
+    case "png":
+      return "image.png";
+    case "webp":
+      return "image.webp";
+    case "gif":
+      return "image.gif";
+    case "bmp":
+      return "image.bmp";
+    case "ico":
+    case "x-icon":
+      return "image.ico";
+    case "tiff":
+    case "tif":
+      return "image.tiff";
+    case "heic":
+      return "image.heic";
+    default:
+      return "image";
+  }
 }
 
 function feishuUploadKindFor(file: { readonly bytes: Buffer; readonly filename: string; readonly contentType?: string | undefined }): "image" | "file" {

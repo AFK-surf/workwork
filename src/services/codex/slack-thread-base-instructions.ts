@@ -175,7 +175,9 @@ export async function buildSlackThreadBaseInstructions(options: BuildSlackThread
     markdown_note: isSlack
       ? "Write normal Markdown in the `text` field. Do not handcraft Slack `mrkdwn`; the broker converts markdownish output to `mrkdwn` before posting."
       : "For Feishu, set `format` to `markdown` when you want the broker to send Feishu rich-post Markdown; otherwise plain `text` is sent as text or operational cards.",
-    post_file_note: isSlack ? "For `/slack/post-file`, `initial_comment` also accepts normal Markdown and is converted before posting." : "For `/chat/post-file`, `initial_comment`/`initialComment` can be sent with the same Feishu thread coordinates.",
+    post_file_note: isSlack
+      ? "For `/slack/post-file`, `initial_comment` also accepts normal Markdown and is converted before posting."
+      : "For `/chat/post-file`, `initial_comment`/`initialComment` can be sent with the same Feishu thread coordinates. To upload an inline rendered image, send `content_base64` with an image `content_type`; `filename` is optional for image content types.",
     post_file_route_label: `\`${postFileRoute}\``,
     post_state_route_label: `\`${postStateRoute}\``,
     registered_job_env_vars: isSlack

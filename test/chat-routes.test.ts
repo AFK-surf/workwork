@@ -771,6 +771,64 @@ describe("chat routes", () => {
     ]);
   });
 
+  it("infers a filename for Feishu inline image uploads", async () => {
+    const calls: unknown[] = [];
+    const server = http.createServer(
+      createHttpHandler({
+        bridge: {
+          postChatFile: async (payload: unknown) => {
+            calls.push(payload);
+            return {
+              platform: "feishu",
+              fileId: "img_uploaded",
+              kind: "image",
+            };
+          },
+        } as never,
+        config: {
+          serviceName: "test-broker",
+        } as never,
+      }),
+    );
+    const baseUrl = await listen(server);
+    cleanups.push(() => close(server));
+    const contentBase64 = Buffer.from("png").toString("base64");
+
+    const response = await fetch(`${baseUrl}/chat/post-file`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        platform: "feishu",
+        conversationId: "oc_group",
+        rootMessageId: "om_root",
+        contentBase64,
+        contentType: "image/png",
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      file: {
+        platform: "feishu",
+        fileId: "img_uploaded",
+        kind: "image",
+      },
+    });
+    expect(calls).toEqual([
+      expect.objectContaining({
+        platform: "feishu",
+        conversationId: "oc_group",
+        rootMessageId: "om_root",
+        contentBase64,
+        filename: "image.png",
+        contentType: "image/png",
+      }),
+    ]);
+  });
+
   it("uploads Slack files through generic chat coordinates", async () => {
     const calls: unknown[] = [];
     const server = http.createServer(

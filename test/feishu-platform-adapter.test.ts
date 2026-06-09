@@ -1577,6 +1577,56 @@ describe("FeishuPlatformAdapter", () => {
     ]);
   });
 
+  it("infers filenames for inline Feishu image uploads", async () => {
+    const calls: unknown[] = [];
+    const adapter = new FeishuPlatformAdapter({
+      appId: "cli-test",
+      appSecret: "secret-test",
+      api: createFakeApi(calls),
+      wsClient: new FakeWsClient(),
+    });
+
+    const uploaded = await adapter.uploadThreadFile(
+      {
+        platform: "feishu",
+        conversationId: "oc_group",
+        rootMessageId: "om_root",
+      },
+      {
+        contentBase64: Buffer.from("png").toString("base64"),
+        contentType: "image/png",
+      },
+    );
+
+    expect(uploaded).toMatchObject({
+      platform: "feishu",
+      fileId: "img_uploaded",
+      kind: "image",
+      name: "image.png",
+      mimetype: "image/png",
+      size: 3,
+    });
+    expect(calls).toEqual([
+      {
+        operation: "uploadMessageImage",
+        options: {
+          bytes: Buffer.from("png"),
+        },
+      },
+      {
+        operation: "replyMessage",
+        options: {
+          messageId: "om_root",
+          msgType: "image",
+          content: {
+            image_key: "img_uploaded",
+          },
+          replyInThread: true,
+        },
+      },
+    ]);
+  });
+
   it("uploads generic files before replying with Feishu file messages", async () => {
     const calls: unknown[] = [];
     const adapter = new FeishuPlatformAdapter({

@@ -375,7 +375,8 @@ async function handleChatPostFileRequest(
   const rootMessageId = readString(body.root_message_id) ?? readString(body.rootMessageId);
   const filePath = readString(body.file_path) ?? readString(body.filePath);
   const contentBase64 = readString(body.content_base64) ?? readString(body.contentBase64);
-  const filename = readString(body.filename);
+  const contentType = readString(body.content_type) ?? readString(body.contentType);
+  const filename = readString(body.filename) ?? inferInlineImageFilename(contentType);
 
   logger.raw(
     "http-requests",
@@ -450,7 +451,7 @@ async function handleChatPostFileRequest(
       initialComment: readString(body.initial_comment) ?? readString(body.initialComment),
       altText: readString(body.alt_text) ?? readString(body.altText),
       snippetType: readString(body.snippet_type) ?? readString(body.snippetType),
-      contentType: readString(body.content_type) ?? readString(body.contentType),
+      contentType,
     });
     respondJson(response, 200, {
       ok: true,
@@ -461,6 +462,38 @@ async function handleChatPostFileRequest(
       ok: false,
       error: error instanceof Error ? error.message : String(error),
     });
+  }
+}
+
+function inferInlineImageFilename(contentType: string | undefined): string | undefined {
+  const normalized = contentType?.trim().toLowerCase();
+  if (!normalized?.startsWith("image/")) {
+    return undefined;
+  }
+
+  const subtype = normalized.slice("image/".length).split(";")[0]?.trim();
+  switch (subtype) {
+    case "jpeg":
+    case "jpg":
+      return "image.jpg";
+    case "png":
+      return "image.png";
+    case "webp":
+      return "image.webp";
+    case "gif":
+      return "image.gif";
+    case "bmp":
+      return "image.bmp";
+    case "ico":
+    case "x-icon":
+      return "image.ico";
+    case "tiff":
+    case "tif":
+      return "image.tiff";
+    case "heic":
+      return "image.heic";
+    default:
+      return "image";
   }
 }
 
