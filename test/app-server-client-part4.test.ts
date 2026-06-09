@@ -113,6 +113,7 @@ describe("AppServerClient disconnect handling", () => {
       }),
     ).resolves.toBe("thread-1");
 
+    expect(threadStartParams?.baseInstructions).toEqual(expect.stringContaining("You are Bridge, serving a Slack thread"));
     expect(threadStartParams?.baseInstructions).toEqual(expect.stringContaining("channel_id: C123"));
     expect(threadStartParams?.experimentalRawEvents).toBe(true);
     expect(threadStartParams?.baseInstructions).toEqual(expect.stringContaining("thread_ts: 111.222"));
@@ -218,6 +219,7 @@ describe("AppServerClient disconnect handling", () => {
     ).resolves.toBe("thread-feishu");
 
     const baseInstructions = String(threadStartParams?.baseInstructions ?? "");
+    expect(baseInstructions).toContain("You are Bridge, serving a Feishu thread");
     expect(baseInstructions).toContain("Current Feishu thread coordinates");
     expect(baseInstructions).toContain("platform: feishu");
     expect(baseInstructions).toContain("conversation_id: oc_group");
